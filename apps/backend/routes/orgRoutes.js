@@ -10,8 +10,7 @@ import {
 } from '../controllers/orgBillingController.js';
 
 import {
-  createOrg,
-  updateOrgBranding,
+   updateOrgBranding,
   createAssignment,
   resolveInvite,
   acceptInvite,
@@ -29,8 +28,7 @@ import {
   acceptOrgMembershipInvite,
   getMyAttemptForAssignment,
   startAttempt,
-   getMySharedAssignments,
-   listOrgAssignments,
+   
   } from '../controllers/orgController.js';
 
 // ⬇️ NEW: learner controllers
@@ -46,6 +44,12 @@ import {
   bulkCreateOrgInstructorsCsv,
 } from '../controllers/orgInstructorsController.js';
 
+import {
+  createOrgLegacyAssignment,
+  getOrgAssignments,
+  submitOrgLegacyAssignment,
+} from '../controllers/orgLegacyAssignmentsController.js';
+
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -57,6 +61,7 @@ router.get('/:orgId/learners/progress', requireAuth, getOrgLearnersProgress);
 router.get('/:orgId/roster', requireAuth, getOrgRoster);
 router.post('/:orgId/invites', requireAuth, createOrgInvite);
 router.post('/accept-membership', requireAuth, acceptOrgMembershipInvite);
+
 
 /* ───────────── Assignment / attempt read APIs (non-:orgId first) ───────────── */
 
@@ -141,13 +146,30 @@ router.post(
   bulkCreateOrgInstructorsCsv,
 );
 
+
+// List assignments (learner/admin)
 router.get(
-  '/:orgId/assignments/mine',
-  requireAuth,              // must set req.user
-  getMySharedAssignments
+  '/:orgId/assignments',
+  requireAuth,
+  getOrgAssignments
 );
 
-router.get('/:orgId/assignments', requireAuth, listOrgAssignments);
+
+
+// Create classic / legacy assignment
+router.post(
+  '/:orgId/assignments/legacy',
+  requireAuth,
+  createOrgLegacyAssignment
+);
+
+// Submit learner work for a legacy assignment
+router.post(
+  '/:orgId/assignments/:assignmentId/legacy/submit',
+  requireAuth,
+  submitOrgLegacyAssignment
+);
+
 /* ─────────────────────── Bootstrap + billing + misc ──────────────────────── */
 
 router.post('/bootstrap', requireAuth, bootstrapMyOrg);

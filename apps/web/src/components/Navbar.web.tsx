@@ -1,4 +1,4 @@
-// apps/web/src/components/Navbar.web.tsx (or wherever this lives)
+// apps/web/src/components/Navbar.web.tsx
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -8,9 +8,12 @@ import {
   faMagnifyingGlass,
   faBars,
   faXmark,
+  faMoon,
+  faSun,
 } from '@fortawesome/free-solid-svg-icons';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useOrg } from '@mytutorapp/shared/hooks/useOrg';
+import { useTheme } from '@mytutorapp/shared/hooks'; // 👈 assumes this exists
 
 type Props = {
   onSearch?: (query: string) => void;
@@ -38,6 +41,9 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const mobileSearchRef = useRef<HTMLInputElement | null>(null);
 
+  // 🔹 Global theme context
+  const { theme, setTheme } = useTheme() as any; // theme: 'light' | 'dark' | 'system' (depending on your impl)
+
   const ORG_BTN =
     "shrink-0 inline-flex items-center justify-center rounded-full h-8 px-3 text-xs font-medium whitespace-nowrap \
      bg-emerald-600 text-white ring-1 ring-emerald-700/25 shadow-sm transition \
@@ -45,7 +51,6 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
      focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 \
      dark:focus-visible:ring-offset-darkBg";
 
-  // Detect "institution mode" from route or sticky flag
   const isOrg = useMemo(() => {
     const onOrgRoute = location.pathname.startsWith('/org');
     const sticky =
@@ -60,25 +65,18 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
   const isInstructorRole =
     normalizedRole === 'instructor' || normalizedRole === 'teacher';
 
-  // Where the For Institutions link *navigates* to:
-  // - If no orgToken → /org/login
-  // - If learner/instructor → also /org/login (but we’ll log out first)
-  // - Else (admin/owner) → /org/profile
   const orgPortalHref = useMemo(() => {
     if (!orgToken) return '/org/login';
     if (isLearnerRole || isInstructorRole) return '/org/login';
     return '/org/profile';
   }, [orgToken, isLearnerRole, isInstructorRole]);
 
-  // 🔐 When an org learner or instructor clicks "For Institutions",
-  // log them out of the institution session and send to /org/login.
   const handleOrgButtonClick = async (
     e: React.MouseEvent<HTMLAnchorElement, MouseEvent>
   ) => {
     if (!orgToken || !orgLogout) return;
 
     if (!(isLearnerRole || isInstructorRole)) {
-      // Admin/owner can just navigate normally
       return;
     }
 
@@ -86,19 +84,16 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
     try {
       await orgLogout();
     } catch (err) {
-      // swallow – navigation still proceeds
       console.error('[Navbar] orgLogout error', err);
     }
     navigate('/org/login', { replace: true });
   };
 
-  // Close sheets when route changes
   useEffect(() => {
     setMobileMenuOpen(false);
     setMobileSearchOpen(false);
   }, [location.pathname]);
 
-  // Focus search input when it opens on mobile
   useEffect(() => {
     if (mobileSearchOpen) {
       const t = setTimeout(() => mobileSearchRef.current?.focus(), 50);
@@ -127,6 +122,16 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
 
   const avatarHref = token ? '/profile/me' : '/login';
   const myCoursesHref = '/courses';
+
+  // 🔹 Simple theme toggle handler
+  const handleThemeToggle = () => {
+    const current = (theme || 'light').toString().toLowerCase();
+    const next = current === 'dark' ? 'light' : 'dark';
+    setTheme?.(next);
+  };
+
+  const isDark =
+    (theme || '').toString().toLowerCase() === 'dark';
 
   return (
     <header className="sticky top-0 z-50 backdrop-blur bg-white/80 dark:bg-darkBg/80 border-b border-gray-200 dark:border-darkCard">
@@ -206,7 +211,7 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
             </nav>
           </div>
 
-          {/* Right: search + bell + avatar / Institution login-logout */}
+          {/* Right: search + bell + theme + avatar / Institution login-logout */}
           <div className="flex flex-1 justify-end items-center gap-2 sm:gap-3">
             {/* Desktop search */}
             <label className="hidden md:flex w-full max-w-lg h-10">
@@ -241,6 +246,17 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
               aria-label="Notifications"
             >
               <FontAwesomeIcon icon={faBell as IconProp} />
+            </button>
+
+            {/* 🔹 Theme icon toggle (simple, global) */}
+            <button
+              type="button"
+              onClick={handleThemeToggle}
+              className="inline-flex items-center justify-center rounded-xl h-10 w-10 bg-gray-100 dark:bg-[#172534] ring-1 ring-gray-200 dark:ring-darkCard hover:ring-primary transition"
+              aria-label="Toggle theme"
+              title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              <FontAwesomeIcon icon={(isDark ? faSun : faMoon) as IconProp} />
             </button>
 
             {/* Rightmost control */}

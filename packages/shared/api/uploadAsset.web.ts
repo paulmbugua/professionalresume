@@ -1,8 +1,10 @@
+export type UploadAssetKind = 'image' | 'video' | 'doc';
+
 export async function uploadAsset(
   backendUrl: string,
   token: string,
   uriOrFile: string | File,
-  type: 'image' | 'video'
+  type: UploadAssetKind
 ): Promise<string> {
   const endpoint = `${backendUrl}/api/profile/upload/${type}`;
 
@@ -19,7 +21,11 @@ export async function uploadAsset(
   const filename =
     uriOrFile instanceof File
       ? uriOrFile.name
-      : type === 'video' ? 'upload.mp4' : 'upload.jpg';
+      : type === 'video'
+      ? 'upload.mp4'
+      : type === 'doc'
+      ? 'upload.pdf'
+      : 'upload.jpg';
 
   formData.append('file', blobOrFile as Blob, filename);
 
@@ -42,9 +48,11 @@ export async function uploadAsset(
     const text = await res.text().catch(() => '');
     throw new Error(`Upload failed (${res.status}) ${text}`);
   }
+
   const json = await res.json().catch(() => ({}));
   if (!json?.url || typeof json.url !== 'string') {
     throw new Error('Upload response missing url.');
   }
+
   return json.url;
 }

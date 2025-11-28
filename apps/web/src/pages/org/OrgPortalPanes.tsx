@@ -1,6 +1,9 @@
-/* apps/web/src/pages/org/OrgPortalPanes.tsx */
+// apps/web/src/pages/org/OrgPortalPanes.tsx
 import React from 'react';
-import type { OrgResp as Org, OrgAnalyticsRow } from '@mytutorapp/shared/api/orgApi';
+import type {
+  OrgResp as Org,
+  OrgAnalyticsRow,
+} from '@mytutorapp/shared/api/orgApi';
 import { useCourses } from '@mytutorapp/shared/hooks';
 
 type TabKey = 'branding' | 'assign' | 'analytics';
@@ -53,7 +56,7 @@ type BrandingAssignProps = {
   onSaveBranding: () => void;
   onSendTestReport: () => Promise<void>;
 
-  // assignment
+  // assignment (Teach with AI)
   courseId: string;
   setCourseId: (v: string) => void;
   titleOverride: string;
@@ -74,6 +77,19 @@ type BrandingAssignProps = {
   assignClassLabel?: string;
   assignSubjectKey?: string;
   setAssignScope?: (opts: { classLabel?: string; subjectKey?: string }) => void;
+
+  // NEW: legacy assignment composer
+  legacyTitle: string;
+  setLegacyTitle: (v: string) => void;
+  legacyInstructions: string;
+  setLegacyInstructions: (v: string) => void;
+  legacyDueAt: string;
+  setLegacyDueAt: (v: string) => void;
+  legacyAttachmentUrl: string;
+  legacyUploadingAttachment: boolean;
+  onUploadLegacyAttachment: (file: File | null) => Promise<string | null> | Promise<null> | null;
+  onCreateLegacyAssignment: () => void;
+  creatingLegacyAssignment: boolean;
 };
 
 export function BrandingAssignPane(props: BrandingAssignProps) {
@@ -115,6 +131,17 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
     assignClassLabel,
     assignSubjectKey,
     setAssignScope,
+    legacyTitle,
+    setLegacyTitle,
+    legacyInstructions,
+    setLegacyInstructions,
+    legacyDueAt,
+    setLegacyDueAt,
+    legacyAttachmentUrl,
+    legacyUploadingAttachment,
+    onUploadLegacyAttachment,
+    onCreateLegacyAssignment,
+    creatingLegacyAssignment,
   } = props;
 
   // Generate stable ids for file inputs (works on SSR + iOS Safari)
@@ -246,8 +273,8 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
         <div className="grid sm:grid-cols-2 gap-3 sm:gap-4">
           {!canBranding && (
             <div className="sm:col-span-2 text-sm text-amber-700 dark:text-amber-300">
-              Branding settings aren’t editable from this account. Please ask your institution
-              owner or admin to update logos, signatures, and contact details.
+              Branding settings aren’t editable from this account. Please ask your
+              institution owner or admin to update logos, signatures, and contact details.
             </div>
           )}
 
@@ -600,8 +627,8 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
               title={!canSSO ? 'Available on Enterprise' : ''}
             />
             <div className="mt-1 text-[11px] text-[#49739c] dark:text-darkTextSecondary">
-              Comma-separated. Supports wildcards like <code>*.example.edu</code>.
-              Learners with other domains cannot accept invites.
+              Comma-separated. Supports wildcards like <code>*.example.edu</code>. Learners
+              with other domains cannot accept invites.
             </div>
           </div>
 
@@ -795,256 +822,407 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
       )}
 
       {tab === 'assign' && (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {!canAssignments && (
             <div className="text-sm text-amber-700 dark:text-amber-300">
               Assignments are not available on your plan. Upgrade to enable.
             </div>
           )}
 
-          {/* Small helper showing current scope */}
+          {/* Scope hint shared by both flows */}
           {(assignClassLabel || assignSubjectKey) && (
             <div className="rounded-xl bg-[#e7edf4]/60 dark:bg-white/5 px-3 py-2 text-[11px] text-[#49739c] dark:text-darkTextSecondary">
-              This assignment will be visible to learners in{' '}
+              This work is currently scoped to{' '}
               {assignClassLabel && <b>{assignClassLabel}</b>}
               {assignClassLabel && assignSubjectKey && ' · '}
-              {assignSubjectKey && <b>{assignSubjectKey}</b>}. Learner portal
-              filters use the same class/subject hints.
+              {assignSubjectKey && <b>{assignSubjectKey}</b>}. Learners in this
+              class/subject will see it in their Assignments tab.
             </div>
           )}
 
-          <div className="grid sm:grid-cols-2 gap-3">
-            <div>
-              <Label>Course ID</Label>
-              <input
-                className="input mt-1 w-full"
-                value={courseId}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  setCourseId(next);
-                  setCourseIdAndUrl?.(next);
-                  // if admin types manually, we intentionally leave scope blank
-                  // so only class/subject chosen from the course list will scope.
-                }}
-                placeholder="course uuid"
-                disabled={!canAssignments}
-              />
-            </div>
-            <div>
-              <Label>Title Override (optional)</Label>
-              <input
-                className="input mt-1 w-full"
-                value={titleOverride}
-                onChange={(e) => setTitleOverride(e.target.value)}
-                placeholder="Intro to Cybersecurity — Cohort A"
-                disabled={!canAssignments}
-              />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <Label>Pass Mark (optional)</Label>
-                {!canCustomPassTimers && <Pill>Pro+</Pill>}
+          {/* ─────────────────────────────────────────────────────
+              Classic / file-based assignment card
+             ───────────────────────────────────────────────────── */}
+          <section className="rounded-2xl ring-1 ring-[#e7edf4] dark:ring-white/10 bg-slate-50/80 dark:bg-[#111b28] p-3 sm:p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div>
+                <div className="text-xs font-semibold tracking-wide uppercase text-[#49739c] dark:text-darkTextSecondary">
+                  Classic assignment
+                </div>
+                <div className="text-sm sm:text-base font-semibold">
+                  Attach a worksheet or project brief
+                </div>
+                <div className="text-[11px] sm:text-xs text-slate-600 dark:text-white/70">
+                  Perfect for essays, worksheets, experiments and offline tasks. Learners
+                  download your file, complete the work, then submit their own file or
+                  typed answer.
+                </div>
               </div>
-              <input
-                type="number"
-                min={1}
-                max={100}
-                className="input mt-1 w-full"
-                value={passMark}
-                onChange={(e) =>
-                  setPassMark(
-                    e.target.value ? Number(e.target.value) : ''
-                  )
-                }
-                disabled={!canAssignments || !canCustomPassTimers}
-                title={!canCustomPassTimers ? 'Available on Pro and Enterprise' : ''}
-              />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <Label>Timer seconds (optional)</Label>
-                {!canCustomPassTimers && <Pill>Pro+</Pill>}
+
+            {/* Class + subject */}
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <Label>Class / Grade</Label>
+                <input
+                  className="input mt-1 w-full"
+                  value={assignClassLabel || ''}
+                  onChange={(e) =>
+                    setAssignScope?.({ classLabel: e.target.value || '' })
+                  }
+                  placeholder="e.g. Grade 7 Blue"
+                  disabled={!canAssignments}
+                />
               </div>
-              <input
-                type="number"
-                min={60}
-                step={30}
-                className="input mt-1 w-full"
-                value={timer}
-                onChange={(e) =>
-                  setTimer(
-                    e.target.value ? Number(e.target.value) : ''
-                  )
-                }
-                disabled={!canAssignments || !canCustomPassTimers}
-                title={!canCustomPassTimers ? 'Available on Pro and Enterprise' : ''}
-              />
+              <div>
+                <Label>Subject</Label>
+                <input
+                  className="input mt-1 w-full"
+                  value={assignSubjectKey || ''}
+                  onChange={(e) =>
+                    setAssignScope?.({ subjectKey: e.target.value || '' })
+                  }
+                  placeholder="e.g. Mathematics, English, Physics"
+                  disabled={!canAssignments}
+                />
+              </div>
             </div>
+
+            {/* Title + instructions */}
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <Label>Assignment title</Label>
+                <input
+                  className="input mt-1 w-full"
+                  value={legacyTitle}
+                  onChange={(e) => setLegacyTitle(e.target.value)}
+                  placeholder="Term 2 Algebra worksheet"
+                  disabled={!canAssignments}
+                />
+              </div>
+              <div>
+                <Label>Deadline (optional)</Label>
+                <input
+                  type="datetime-local"
+                  className="input mt-1 w-full"
+                  value={legacyDueAt}
+                  onChange={(e) => setLegacyDueAt(e.target.value)}
+                  disabled={!canAssignments}
+                />
+                <div className="mt-1 text-[10px] text-[#49739c] dark:text-darkTextSecondary">
+                  Learners will still see the assignment after the deadline, but you can
+                  treat late submissions differently.
+                </div>
+              </div>
+            </div>
+
             <div>
-              <Label>Due at (optional, ISO)</Label>
-              <input
-                className="input mt-1 w-full"
-                value={dueAt}
-                onChange={(e) => setDueAt(e.target.value)}
-                placeholder="2025-09-30T23:59:59Z"
+              <Label>Instructions</Label>
+              <textarea
+                rows={4}
+                className="input mt-1 w-full min-h-[96px] resize-y"
+                value={legacyInstructions}
+                onChange={(e) => setLegacyInstructions(e.target.value)}
+                placeholder="Explain what learners should do, how to name their files, and how you will grade them…"
                 disabled={!canAssignments}
               />
             </div>
-          </div>
 
-          {/* ⬇️ Instructor courses list for picking Course ID */}
-          <div className="grid sm:grid-cols-2 gap-3">
-            <div className="sm:col-span-2">
-              <Label>Your courses (click to use)</Label>
+            {/* Attachment upload */}
+            <div className="space-y-2">
+              <Label>Attach assignment file (PDF, DOC, slides…)</Label>
+              <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx,.ppt,.pptx,.png,.jpg,.jpeg,.webp,.txt"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0] ?? null;
+                    if (!file) return;
+                    await onUploadLegacyAttachment(file);
+                    try {
+                      e.target.value = '';
+                    } catch {}
+                  }}
+                  className="block w-full text-[11px] sm:text-xs text-slate-600 dark:text-slate-300
+                    file:mr-3 file:py-1.5 file:px-3 file:rounded-xl
+                    file:border-0 file:text-xs file:font-semibold
+                    file:bg-slate-900/90 file:text-white
+                    hover:file:bg-slate-900
+                    dark:file:bg-slate-200 dark:file:text-slate-900 dark:hover:file:bg-white/90"
+                  disabled={!canAssignments || legacyUploadingAttachment}
+                />
 
-              <div className="mt-1 rounded-xl border border-[#e7edf4] dark:border-white/10 bg-slate-50/70 dark:bg-[#111b28] p-2 max-h-64 overflow-y-auto">
-                {coursesLoading && (
-                  <div className="text-xs text-slate-500 dark:text-white/60">
-                    Loading your courses…
-                  </div>
+                {legacyAttachmentUrl && (
+                  <a
+                    href={legacyAttachmentUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center px-3 py-1.5 rounded-xl text-[11px] sm:text-xs bg-white text-[#0d141c] ring-1 ring-[#d1e2f4] hover:bg-[#e7edf4] dark:bg-[#0b1420] dark:text-white dark:ring-white/15 dark:hover:bg-white/5"
+                  >
+                    View attached file
+                  </a>
                 )}
+              </div>
 
-                {coursesError && !coursesLoading && (
-                  <div className="text-xs text-red-500">
-                    Failed to load courses. Try refreshing the page.
-                  </div>
-                )}
+              {legacyUploadingAttachment && (
+                <div className="text-[11px] text-slate-500 dark:text-white/60">
+                  Uploading attachment…
+                </div>
+              )}
+            </div>
 
-                {!coursesLoading && !coursesError && courses.length === 0 && (
-                  <div className="text-xs text-slate-500 dark:text-white/60">
-                    You haven&apos;t created any courses yet. Use the &ldquo;Create with
-                    AI&rdquo; button on the main E-learning page, or go to
-                    <code className="ml-1 px-1 rounded bg-white/40 dark:bg-white/10">
-                      /create-course
-                    </code>
-                    .
-                  </div>
-                )}
+            <div className="flex flex-col sm:flex-row sm:justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={onCreateLegacyAssignment}
+                disabled={!canAssignments || creatingLegacyAssignment}
+                className={`btn w-full sm:w-auto ${
+                  canAssignments
+                    ? 'bg-emerald-600 hover:bg-emerald-500'
+                    : 'bg-white/10 cursor-not-allowed'
+                }`}
+              >
+                {creatingLegacyAssignment ? 'Sharing…' : 'Share with class'}
+              </button>
+            </div>
+          </section>
 
-                {!coursesLoading && courses.length > 0 && (
-                  <ul className="space-y-1">
-                    {courses.map((c: any) => {
-                      const id = String(c.id);
-                      const label = c.title || 'Untitled course';
-                      const classLabel =
-                        c.org_class_label || c.orgClassLabel || '';
-                      const subjectKey =
-                        c.org_subject_key || c.orgSubjectKey || '';
+          {/* ─────────────────────────────────────────────────────
+              Teach with AI / Robot Tutor assignment card
+             ───────────────────────────────────────────────────── */}
+          <section className="rounded-2xl ring-1 ring-[#e7edf4] dark:ring-white/10 bg-white dark:bg-[#0f1821] p-3 sm:p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div>
+                <div className="text-xs font-semibold tracking-wide uppercase text-[#49739c] dark:text-darkTextSecondary">
+                  Teach with AI
+                </div>
+                <div className="text-sm sm:text-base font-semibold">
+                  Link a Robot Tutor course as an assignment
+                </div>
+                <div className="text-[11px] sm:text-xs text-slate-600 dark:text-white/70">
+                  Choose one of your AI-generated courses, set optional pass marks and
+                  timers, then share the invite link with specific groups.
+                </div>
+              </div>
+            </div>
 
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <Label>Course ID</Label>
+                <input
+                  className="input mt-1 w-full"
+                  value={courseId}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setCourseId(next);
+                    setCourseIdAndUrl?.(next);
+                  }}
+                  placeholder="course uuid"
+                  disabled={!canAssignments}
+                />
+              </div>
+              <div>
+                <Label>Title Override (optional)</Label>
+                <input
+                  className="input mt-1 w-full"
+                  value={titleOverride}
+                  onChange={(e) => setTitleOverride(e.target.value)}
+                  placeholder="Intro to Cybersecurity — Cohort A"
+                  disabled={!canAssignments}
+                />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <Label>Pass Mark (optional)</Label>
+                  {!canCustomPassTimers && <Pill>Pro+</Pill>}
+                </div>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  className="input mt-1 w-full"
+                  value={passMark}
+                  onChange={(e) =>
+                    setPassMark(e.target.value ? Number(e.target.value) : '')
+                  }
+                  disabled={!canAssignments || !canCustomPassTimers}
+                  title={!canCustomPassTimers ? 'Available on Pro and Enterprise' : ''}
+                />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <Label>Timer seconds (optional)</Label>
+                  {!canCustomPassTimers && <Pill>Pro+</Pill>}
+                </div>
+                <input
+                  type="number"
+                  min={60}
+                  step={30}
+                  className="input mt-1 w-full"
+                  value={timer}
+                  onChange={(e) =>
+                    setTimer(e.target.value ? Number(e.target.value) : '')
+                  }
+                  disabled={!canAssignments || !canCustomPassTimers}
+                  title={!canCustomPassTimers ? 'Available on Pro and Enterprise' : ''}
+                />
+              </div>
+              <div>
+                <Label>Due at (optional, ISO)</Label>
+                <input
+                  className="input mt-1 w-full"
+                  value={dueAt}
+                  onChange={(e) => setDueAt(e.target.value)}
+                  placeholder="2025-09-30T23:59:59Z"
+                  disabled={!canAssignments}
+                />
+              </div>
+            </div>
+
+            {/* Courses list */}
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div className="sm:col-span-2">
+                <Label>Your courses (click to use)</Label>
+                <div className="mt-1 rounded-xl ring-1 ring-[#e7edf4] dark:ring-white/10 bg-slate-50/80 dark:bg-[#111b28] max-h-64 overflow-y-auto">
+                  {coursesLoading && (
+                    <div className="px-3 py-2 text-[11px] text-slate-500 dark:text-white/65">
+                      Loading courses…
+                    </div>
+                  )}
+                  {coursesError && (
+                    <div className="px-3 py-2 text-[11px] text-red-600 dark:text-red-400">
+                      Failed to load courses.
+                    </div>
+                  )}
+                  {!coursesLoading && !coursesError && (!courses || courses.length === 0) && (
+                    <div className="px-3 py-2 text-[11px] text-slate-500 dark:text-white/65">
+                      No courses found. Create a course with Robot Tutor first, then link
+                      it here.
+                    </div>
+                  )}
+                  {courses && courses.length > 0 && (
+                    <ul className="divide-y divide-[#e7edf4] dark:divide-white/10">
+                      {courses.map((c: any) => {
+                        const id = String(
+                          c.id ?? c.uuid ?? c.course_uuid ?? c.courseId ?? ''
+                        );
+                        const isActive = id && id === courseId;
+                        return (
+                          <li key={id || c.title}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!id) return;
+                                setCourseId(id);
+                                setCourseIdAndUrl?.(id);
+                              }}
+                              className={[
+                                'w-full flex items-start justify-between gap-2 px-3 py-2 text-left text-xs sm:text-sm',
+                                isActive
+                                  ? 'bg-[#dbeafe] dark:bg-sky-500/15 text-sky-800 dark:text-sky-100'
+                                  : 'hover:bg-[#e7edf4] dark:hover:bg-white/5 text-slate-800 dark:text-white',
+                              ].join(' ')}
+                              disabled={!canAssignments}
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div className="font-semibold truncate">
+                                  {c.title || 'Untitled course'}
+                                </div>
+                                {c.subject && (
+                                  <div className="text-[11px] text-slate-500 dark:text-white/60 truncate">
+                                    {c.subject}
+                                  </div>
+                                )}
+                              </div>
+                              {isActive && (
+                                <span className="text-[11px] font-medium text-sky-700 dark:text-sky-200">
+                                  Selected
+                                </span>
+                              )}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <button
+                onClick={onCreateAssignment}
+                className={`btn ${
+                  canAssignments
+                    ? 'bg-indigo-600 hover:bg-indigo-500'
+                    : 'bg-white/10 cursor-not-allowed'
+                } w-full sm:w-auto`}
+                disabled={!canAssignments}
+              >
+                Create AI assignment
+              </button>
+
+              {inviteLink && (
+                <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={copyLink}
+                    className="chip chip-active"
+                    title="Copy invite link to clipboard"
+                  >
+                    Copy invite link
+                  </button>
+
+                  {bccChunks.length > 0 ? (
+                    bccChunks.map((chunk, idx) => {
+                      const subject = encodeURIComponent('Course invite');
+                      const body = encodeURIComponent(inviteLink);
+                      const bcc = encodeURIComponent(chunk.join(','));
+                      const href = `mailto:?subject=${subject}&bcc=${bcc}&body=${body}`;
                       return (
-                        <li key={id}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setCourseId(id);
-                              setCourseIdAndUrl?.(id);
-                              setAssignScope?.({
-                                classLabel,
-                                subjectKey,
-                              });
-                            }}
-                            className={[
-                              'w-full text-left px-2 py-1.5 rounded-lg text-xs sm:text-sm',
-                              'hover:bg-white dark:hover:bg-white/10 transition',
-                              courseId === id
-                                ? 'bg-white dark:bg-white/10 ring-1 ring-[#3d99f5]/60'
-                                : '',
-                            ].join(' ')}
-                          >
-                            <div className="font-medium truncate">{label}</div>
-                            <div className="mt-0.5 flex flex-wrap gap-1 text-[10px] text-slate-600 dark:text-white/70">
-                              {classLabel && (
-                                <span className="px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-white/10">
-                                  Class: {classLabel}
-                                </span>
-                              )}
-                              {subjectKey && (
-                                <span className="px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-white/10">
-                                  Subject: {subjectKey}
-                                </span>
-                              )}
-                              <span className="px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-white/10">
-                                ID: {id.slice(0, 8)}…
-                              </span>
-                            </div>
-                          </button>
-                        </li>
+                        <a
+                          key={idx}
+                          href={href}
+                          className="chip"
+                          title="Email invite link to instructors"
+                        >
+                          Email instructors {bccChunks.length > 1 ? `(${idx + 1})` : ''}
+                        </a>
                       );
-                    })}
-                  </ul>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-            <button
-              onClick={onCreateAssignment}
-              className={`btn ${
-                canAssignments
-                  ? 'bg-emerald-600 hover:bg-emerald-500'
-                  : 'bg-white/10 cursor-not-allowed'
-              } w-full sm:w-auto`}
-              disabled={!canAssignments}
-            >
-              Create assignment
-            </button>
-
-            {inviteLink && instructorEmails.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2">
-                {bccChunks.map((emails, idx) => {
-                  const subject = encodeURIComponent('Course invite');
-                  const body = encodeURIComponent(inviteLink);
-                  const bcc = encodeURIComponent(emails.join(','));
-                  const mailto = `mailto:?subject=${subject}&bcc=${bcc}&body=${body}`;
-
-                  return (
+                    })
+                  ) : instructorEmails.length > 0 ? (
                     <a
-                      key={idx}
-                      className="chip chip-active"
-                      href={mailto}
-                      title={`Email ${emails.length} instructor${
-                        emails.length > 1 ? 's' : ''
-                      }`}
-                      aria-label={`Email ${emails.length} instructor${
-                        emails.length > 1 ? 's' : ''
-                      }`}
+                      href={`mailto:?subject=${encodeURIComponent(
+                        'Course invite'
+                      )}&bcc=${encodeURIComponent(
+                        instructorEmails.join(',')
+                      )}&body=${encodeURIComponent(inviteLink)}`}
+                      className="chip"
+                      title="Email invite link to instructors"
                     >
-                      {bccChunks.length === 1
-                        ? 'Email instructors'
-                        : `Email instructors (grp ${idx + 1})`}
+                      Email instructors
                     </a>
-                  );
-                })}
+                  ) : null}
 
-                <a
-                  className="chip"
-                  href={`https://wa.me/?text=${encodeURIComponent(
-                    `Please share this course invite with your learners:\n\n${inviteLink}`
-                  )}`}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  title="Share to WhatsApp"
-                  aria-label="Share invite link via WhatsApp"
-                >
-                  WhatsApp instructors
-                </a>
-              </div>
-            )}
+                  <a
+                    href={`https://wa.me/?text=${encodeURIComponent(inviteLink)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="chip"
+                    title="Share via WhatsApp"
+                  >
+                    Share on WhatsApp
+                  </a>
+                </div>
+              )}
+            </div>
 
-            {inviteLink && (org?.email_domain || form.email_domain) && (
-              <div className="text-[11px] text-amber-700 dark:text-amber-300">
-                This invite is restricted to:{' '}
-                <b>{(form.email_domain || org?.email_domain || '').trim()}</b>
-              </div>
-            )}
-          </div>
-
-          <p className="text-xs text-[#49739c] dark:text-darkTextSecondary">
-            Share the link. Learners join → timer starts → one attempt → auto email → results on
-            this dashboard. When you choose a course from the list above, we also scope the
-            assignment to that class/subject so it appears in the learner Assignments tab.
-          </p>
+            <p className="text-xs text-[#49739c] dark:text-darkTextSecondary">
+              Share the AI invite link for timed quizzes and auto-marking. For open-ended
+              projects or long-form work, use the classic assignment card above so learners
+              can upload their files directly.
+            </p>
+          </section>
         </div>
       )}
     </section>

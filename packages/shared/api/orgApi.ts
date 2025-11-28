@@ -59,29 +59,43 @@ export type OrgAssignmentRow = {
   title_override?: string | null;
   course_title?: string | null;
 
-  // Config
+  // Config (for AI / quiz-style)
   pass_mark?: number | null;
   timer_s?: number | null;
   max_attempts?: number | null;
 
-  // Org-specific metadata
+  // Org-specific metadata / targeting
   org_class_label?: string | null;
   org_subject_key?: string | null;
+
+  // Legacy / file-based extras
+  instructions?: string | null;
+  attachment_url?: string | null;
 
   // Dates
   due_at?: string | null;
   created_at?: string | null;
+  submitted_at?: string | null; // learner “my last submission” if backend wants
 
   // Sharing / source
   invite_code?: string | null;
-  source_kind?: string | null;
+  source_kind?: string | null; // 'legacy' | 'robot' | 'exam' | ...
 
-  // ...anything else you already had, if needed
+  // Status (optional – up to backend)
+  status?: string | null;
 };
+
 
 export type OrgAssignmentsResponse = {
   ok: boolean;
   data: OrgAssignmentRow[];
+  view?: string;
+  meta?: {
+    class_label?: string | null;
+    subject_key?: string | null;
+    studentId?: string | null;
+    learnerId?: number | null;
+  };
 };
 
 export type OrgUsageResp = { seats_used: number };
@@ -502,16 +516,29 @@ export async function getOrgAssignmentsForLearner(
   }
 ): Promise<OrgAssignmentsResponse> {
   const url = new URL(
-    `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/assignments/learner`
+    `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(orgId)}/assignments`
   );
 
-  if (opts?.studentId) url.searchParams.set('studentId', opts.studentId);
-  if (opts?.classLabel) url.searchParams.set('classLabel', opts.classLabel);
-  if (opts?.subjectKey) url.searchParams.set('subjectKey', opts.subjectKey);
+  // learner-only view
+  url.searchParams.set('view', 'learner');
+
+  if (opts?.studentId) {
+    url.searchParams.set('studentId', opts.studentId);
+  }
+
+  // allow both old & new param names, backend supports both
+  if (opts?.classLabel) {
+    url.searchParams.set('class', opts.classLabel);
+    url.searchParams.set('class_label', opts.classLabel);
+  }
+
+  if (opts?.subjectKey) {
+    url.searchParams.set('subject', opts.subjectKey);
+    url.searchParams.set('subject_key', opts.subjectKey);
+  }
 
   const finalUrl = url.toString();
 
-  // 🔍 NEW: request log
   console.log('[orgApi:getOrgAssignmentsForLearner] request', {
     backendUrl: baseUrl(backendUrl),
     orgId,
@@ -529,16 +556,15 @@ export async function getOrgAssignmentsForLearner(
     const data = res.data;
     const count = Array.isArray(data?.data) ? data.data.length : 0;
 
-    // 🔍 NEW: response log
     console.log('[orgApi:getOrgAssignmentsForLearner] response', {
       status: res.status,
+      view: data.view,
       count,
       sampleIds: (data?.data ?? []).slice(0, 5).map((row: any) => row.id),
     });
 
     return data;
   } catch (e: any) {
-    // 🔍 NEW: error log
     console.error('[orgApi:getOrgAssignmentsForLearner] error', {
       message: e?.message,
       status: e?.response?.status,
@@ -547,7 +573,6 @@ export async function getOrgAssignmentsForLearner(
     throw e;
   }
 }
-
 
 /* ─────────────────────────────────────────────────────────
  * Learner Attendance
@@ -599,4 +624,79 @@ export async function saveOrgLearnerAttendance(
   }
 
   return resp.json().catch(() => ({}));
+}
+
+/* ─────────────────────────────────────────────────────────
+ * Legacy (file-based) assignments
+ * ───────────────────────────────────────────────────────── */
+
+export type OrgLegacyAssignmentBody = {
+  title: string;
+  instructions?: string | null;
+  class_label: string;
+  subject_key: string;
+  attachment_url?: string | null;
+  due_at?: string | null;
+};
+
+export async function createOrgLegacyAssignment(
+  backendUrl: string,
+  token: string,
+  orgId: string,
+  body: OrgLegacyAssignmentBody
+): Promise<OrgAssignmentRow> {
+  const url = `${baseUrl(backendUrl)}/api/orgs/${encodeURIComponent(
+    orgId
+  )}/assignments/legacy`;
+
+  console.log('[orgApi:createOrgLegacyAssignment] request', { url, body });
+
+  const res = await axios.post<{ ok: boolean; assignment: OrgAssignmentRow }>(
+    url,
+    body,
+    {
+      headers: authHeaders(token),
+    }
+  );
+
+  console.log('[orgApi:createOrgLegacyAssignment] response', {
+    status: res.status,
+    ok: res.data?.ok,
+    id: res.data?.assignment?.id,
+  });
+
+  return res.data.assignment;
+}
+
+/** Learner submits work for a legacy assignment */
+export async function submitOrgLegacyAssignment(
+  backendUrl: string,
+  token: string,
+  orgId: string,
+  assignmentId: string | number,
+  body: { answer_text?: string | null; attachment_url?: string | null }
+): Promise<{ ok: boolean; submission: any }> {
+  const url = `${baseUrl(
+    backendUrl
+  )}/api/orgs/${encodeURIComponent(orgId)}/assignments/${encodeURIComponent(
+    String(assignmentId)
+  )}/legacy/submit`;
+
+  console.log('[orgApi:submitOrgLegacyAssignment] request', {
+    url,
+    assignmentId,
+    body,
+  });
+
+  const res = await axios.post<{ ok: boolean; submission: any }>(url, body, {
+    headers: authHeaders(token),
+  });
+
+  console.log('[orgApi:submitOrgLegacyAssignment] response', {
+    status: res.status,
+    ok: res.data?.ok,
+    submissionId: res.data?.submission?.id,
+  });
+
+  return res.data;
 }

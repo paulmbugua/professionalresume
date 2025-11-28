@@ -1,6 +1,6 @@
 // apps/web/src/pages/Landing.web.tsx
 import React, { useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { useShopContext } from '@mytutorapp/shared/context';
 import {
@@ -26,9 +26,48 @@ const HERO_BG = import.meta.env.VITE_HERO_BG ?? '';
 const BRAND = 'DayBreak';
 
 const Landing: React.FC = () => {
-  const { token } = useShopContext();
+  const { token, orgToken, orgLogout } = useShopContext() as any;
+  const navigate = useNavigate();
   const ctaPath = token ? '/find-tutor' : '/login';
   const prefersReducedMotion = useReducedMotion() ?? false;
+
+  // 🔐 Central “For Institutions” handler:
+  const handleInstitutionsClick = useCallback(
+    (e?: React.MouseEvent) => {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+
+      // Remember that we ultimately want to land on /org
+      try {
+        sessionStorage.setItem('auth:returnTo', '/org');
+      } catch {
+        /* ignore storage issues in very old browsers */
+      }
+
+      // If someone is logged into the *individual* side, log them out
+      // before sending them into the org portal. Adjust to your actual
+      // logout function name if needed.
+      try {
+        if (token && !orgToken && typeof orgLogout === 'function') {
+          orgLogout();
+        }
+      } catch {
+        /* best-effort only */
+      }
+
+      // If they already have an orgToken, go straight to /org router,
+      // otherwise go directly to /org/login (no /org → /org/login bounce).
+      if (orgToken) {
+        navigate('/org', { replace: false });
+      } else {
+        navigate('/org/login', { replace: false });
+      }
+    },
+    [token, orgToken, orgLogout, navigate]
+  );
+
 
   /* ---------------------------- SEO: Structured Data ---------------------------- */
   const orgJsonLd = {
@@ -280,16 +319,21 @@ const Landing: React.FC = () => {
       <main id="main" className="relative z-10 flex-1">
         {/* Hero */}
         <section aria-label="Hero" className="flex justify-center py-6 md:py-10 px-4 md:px-12 lg:px-24 xl:px-40">
-          <motion.div
-            className="layout-content-container flex flex-col max-w-[1100px] flex-1 w-full @container"
-            initial="hidden"
-            animate="show"
-            variants={stagger}
-          >
-            <motion.div variants={fadeUp} className="@[480px]:p-4">
-              <Hero prefersReducedMotion={prefersReducedMotion} ctaPath={ctaPath} />
-            </motion.div>
-          </motion.div>
+                <motion.div
+        className="layout-content-container flex flex-col max-w-[1100px] flex-1 w-full @container"
+        initial="hidden"
+        animate="show"
+        variants={stagger}
+      >
+        <motion.div variants={fadeUp} className="@[480px]:p-4">
+          <Hero
+            prefersReducedMotion={prefersReducedMotion}
+            ctaPath={ctaPath}
+            onInstitutionsClick={handleInstitutionsClick}
+          />
+        </motion.div>
+      </motion.div>
+
         </section>
 
         {/* Why choose */}
@@ -407,14 +451,15 @@ const Landing: React.FC = () => {
               ))}
             </div>
 
-            <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
-              <Link
-                to="/org"
+                        <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={handleInstitutionsClick}
                 className="inline-flex h-11 sm:h-12 items-center justify-center rounded-xl px-5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition w-full sm:w-auto"
                 aria-label="Open the Institution E-Learning portal"
               >
                 Explore the Institutions portal
-              </Link>
+              </button>
               <a
                 href="#ai-faq"
                 className="inline-flex h-11 sm:h-12 items-center justify-center rounded-xl px-5 ring-1 ring-slate-300 dark:ring-slate-700 text-slate-800 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition w-full sm:w-auto"
@@ -422,6 +467,7 @@ const Landing: React.FC = () => {
                 See FAQs
               </a>
             </div>
+
           </div>
         </section>
 
@@ -541,10 +587,12 @@ const Landing: React.FC = () => {
 
 /* --------------------------------- Hero --------------------------------- */
 
-const Hero: React.FC<{ prefersReducedMotion: boolean; ctaPath: string }> = ({
-  prefersReducedMotion,
-  ctaPath,
-}) => {
+const Hero: React.FC<{
+  prefersReducedMotion: boolean;
+  ctaPath: string;
+  onInstitutionsClick: () => void;
+}> = ({ prefersReducedMotion, ctaPath, onInstitutionsClick }) => {
+
   return (
     <div className="relative overflow-hidden rounded-2xl">
       {/* Hero background */}
@@ -627,15 +675,19 @@ const Hero: React.FC<{ prefersReducedMotion: boolean; ctaPath: string }> = ({
               </a>
             </motion.div>
 
-            <motion.div whileHover={{ y: -2 }} whileTap={{ y: 0 }}>
-              <Link
-                to="/org"
+             <motion.div whileHover={{ y: -2 }} whileTap={{ y: 0 }}>
+              <button
+                type="button"
+                onClick={onInstitutionsClick}
                 aria-label="Open the Institution E-Learning portal"
-                className="flex h-11 sm:h-12 items-center justify-center rounded-xl px-5 bg-emerald-600 hover:bg-emerald-500 text-white transition w-full sm:w-auto"
+                className="flex h-11 sm:h-12 items-center justify-center rounded-xl px-5
+                           bg-emerald-600 hover:bg-emerald-500 text-white transition
+                           w-full sm:w-auto"
               >
                 For Institutions
-              </Link>
+              </button>
             </motion.div>
+
           </motion.div>
 
           {/* Learn with A.I. */}

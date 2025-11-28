@@ -89,13 +89,24 @@ function asUuid(value) {
   return v;
 }
 
-// Keep subject remarks short + clean for mark entry / PDFs
-// Keep subject remarks short + clean for mark entry / PDFs
-function clampSubjectRemark(input, maxLen = 80) {
+// Clamp a single subject remark to a short, neat string
+function clampSubjectRemark(rawRemark, maxChars = 80) {
+  const txt = (rawRemark ?? '').toString().trim();
 
-  if (s.length <= maxLen) return s;
-  s = s.slice(0, maxLen - 1).trimEnd();
-  return s + '…';
+  if (!txt) return '';
+
+  if (txt.length <= maxChars) {
+    return txt;
+  }
+
+  // Soft-clip on a word boundary if possible
+  const clipped = txt.slice(0, maxChars);
+  const lastSpace = clipped.lastIndexOf(' ');
+
+  const trimmed =
+    lastSpace > 20 ? clipped.slice(0, lastSpace).trimEnd() : clipped.trimEnd();
+
+  return `${trimmed}…`;
 }
 
 

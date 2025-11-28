@@ -806,8 +806,9 @@ export async function renderOrgExamStudentCardPdf(card) {
   const bodyTopY = doc.y;
 
   // Vertically centered rows
+   // Vertically centered rows
   const rowHeight = 11;
-  let rowY = bodyTopY + 2; // small gap after header line
+  let rowY = bodyTopY; // start rows directly under header line
   const lineHeight = doc.currentLineHeight();
 
   subjects.forEach((s) => {
@@ -817,7 +818,8 @@ export async function renderOrgExamStudentCardPdf(card) {
       typeof s.percent === 'number'
         ? `${Math.round(clampPercent(s.percent))}%`
         : '—';
-    const gradeText = (s.grade || '').toString().trim().toUpperCase();
+
+    const gradeTextRaw = (s.grade || '').toString().trim().toUpperCase();
 
     // POSITION as 9/10 (no "OF")
     let posText = '—';
@@ -842,15 +844,19 @@ export async function renderOrgExamStudentCardPdf(card) {
       (s.teacher_initials || s.teacherInitials || '').toString().trim();
     const initialsText = initialsRaw ? initialsRaw.toUpperCase() : '—';
 
+    // Row box
+    const rowTopY = rowY;
+    const rowBottomY = rowTopY + rowHeight;
+
     // Compute vertically centered y for this row
-    const textY = rowY + (rowHeight - lineHeight) / 2;
+    const textY = rowTopY + (rowHeight - lineHeight) / 2;
 
     // SUBJECT (kept left-aligned for readability)
     doc.text(subjectName, colSubject, textY, {
       width: subjectColWidth - 4,
     });
 
-    // SCORE – right-aligned (back to previous behaviour)
+    // SCORE – right-aligned
     doc.text(scoreText, colScore, textY, {
       width: scoreColWidth - 6,
       align: 'right',
@@ -862,12 +868,36 @@ export async function renderOrgExamStudentCardPdf(card) {
       align: 'right',
     });
 
-    // GRADE – centered
+    // GRADE – base letter and suffix aligned like class report
     if (showGradeColumn) {
-      doc.text(gradeText || '—', colGrade, textY, {
-        width: gradeColWidth - 4,
-        align: 'center',
-      });
+      const gradeCellWidth = gradeColWidth - 4;
+      const suffixWidth = 8; // slot for + / -
+      const baseWidth = Math.max(0, gradeCellWidth - suffixWidth);
+
+      if (gradeTextRaw) {
+        const baseGrade = gradeTextRaw[0]; // 'A', 'B', etc.
+        const suffix = gradeTextRaw.slice(1); // '+', '-', or ''
+
+        // base letter right-aligned within its sub-cell
+        doc.text(baseGrade, colGrade, textY, {
+          width: baseWidth,
+          align: 'right',
+        });
+
+        // suffix (if any) left-aligned in the small right sub-cell
+        if (suffix) {
+          doc.text(suffix, colGrade + baseWidth, textY, {
+            width: suffixWidth,
+            align: 'left',
+          });
+        }
+      } else {
+        // fallback dash when no grade
+        doc.text('—', colGrade, textY, {
+          width: gradeCellWidth,
+          align: 'center',
+        });
+      }
     }
 
     // POSITION – right-aligned (e.g. 9/10)
@@ -888,10 +918,23 @@ export async function renderOrgExamStudentCardPdf(card) {
       align: 'center',
     });
 
-    rowY += rowHeight;
+    // 🔲 Per-row horizontal borders (Excel-style grid)
+    doc
+      .strokeColor('#e5e7eb')
+      .lineWidth(0.6)
+      .moveTo(tableLeft, rowTopY)
+      .lineTo(tableRight, rowTopY)
+      .stroke();
+
+    doc
+      .moveTo(tableLeft, rowBottomY)
+      .lineTo(tableRight, rowBottomY)
+      .stroke();
+
+    rowY = rowBottomY;
   });
 
-  const tableBottomY = rowY + 2;
+  const tableBottomY = rowY;
 
   // Outer border lines
   doc
@@ -1021,13 +1064,29 @@ export async function renderOrgExamStudentCardPdf(card) {
     }
   }
 
-  // ───────────────────────── MINI PROGRESS SPARKLINE (OPTIONAL) ────────────
-  const series = (card.progressSeries || []).filter(
-    (p) => typeof p.percent === 'number',
+   // ───────────────────────── MINI PROGRESS SPARKLINE (OPTIONAL) ────────────
+  let series = (card.progressSeries || []).filter(
+    (p) => p && typeof p.percent === 'number',
   );
 
+  // Ensure the *current* term (isCurrent) is drawn as the right–most point
+  if (series.length >= 2) {
+    const currentIdx = series.findIndex((p) => p.isCurrent);
+    if (currentIdx >= 0 && currentIdx !== series.length - 1) {
+      const [currentPoint] = series.splice(currentIdx, 1);
+      series.push(currentPoint);
+    }
+  }
+
   if (series.length >= 2 && doc.y < pageHeight * 0.65) {
-    doc.font('Helvetica-Bold').fontSize(9).text('Progress trend', leftMargin, doc.y);
+    // 👉 extra breathing room after SUBJECT PERFORMANCE / AI extras
+    doc.moveDown(0.6);
+
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(9)
+      .text('Progress trend', leftMargin, doc.y);
+
     doc.moveDown(0.1);
 
     const chartHeight = 40;
@@ -1035,6 +1094,7 @@ export async function renderOrgExamStudentCardPdf(card) {
     const chartLeft = leftMargin + 20;
     const chartTop = doc.y + 4;
     const chartBottom = chartTop + chartHeight;
+    
 
     // Axis
     doc
@@ -1415,14 +1475,52 @@ export async function renderOrgExamClassReportPdf(payload) {
     position: s.position || currentPos++,
   }));
 
-  // Preload org logo
-  const logoBuf = await tryLoadImageBuffer(org.logo_url, {
-    w: 240,
-    h: 240,
-    trim: false,
-    exact: false,
-    dpr: 2,
+  // Deterministic "class report" number using existing helper
+  const termString =
+    termYear && termLabel ? `${termYear} ${termLabel}` : termLabel || '';
+  const reportNumber = generateReportCardNumber({
+    brandName: schoolName,
+    studentName: classLabel || 'CLASS',
+    classLabel: classLabel || '',
+    termLabel: termString,
+    examLabel,
   });
+
+  // Preload logo + signatures (principal + class teacher)
+  const teacherSignatureSource =
+    examMeta.teacher_signature_url ||
+    examMeta.class_teacher_signature_url ||
+    org.instructor_signature_url ||
+    org.teacher_signature_url;
+
+  const registrarSignatureSource =
+    org.signature_url ||
+    org.registrar_signature_url ||
+    org.principal_signature_url;
+
+  const [logoBuf, registrarSigBuf, teacherSigBuf] = await Promise.all([
+    tryLoadImageBuffer(org.logo_url, {
+      w: 240,
+      h: 240,
+      trim: false,
+      exact: false,
+      dpr: 2,
+    }),
+    tryLoadImageBuffer(registrarSignatureSource, {
+      w: 520,
+      h: 200,
+      trim: true,
+      exact: false,
+      dpr: 2,
+    }),
+    tryLoadImageBuffer(teacherSignatureSource, {
+      w: 520,
+      h: 200,
+      trim: true,
+      exact: false,
+      dpr: 2,
+    }),
+  ]);
 
   /* ───────────────────────── HEADER HELPERS ───────────────────────── */
 
@@ -1469,50 +1567,64 @@ export async function renderOrgExamClassReportPdf(payload) {
       contactInlineBits.length ? contactInlineBits.join('   •   ') : null,
     ].filter(Boolean);
 
+    let lastContactBottomY = 32; // baseline in case there are no contacts
+
     if (contactTextLines.length) {
       doc.font('Helvetica').fontSize(8).fillColor('#374151');
       contactTextLines.forEach((line, idx) => {
+        const lineY = 40 + idx * 10;
         doc.text(
           line,
           leftMargin + (logoBuf ? 60 : 0),
-          40 + idx * 10,
+          lineY,
           {
             width: innerWidth - (logoBuf ? 60 : 0),
             align: 'center',
           },
         );
+        lastContactBottomY = lineY + 10;
       });
     }
+
+    // Ensure similar spacing between contact block and title
+    const minTitleY = headerHeight - 8;
+    const titleY = Math.max(minTitleY, lastContactBottomY + 6);
 
     // Report title
     doc
       .fillColor('#111827')
       .font('Helvetica-Bold')
       .fontSize(11)
-      .text('CLASS PERFORMANCE REPORT', leftMargin, headerHeight - 8, {
+      .text('CLASS PERFORMANCE REPORT', leftMargin, titleY, {
         width: innerWidth,
         align: 'center',
       });
+
+    // Class / term / exam line(s) directly under title
+    let headerRuleY = titleY + 16;
 
     if (headerLineBits.length) {
       doc
         .font('Helvetica')
         .fontSize(9)
         .fillColor('#374151')
-        .text(headerLineBits.join('   •   '), leftMargin, headerHeight + 4, {
+        .text(headerLineBits.join('   •   '), leftMargin, titleY + 18, {
           width: innerWidth,
           align: 'center',
         });
+
+      // place rule just below that meta line
+      headerRuleY = doc.y + 6;
     }
 
     doc
-      .moveTo(leftMargin, headerHeight + 20)
-      .lineTo(pageWidth - rightMargin, headerHeight + 20)
+      .moveTo(leftMargin, headerRuleY)
+      .lineTo(pageWidth - rightMargin, headerRuleY)
       .strokeColor('#d1d5db')
       .lineWidth(0.8)
       .stroke();
 
-    doc.y = headerHeight + 28;
+    doc.y = headerRuleY + 8;
     doc.fillColor('#111827');
   };
 
@@ -1625,66 +1737,118 @@ export async function renderOrgExamClassReportPdf(payload) {
     const colMin = colAvg + 55;
     const colMax = colMin + 55;
 
-    const headerY = doc.y;
+    const rowHeight = 12;
+    const headerTopY = doc.y;
 
     doc.font('Helvetica-Bold').fontSize(8).fillColor('#374151');
+    const headerLineHeight = doc.currentLineHeight();
+    const headerTextY = headerTopY + (rowHeight - headerLineHeight) / 2;
 
-    doc.text('SUBJECT', colSubject, headerY, {
+    // header text centered vertically within header row
+    doc.text('SUBJECT', colSubject, headerTextY, {
       width: colScripts - colSubject - 4,
     });
-    doc.text('SCRIPTS', colScripts, headerY, {
+    doc.text('SCRIPTS', colScripts, headerTextY, {
       width: colAvg - colScripts - 4,
       align: 'right',
     });
-    doc.text('AVG %', colAvg, headerY, {
+    doc.text('AVG %', colAvg, headerTextY, {
       width: colMin - colAvg - 4,
       align: 'right',
     });
-    doc.text('MIN %', colMin, headerY, {
+    doc.text('MIN %', colMin, headerTextY, {
       width: colMax - colMin - 4,
       align: 'right',
     });
-    doc.text('MAX %', colMax, headerY, {
+    doc.text('MAX %', colMax, headerTextY, {
       width: tableRight - colMax - 4,
       align: 'right',
     });
 
-    doc.moveDown(0.2);
-    const headerBottomY = doc.y;
+    const headerBottomY = headerTopY + rowHeight;
 
+    // Excel-style full borders for header row
+    doc
+      .strokeColor('#9ca3af')
+      .lineWidth(0.7)
+      // top + bottom
+      .moveTo(tableLeft, headerTopY)
+      .lineTo(tableRight, headerTopY)
+      .stroke();
     doc
       .moveTo(tableLeft, headerBottomY)
       .lineTo(tableRight, headerBottomY)
-      .strokeColor('#9ca3af')
-      .lineWidth(0.7)
+      .stroke();
+    // verticals (include outer edges)
+    doc
+      .moveTo(tableLeft, headerTopY)
+      .lineTo(tableLeft, headerBottomY)
+      .stroke();
+    doc
+      .moveTo(colScripts, headerTopY)
+      .lineTo(colScripts, headerBottomY)
+      .stroke();
+    doc
+      .moveTo(colAvg, headerTopY)
+      .lineTo(colAvg, headerBottomY)
+      .stroke();
+    doc
+      .moveTo(colMin, headerTopY)
+      .lineTo(colMin, headerBottomY)
+      .stroke();
+    doc
+      .moveTo(colMax, headerTopY)
+      .lineTo(colMax, headerBottomY)
+      .stroke();
+    doc
+      .moveTo(tableRight, headerTopY)
+      .lineTo(tableRight, headerBottomY)
       .stroke();
 
     doc.font('Helvetica').fontSize(8).fillColor('#111827');
+    doc.y = headerBottomY;
 
-    return { tableLeft, tableRight, colSubject, colScripts, colAvg, colMin, colMax };
+    return {
+      tableLeft,
+      tableRight,
+      colSubject,
+      colScripts,
+      colAvg,
+      colMin,
+      colMax,
+      rowHeight,
+    };
   };
 
   if (safeSubjectStats.length) {
     let subjectTableLayout = drawSubjectSummaryHeader(false);
 
     for (let i = 0; i < safeSubjectStats.length; i++) {
-      if (doc.y > bottomMarginY) {
-        doc.addPage();
-        drawPageHeader();
-        subjectTableLayout = drawSubjectSummaryHeader(true);
-      }
-
-      const s = safeSubjectStats[i];
       const {
+        tableLeft,
         tableRight,
         colSubject,
         colScripts,
         colAvg,
         colMin,
         colMax,
+        rowHeight,
       } = subjectTableLayout;
 
-      const y = doc.y;
+      // page break safety for next row
+      if (doc.y + rowHeight > bottomMarginY) {
+        doc.addPage();
+        drawPageHeader();
+        subjectTableLayout = drawSubjectSummaryHeader(true);
+        continue;
+      }
+
+      const s = safeSubjectStats[i];
+
+      const rowTopY = doc.y;
+      const lineHeight = doc.currentLineHeight();
+      const textY = rowTopY + (rowHeight - lineHeight) / 2;
+
       const avgTxt =
         s.avg_percent != null ? `${s.avg_percent.toFixed(1)}%` : '—';
       const minTxt =
@@ -1692,27 +1856,68 @@ export async function renderOrgExamClassReportPdf(payload) {
       const maxTxt =
         s.max_percent != null ? `${s.max_percent.toFixed(1)}%` : '—';
 
-      doc.text(String(s.subject).toUpperCase(), colSubject, y, {
+      // row text (centered vertically)
+      doc.text(String(s.subject).toUpperCase(), colSubject, textY, {
         width: colScripts - colSubject - 4,
       });
-      doc.text(String(s.scripts ?? '—'), colScripts, y, {
+      doc.text(String(s.scripts ?? '—'), colScripts, textY, {
         width: colAvg - colScripts - 4,
         align: 'right',
       });
-      doc.text(avgTxt, colAvg, y, {
+      doc.text(avgTxt, colAvg, textY, {
         width: colMin - colAvg - 4,
         align: 'right',
       });
-      doc.text(minTxt, colMin, y, {
+      doc.text(minTxt, colMin, textY, {
         width: colMax - colMin - 4,
         align: 'right',
       });
-      doc.text(maxTxt, colMax, y, {
+      doc.text(maxTxt, colMax, textY, {
         width: tableRight - colMax - 4,
         align: 'right',
       });
 
-      doc.moveDown(0.12);
+      const rowBottomY = rowTopY + rowHeight;
+
+      // Excel-style borders for this data row
+      doc
+        .strokeColor('#9ca3af')
+        .lineWidth(0.5)
+        // top + bottom
+        .moveTo(tableLeft, rowTopY)
+        .lineTo(tableRight, rowTopY)
+        .stroke();
+      doc
+        .moveTo(tableLeft, rowBottomY)
+        .lineTo(tableRight, rowBottomY)
+        .stroke();
+      // verticals (outer + internal)
+      doc
+        .moveTo(tableLeft, rowTopY)
+        .lineTo(tableLeft, rowBottomY)
+        .stroke();
+      doc
+        .moveTo(colScripts, rowTopY)
+        .lineTo(colScripts, rowBottomY)
+        .stroke();
+      doc
+        .moveTo(colAvg, rowTopY)
+        .lineTo(colAvg, rowBottomY)
+        .stroke();
+      doc
+        .moveTo(colMin, rowTopY)
+        .lineTo(colMin, rowBottomY)
+        .stroke();
+      doc
+        .moveTo(colMax, rowTopY)
+        .lineTo(colMax, rowBottomY)
+        .stroke();
+      doc
+        .moveTo(tableRight, rowTopY)
+        .lineTo(tableRight, rowBottomY)
+        .stroke();
+
+      doc.y = rowBottomY;
     }
 
     doc.y += 6;
@@ -1723,90 +1928,131 @@ export async function renderOrgExamClassReportPdf(payload) {
   const learners = rankedStudents;
 
   const drawTopLearnersHeader = (continued = false) => {
-    ensureSpace(40);
-    doc
-      .font('Helvetica-Bold')
-      .fontSize(9.5)
-      .fillColor('#111827')
-      .text(continued ? 'TOP LEARNERS (cont.)' : 'TOP LEARNERS', leftMargin, doc.y);
-    doc.moveDown(0.3);
+  ensureSpace(40);
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(9.5)
+    .fillColor('#111827')
+    .text(continued ? 'TOP LEARNERS (cont.)' : 'TOP LEARNERS', leftMargin, doc.y);
+  doc.moveDown(0.3);
 
-    const tableLeft = leftMargin;
-    const tableRight = pageWidth - rightMargin;
+  const tableLeft = leftMargin;
+  const tableRight = pageWidth - rightMargin;
 
-    const colPos = tableLeft;
-    const colAdmName = colPos + 40;
-    const colTotal = colAdmName + 210;
-    const colPercent = colTotal + 70;
-    const colGrade = colPercent + 60;
+  const colPos = tableLeft;
+  const colAdmName = colPos + 40;
+  const colTotal = colAdmName + 210;
+  const colPercent = colTotal + 70;
+  const colGrade = colPercent + 60;
 
-    const headerY = doc.y;
+  const rowHeight = 12;
+  const headerTopY = doc.y;
 
-    doc.font('Helvetica-Bold').fontSize(8).fillColor('#374151');
+  doc.font('Helvetica-Bold').fontSize(8).fillColor('#374151');
+  const headerLineHeight = doc.currentLineHeight();
+  const headerTextY = headerTopY + (rowHeight - headerLineHeight) / 2;
 
-    doc.text('POS', colPos, headerY, {
-      width: colAdmName - colPos - 4,
-    });
-    doc.text('ADM / NAME', colAdmName, headerY, {
-      width: colTotal - colAdmName - 4,
-    });
-    doc.text('TOTAL', colTotal, headerY, {
-      width: colPercent - colTotal - 4,
-      align: 'right',
-    });
-    doc.text('%', colPercent, headerY, {
-      width: colGrade - colPercent - 4,
-      align: 'right',
-    });
-    doc.text('GRADE', colGrade, headerY, {
-      width: tableRight - colGrade - 4,
-      align: 'right',
-    });
+  doc.text('POS', colPos, headerTextY, {
+    width: colAdmName - colPos - 4,
+  });
+  doc.text('ADM / NAME', colAdmName, headerTextY, {
+    width: colTotal - colAdmName - 4,
+  });
+  doc.text('TOTAL', colTotal, headerTextY, {
+    width: colPercent - colTotal - 4,
+    align: 'right',
+  });
+  doc.text('%', colPercent, headerTextY, {
+    width: colGrade - colPercent - 4,
+    align: 'right',
+  });
+  doc.text('GRADE', colGrade, headerTextY, {
+    width: tableRight - colGrade - 4,
+    align: 'right',      // ✅ header right-aligned
+  });
 
-    doc.moveDown(0.2);
+  const headerBottomY = headerTopY + rowHeight;
 
-    const headerBottomY = doc.y;
-    doc
-      .moveTo(tableLeft, headerBottomY)
-      .lineTo(tableRight, headerBottomY)
-      .strokeColor('#9ca3af')
-      .lineWidth(0.7)
-      .stroke();
+  // borders (unchanged)
+  doc
+    .strokeColor('#9ca3af')
+    .lineWidth(0.7)
+    .moveTo(tableLeft, headerTopY)
+    .lineTo(tableRight, headerTopY)
+    .stroke();
+  doc
+    .moveTo(tableLeft, headerBottomY)
+    .lineTo(tableRight, headerBottomY)
+    .stroke();
+  doc
+    .moveTo(tableLeft, headerTopY)
+    .lineTo(tableLeft, headerBottomY)
+    .stroke();
+  doc
+    .moveTo(colAdmName, headerTopY)
+    .lineTo(colAdmName, headerBottomY)
+    .stroke();
+  doc
+    .moveTo(colTotal, headerTopY)
+    .lineTo(colTotal, headerBottomY)
+    .stroke();
+  doc
+    .moveTo(colPercent, headerTopY)
+    .lineTo(colPercent, headerBottomY)
+    .stroke();
+  doc
+    .moveTo(colGrade, headerTopY)
+    .lineTo(colGrade, headerBottomY)
+    .stroke();
+  doc
+    .moveTo(tableRight, headerTopY)
+    .lineTo(tableRight, headerBottomY)
+    .stroke();
 
-    doc.font('Helvetica').fontSize(8).fillColor('#111827');
+  doc.font('Helvetica').fontSize(8).fillColor('#111827');
+  doc.y = headerBottomY;
 
-    return {
-      tableLeft,
-      tableRight,
-      colPos,
-      colAdmName,
-      colTotal,
-      colPercent,
-      colGrade,
-    };
+  return {
+    tableLeft,
+    tableRight,
+    colPos,
+    colAdmName,
+    colTotal,
+    colPercent,
+    colGrade,
+    rowHeight,
   };
+};
+
 
   if (learners.length) {
     let learnersTableLayout = drawTopLearnersHeader(false);
 
     for (let i = 0; i < learners.length; i++) {
-      if (doc.y > bottomMarginY) {
-        doc.addPage();
-        drawPageHeader();
-        learnersTableLayout = drawTopLearnersHeader(true);
-      }
-
-      const s = learners[i];
       const {
+        tableLeft,
         tableRight,
         colPos,
         colAdmName,
         colTotal,
         colPercent,
         colGrade,
+        rowHeight,
       } = learnersTableLayout;
 
-      const y = doc.y;
+      // page break safety
+      if (doc.y + rowHeight > bottomMarginY) {
+        doc.addPage();
+        drawPageHeader();
+        learnersTableLayout = drawTopLearnersHeader(true);
+        continue;
+      }
+
+      const s = learners[i];
+
+      const rowTopY = doc.y;
+      const lineHeight = doc.currentLineHeight();
+      const textY = rowTopY + (rowHeight - lineHeight) / 2;
 
       const pos = s.position || 0;
       const posText = pos ? ordinal(pos).toUpperCase() : '—';
@@ -1830,28 +2076,96 @@ export async function renderOrgExamClassReportPdf(payload) {
           ? `${clampPercent(s.total_percent).toFixed(1)}%`
           : '—';
 
-      const gradeText = (s.overall_grade || '').toString().toUpperCase();
+const gradeTextRaw = (s.overall_grade || '').toString().toUpperCase().trim();
 
-      doc.text(posText, colPos, y, {
-        width: colAdmName - colPos - 4,
-      });
-      doc.text(nameLine || 'Learner', colAdmName, y, {
-        width: colTotal - colAdmName - 4,
-      });
-      doc.text(totalText, colTotal, y, {
-        width: colPercent - colTotal - 4,
-        align: 'right',
-      });
-      doc.text(pctText, colPercent, y, {
-        width: colGrade - colPercent - 4,
-        align: 'right',
-      });
-      doc.text(gradeText || '—', colGrade, y, {
-        width: tableRight - colGrade - 4,
-        align: 'right',
-      });
+// row text, vertically centered
+doc.text(posText, colPos, textY, {
+  width: colAdmName - colPos - 4,
+});
+doc.text(nameLine || 'Learner', colAdmName, textY, {
+  width: colTotal - colAdmName - 4,
+});
+doc.text(totalText, colTotal, textY, {
+  width: colPercent - colTotal - 4,
+  align: 'right',
+});
+doc.text(pctText, colPercent, textY, {
+  width: colGrade - colPercent - 4,
+  align: 'right',
+});
 
-      doc.moveDown(0.12);
+// ── GRADE: align base letter and suffix separately ──
+const gradeCellWidth = tableRight - colGrade - 4;
+const suffixWidth = 8; // small fixed slot on the right
+const baseWidth = Math.max(0, gradeCellWidth - suffixWidth);
+
+if (gradeTextRaw) {
+  const baseGrade = gradeTextRaw[0];              // 'A', 'B', 'C'
+  const suffix = gradeTextRaw.slice(1);           // '+', '-', or ''
+
+  // base letter right-aligned within its sub-cell
+  doc.text(baseGrade, colGrade, textY, {
+    width: baseWidth,
+    align: 'right',
+  });
+
+  // suffix (if any) left-aligned in the tiny right sub-cell
+  if (suffix) {
+    doc.text(suffix, colGrade + baseWidth, textY, {
+      width: suffixWidth,
+      align: 'left',
+    });
+  }
+} else {
+  // fallback when there is no grade
+  doc.text('—', colGrade, textY, {
+    width: gradeCellWidth,
+    align: 'right',
+  });
+}
+
+
+      const rowBottomY = rowTopY + rowHeight;
+
+      // Excel-style borders for this row
+      doc
+        .strokeColor('#9ca3af')
+        .lineWidth(0.5)
+        // top + bottom
+        .moveTo(tableLeft, rowTopY)
+        .lineTo(tableRight, rowTopY)
+        .stroke();
+      doc
+        .moveTo(tableLeft, rowBottomY)
+        .lineTo(tableRight, rowBottomY)
+        .stroke();
+      // verticals
+      doc
+        .moveTo(tableLeft, rowTopY)
+        .lineTo(tableLeft, rowBottomY)
+        .stroke();
+      doc
+        .moveTo(colAdmName, rowTopY)
+        .lineTo(colAdmName, rowBottomY)
+        .stroke();
+      doc
+        .moveTo(colTotal, rowTopY)
+        .lineTo(colTotal, rowBottomY)
+        .stroke();
+      doc
+        .moveTo(colPercent, rowTopY)
+        .lineTo(colPercent, rowBottomY)
+        .stroke();
+      doc
+        .moveTo(colGrade, rowTopY)
+        .lineTo(colGrade, rowBottomY)
+        .stroke();
+      doc
+        .moveTo(tableRight, rowTopY)
+        .lineTo(tableRight, rowBottomY)
+        .stroke();
+
+      doc.y = rowBottomY;
     }
 
     ensureSpace(20);
@@ -1868,6 +2182,129 @@ export async function renderOrgExamClassReportPdf(payload) {
         );
     }
   }
+
+  /* ───────────────────────── SIGNATURES + FOOTER NO. ───────────────────────── */
+
+  // Make sure we have enough space; otherwise new page
+  ensureSpace(120);
+  doc.moveDown(0.6);
+
+  const signatureBlockHeight = 90;
+  const sigBlockTop = Math.max(doc.y, pageHeight - signatureBlockHeight - 80);
+
+  // Separator line above signatures
+  const separatorY = sigBlockTop - 6;
+  doc
+    .strokeColor('#e5e7eb')
+    .lineWidth(0.7)
+    .moveTo(leftMargin, separatorY)
+    .lineTo(pageWidth - rightMargin, separatorY)
+    .stroke();
+
+  // Columns: left = teacher, right = principal
+  const sigColumnWidth = innerWidth * 0.38; // ~38% each side
+  const teacherLabelX = leftMargin;
+  const principalLabelX = pageWidth - rightMargin - sigColumnWidth;
+
+  // Vertical layout
+  const labelY = sigBlockTop + 4;
+  const sigImageMaxHeight = 45;
+  const labelToSigGap = 10;
+
+  // ── Class teacher / Instructor (LEFT) ──
+  doc
+    .font('Helvetica')
+    .fontSize(8)
+    .fillColor('#111827')
+    .text('Class teacher / Instructor', teacherLabelX, labelY, {
+      width: sigColumnWidth,
+      align: 'left',
+    });
+
+  const teacherSigTopY = labelY + labelToSigGap;
+  let teacherSigBottomY = teacherSigTopY;
+
+  if (teacherSigBuf) {
+    try {
+      const sigWidth = Math.min(sigColumnWidth - 20, 220);
+      const sigX = teacherLabelX + (sigColumnWidth - sigWidth) / 2; // center in column
+      const sigY = teacherSigTopY;
+
+      doc.image(teacherSigBuf, sigX, sigY, {
+        fit: [sigWidth, sigImageMaxHeight],
+      });
+
+      teacherSigBottomY = sigY + sigImageMaxHeight;
+    } catch {
+      teacherSigBottomY = teacherSigTopY + sigImageMaxHeight;
+    }
+  } else {
+    teacherSigBottomY = teacherSigTopY + sigImageMaxHeight;
+  }
+
+  // ── Head teacher / Principal (RIGHT) ──
+  const principalLabel = 'Head teacher / Principal';
+
+  doc
+    .font('Helvetica')
+    .fontSize(8)
+    .fillColor('#111827')
+    .text(principalLabel, principalLabelX, labelY, {
+      width: sigColumnWidth,
+      align: 'right',
+    });
+
+  const principalSigTopY = labelY + labelToSigGap;
+  let principalSigBottomY = principalSigTopY;
+
+  if (registrarSigBuf) {
+    try {
+      const sigWidth = Math.min(sigColumnWidth - 20, 220);
+
+      // center signature under right-aligned label
+      const labelWidth = doc.widthOfString(principalLabel);
+      const labelRight = principalLabelX + sigColumnWidth;
+      const labelCenterX = labelRight - labelWidth / 2;
+
+      const sigX = labelCenterX - sigWidth / 2;
+      const sigY = principalSigTopY;
+
+      doc.image(registrarSigBuf, sigX, sigY, {
+        fit: [sigWidth, sigImageMaxHeight],
+      });
+
+      principalSigBottomY = sigY + sigImageMaxHeight;
+    } catch {
+      principalSigBottomY = principalSigTopY + sigImageMaxHeight;
+    }
+  } else {
+    principalSigBottomY = principalSigTopY + sigImageMaxHeight;
+  }
+
+  const sigLineY = Math.max(teacherSigBottomY, principalSigBottomY) + 4;
+
+  // Signature line under left column
+  doc
+    .strokeColor('#d1d5db')
+    .lineWidth(0.9)
+    .moveTo(teacherLabelX, sigLineY)
+    .lineTo(teacherLabelX + sigColumnWidth, sigLineY)
+    .stroke();
+
+  // Signature line under right column
+  doc
+    .strokeColor('#d1d5db')
+    .lineWidth(0.9)
+    .moveTo(principalLabelX, sigLineY)
+    .lineTo(principalLabelX + sigColumnWidth, sigLineY)
+    .stroke();
+
+  // Footer: Class report number
+  drawFooterReportNumber(doc, reportNumber, {
+    y: pageHeight - 40,
+    size: 9,
+    opacity: 0.45,
+  });
 
   doc.end();
   return bufferPromise;

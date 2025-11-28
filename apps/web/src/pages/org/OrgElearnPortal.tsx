@@ -19,11 +19,13 @@ import {
   confirmOrgSubscription,
   type OrgResp as Org,
   type OrgAnalyticsRow,
-
-  // 👇 NEW: used for learner read-only assignments view
-  getOrgAssignments,
+  createOrgLegacyAssignment,
+  submitOrgLegacyAssignment,
+  // 👇 used for learner read-only assignments view (legacy-only)
+  getOrgAssignmentsForLearner,
   type OrgAssignmentRow,
 } from '@mytutorapp/shared/api/orgApi';
+
 import usePayPalCheckout from '@mytutorapp/shared/hooks/usePayPalCheckout';
 import { useOrg } from '@mytutorapp/shared/hooks/useOrg';
 
@@ -193,7 +195,7 @@ function PlanPurchaseModal({
           </div>
           <button
             onClick={onClose}
-            className="shrink-0 rounded-lg px-2.5 py-1 text-xs sm:text-sm bg-slate-100 text-[#0d141c] hover:bg-slate-200 dark:bg:white/10 dark:text-white dark:hover:bg-white/15"
+            className="shrink-0 rounded-lg px-2.5 py-1 text-xs sm:text-sm bg-slate-100 text-[#0d141c] hover:bg-slate-200 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
           >
             Close
           </button>
@@ -265,7 +267,7 @@ function PlanPurchaseModal({
                 </div>
               </div>
 
-              <p className="text-[11px] text-slate-500 dark:text:white/60">
+              <p className="text-[11px] text-slate-500 dark:text-white/60">
                 <span className="font-medium">Note:</span> M-Pesa charges in{' '}
                 <b>KES</b>. PayPal charges in <b>USD</b>.
               </p>
@@ -318,10 +320,10 @@ function PlanPurchaseModal({
                   </div>
 
                   {/* Collapsible “Reference” (saves space on phones) */}
-                  <details className="group rounded-lg bg-slate-50 dark:bg:white/5 ring-1 ring-slate-200 dark:ring-white/10">
-                    <summary className="cursor-pointer list-none px-3 py-2 text-xs sm:text-sm text-slate-700 dark:text:white/80 flex items-center justify-between">
+                  <details className="group rounded-lg bg-slate-50 dark:bg-white/5 ring-1 ring-slate-200 dark:ring-white/10">
+                    <summary className="cursor-pointer list-none px-3 py-2 text-xs sm:text-sm text-slate-700 dark:text-white/80 flex items-center justify-between">
                       Having issues? Enter M-Pesa reference
-                      <span className="ml-2 text-slate-500 dark:text:white/60 group-open:rotate-180 transition-transform">
+                      <span className="ml-2 text-slate-500 dark:text-white/60 group-open:rotate-180 transition-transform">
                         ▾
                       </span>
                     </summary>
@@ -331,7 +333,7 @@ function PlanPurchaseModal({
                         value={reference}
                         onChange={(e) => setReference(e.target.value)}
                         placeholder="Receipt / reference number"
-                        className="w-full p-2 rounded bg-white text-[#0d141c] ring-1 ring-slate-200 outline-none focus:ring-slate-400 dark:bg-[#0f1821] dark:text:white dark:ring-white/10 dark:focus:ring-white/20 text-sm"
+                        className="w-full p-2 rounded bg-white text-[#0d141c] ring-1 ring-slate-200 outline-none focus:ring-slate-400 dark:bg-[#0f1821] dark:text-white dark:ring-white/10 dark:focus:ring-white/20 text-sm"
                       />
                       <button
                         onClick={() =>
@@ -354,17 +356,17 @@ function PlanPurchaseModal({
 
               {/* PayPal panel */}
               {method === 'PayPal' && (
-                <div className="rounded-xl ring-1 ring-slate-200 dark:ring:white/10 bg-slate-50 dark:bg-white/5 p-3 sm:p-4">
-                  <h4 className="text-sm font-semibold text-slate-800 dark:text:white">
+                <div className="rounded-xl ring-1 ring-slate-200 dark:ring-white/10 bg-slate-50 dark:bg-white/5 p-3 sm:p-4">
+                  <h4 className="text-sm font-semibold text-slate-800 dark:text-white">
                     PayPal (USD)
                   </h4>
-                  <p className="text-[11px] text-slate-600 dark:text:white/70">
+                  <p className="text-[11px] text-slate-600 dark:text-white/70">
                     Pay securely for <b>{amountLabel}</b>.
                   </p>
 
                   <div ref={containerRef} className="mt-2 sm:mt-3" />
                   {!ready && !error && (
-                    <div className="mt-2 text-[11px] text-slate-500 dark:text:white/60">
+                    <div className="mt-2 text-[11px] text-slate-500 dark:text-white/60">
                       Loading PayPal…
                     </div>
                   )}
@@ -377,16 +379,16 @@ function PlanPurchaseModal({
 
             {/* RIGHT: Plan summary */}
             <div className="space-y-3">
-              <div className="rounded-xl ring-1 ring-slate-200 dark:ring:white/10 bg-slate-50 dark:bg-white/5 p-3 sm:p-4 space-y-3">
+              <div className="rounded-xl ring-1 ring-slate-200 dark:ring-white/10 bg-slate-50 dark:bg-white/5 p-3 sm:p-4 space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <h4 className="text-sm sm:text-base font-semibold truncate text-slate-900 dark:text-white">
                     {tier.toUpperCase()} plan
                   </h4>
                   <div className="text-right shrink-0">
-                    <div className="text-lg sm:text-xl font-semibold text-slate-900 dark:text:white">
+                    <div className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white">
                       {priceLabel}
                     </div>
-                    <div className="text-[11px] text-slate-500 dark:text:white/60">
+                    <div className="text-[11px] text-slate-500 dark:text-white/60">
                       {billCycleKey === 'monthly' ? 'per month' : 'per year'} •{' '}
                       {currency}
                     </div>
@@ -394,14 +396,14 @@ function PlanPurchaseModal({
                 </div>
 
                 {/* Collapsible features to keep compact on mobile */}
-                <details className="group rounded-lg bg-white dark:bg:white/5 ring-1 ring-slate-200 dark:ring:white/10">
-                  <summary className="cursor-pointer list-none px-3 py-2 text-xs sm:text-sm text-slate-800 dark:text:white/80 flex items-center justify-between">
+                <details className="group rounded-lg bg-white dark:bg-white/5 ring-1 ring-slate-200 dark:ring-white/10">
+                  <summary className="cursor-pointer list-none px-3 py-2 text-xs sm:text-sm text-slate-800 dark:text-white/80 flex items-center justify-between">
                     Plan features
-                    <span className="ml-2 text-slate-500 dark:text:white/60 group-open:rotate-180 transition-transform">
+                    <span className="ml-2 text-slate-500 dark:text-white/60 group-open:rotate-180 transition-transform">
                       ▾
                     </span>
                   </summary>
-                  <ul className="px-4 pb-3 text-xs sm:text-sm list-disc space-y-1 text-slate-800 dark:text:white/90">
+                  <ul className="px-4 pb-3 text-xs sm:text-sm list-disc space-y-1 text-slate-800 dark:text-white/90">
                     {tier === 'pro' ? (
                       <>
                         <li>Up to 500 seats</li>
@@ -421,7 +423,7 @@ function PlanPurchaseModal({
                 </details>
 
                 {/* Quick amount tag (always visible) */}
-                <div className="text-[11px] sm:text-xs text-slate-600 dark:text:white/70">
+                <div className="text-[11px] sm:text-xs text-slate-600 dark:text-white/70">
                   Selected: <b>{amountLabel}</b>
                 </div>
               </div>
@@ -524,7 +526,8 @@ export default function OrgElearnPortal() {
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingSignature, setUploadingSignature] = useState(false);
-  const [uploadingInstructorSignature, setUploadingInstructorSignature] = useState(false);
+  const [uploadingInstructorSignature, setUploadingInstructorSignature] =
+    useState(false);
 
   const mpesaPaymentIdRef = useRef<string | null>(null);
 
@@ -537,6 +540,59 @@ export default function OrgElearnPortal() {
 
   // CTA pulse (only used in admin/instructor view)
   const [ctaPulse, setCtaPulse] = useState(false);
+
+  // Legacy (file-based) assignment composer
+  const [legacyTitle, setLegacyTitle] = useState('');
+  const [legacyInstructions, setLegacyInstructions] = useState('');
+  const [legacyDueAt, setLegacyDueAt] = useState('');
+  const [legacyAttachmentUrl, setLegacyAttachmentUrl] = useState<string>('');
+  const [legacyUploadingAttachment, setLegacyUploadingAttachment] =
+    useState(false);
+  const [creatingLegacyAssignment, setCreatingLegacyAssignment] = useState(false);
+
+  // Learner submission modal state (for legacy assignments)
+  const [submitOpen, setSubmitOpen] = useState(false);
+  const [submitAssignment, setSubmitAssignment] =
+    useState<OrgAssignmentRow | null>(null);
+  const [submitText, setSubmitText] = useState('');
+  const [submitFile, setSubmitFile] = useState<File | null>(null);
+  const [submitUploading, setSubmitUploading] = useState(false);
+
+  const handleUploadLegacyAttachment = async (file: File | null) => {
+    if (!file) return null;
+
+    if (!authToken) {
+      alert('Please sign in to upload attachments.');
+      return null;
+    }
+    if (!org?.id) {
+      alert('Open your institution portal first.');
+      return null;
+    }
+
+    setLegacyUploadingAttachment(true);
+    try {
+      const res: any = await uploadAsset(backendUrl, authToken, file, 'doc');
+
+      const url =
+        typeof res === 'string'
+          ? res
+          : res?.url || res?.secure_url || res?.data?.url || '';
+
+      if (!url) {
+        throw new Error('Upload finished but no URL was returned.');
+      }
+
+      setLegacyAttachmentUrl(url);
+      return url;
+    } catch (e: any) {
+      console.error('[OrgElearnPortal] legacy attachment upload error', e);
+      alert(e?.message || 'Failed to upload attachment.');
+      return null;
+    } finally {
+      setLegacyUploadingAttachment(false);
+    }
+  };
 
   const sendTestReport = useCallback(async () => {
     if (!org?.id || !authToken) {
@@ -551,6 +607,150 @@ export default function OrgElearnPortal() {
       alert('Failed to send test report.');
     }
   }, [backendUrl, authToken, org?.id]);
+
+  const createLegacyAssignment = async () => {
+    if (!org?.id || !authToken) {
+      alert('Open your institution portal first.');
+      return;
+    }
+
+    const trimmedTitle = legacyTitle.trim();
+    const classLabel = (assignClassLabel || '').trim();
+    const subjectKey = (assignSubjectKey || '').trim();
+
+    if (!trimmedTitle) {
+      alert('Give your assignment a short title.');
+      return;
+    }
+    if (!classLabel || !subjectKey) {
+      alert('Please specify both Class/Grade and Subject so the right learners see this.');
+      return;
+    }
+
+    setCreatingLegacyAssignment(true);
+    try {
+      const body = {
+        title: trimmedTitle,
+        instructions: legacyInstructions.trim() || null,
+        class_label: classLabel,
+        subject_key: subjectKey,
+        attachment_url: legacyAttachmentUrl || null,
+        due_at: legacyDueAt || null,
+      };
+
+      await createOrgLegacyAssignment(backendUrl, authToken, org.id, body);
+      alert('Assignment shared with the selected class.');
+
+      // Reset for next one
+      setLegacyTitle('');
+      setLegacyInstructions('');
+      setLegacyDueAt('');
+      setLegacyAttachmentUrl('');
+    } catch (e: any) {
+      console.error('[OrgElearnPortal] createLegacyAssignment error', e);
+      const msg =
+        e?.response?.data?.message ||
+        e?.message ||
+        'Failed to create assignment.';
+      alert(msg);
+    } finally {
+      setCreatingLegacyAssignment(false);
+    }
+  };
+
+  /** Learner-mode assignments loader (legacy-only via backend + front-end filter) */
+  const loadLearnerAssignments = useCallback(async () => {
+    if (!isLearnerView) return;
+    if (!authToken || !org?.id) return;
+
+    setLearnerAssignmentsLoading(true);
+    try {
+      const resp = await getOrgAssignmentsForLearner(
+        backendUrl,
+        authToken,
+        org.id,
+        {
+          studentId: learnerStudentId || undefined,
+          classLabel: learnerClassFromUrl || undefined,
+          subjectKey: learnerSubjectFromUrl || undefined,
+        }
+      );
+
+      const rows = Array.isArray(resp?.data) ? resp.data : [];
+      setLearnerAssignments(rows as OrgAssignmentRow[]);
+    } catch (err) {
+      console.warn('[OrgElearnPortal] load learner assignments failed', err);
+      setLearnerAssignments([]);
+    } finally {
+      setLearnerAssignmentsLoading(false);
+    }
+  }, [
+    isLearnerView,
+    backendUrl,
+    authToken,
+    org?.id,
+    learnerStudentId,
+    learnerClassFromUrl,
+    learnerSubjectFromUrl,
+  ]);
+
+  useEffect(() => {
+    loadLearnerAssignments();
+  }, [loadLearnerAssignments]);
+
+  const handleSubmitLegacyWork = async () => {
+    if (!submitAssignment || !authToken || !org?.id) {
+      setSubmitOpen(false);
+      return;
+    }
+
+    if (!submitText.trim() && !submitFile) {
+      alert('Type an answer or attach a file before submitting.');
+      return;
+    }
+
+    setSubmitUploading(true);
+    try {
+      let attachmentUrl: string | null = null;
+
+      if (submitFile) {
+        const res: any = await uploadAsset(backendUrl, authToken, submitFile, 'doc');
+        attachmentUrl =
+          typeof res === 'string'
+            ? res
+            : res?.url || res?.secure_url || res?.data?.url || '';
+      }
+
+      await submitOrgLegacyAssignment(
+        backendUrl,
+        authToken,
+        org.id,
+        submitAssignment.id,
+        {
+          answer_text: submitText.trim() || null,
+          attachment_url: attachmentUrl,
+        }
+      );
+
+      alert('Your work has been submitted ✅');
+      setSubmitOpen(false);
+      setSubmitAssignment(null);
+      setSubmitText('');
+      setSubmitFile(null);
+
+      // 🔄 refresh assignments so “submitted” view is always up to date
+      await loadLearnerAssignments();
+    } catch (e: any) {
+      console.error('[OrgElearnPortal] submit legacy work error', e);
+      const msg =
+        e?.response?.data?.message ||
+        e?.message ||
+        'Failed to submit work.';
+      alert(msg);
+    } finally {
+      setSubmitUploading(false);
+    }
+  };
 
   const loadLearnerProgress = useCallback(
     async (reset: boolean) => {
@@ -1130,47 +1330,6 @@ export default function OrgElearnPortal() {
     [backendUrl, org?.id, authToken, canUpgradePlan]
   );
 
-  /** Learner-mode assignments loader */
-  useEffect(() => {
-    if (!isLearnerView) return;
-    if (!authToken || !org?.id) return;
-
-    (async () => {
-      setLearnerAssignmentsLoading(true);
-      try {
-        const resp: any = await getOrgAssignments(backendUrl, authToken, org.id, {
-          // view hint
-          view: 'learner',
-          // strong identity
-          studentId: learnerStudentId || undefined,
-          // NEW: class/subject hints so backend can match orgClassLabel/orgSubjectKey
-          class: learnerClassFromUrl || undefined,
-          class_label: learnerClassFromUrl || undefined,
-          subject: learnerSubjectFromUrl || undefined,
-          subject_key: learnerSubjectFromUrl || undefined,
-        } as any);
-        const rows =
-          resp?.data ??
-          resp?.rows ??
-          (Array.isArray(resp) ? resp : []);
-        setLearnerAssignments(rows as OrgAssignmentRow[]);
-      } catch (err) {
-        console.warn('[OrgElearnPortal] load learner assignments failed', err);
-        setLearnerAssignments([]);
-      } finally {
-        setLearnerAssignmentsLoading(false);
-      }
-    })();
-  }, [
-    isLearnerView,
-    backendUrl,
-    authToken,
-    org?.id,
-    learnerStudentId,
-    learnerClassFromUrl,
-    learnerSubjectFromUrl,
-  ]);
-
   /** Helpers */
   const seatPct = Math.min(
     100,
@@ -1187,6 +1346,63 @@ export default function OrgElearnPortal() {
       alert('Invite link copied!');
     } catch {}
   };
+
+  // Legacy-only slice for learner view
+  const legacyAssignments = React.useMemo(
+    () =>
+      learnerAssignments.filter((a) => {
+        const kind = (a.source_kind || '').toLowerCase();
+        const isLegacyKind = kind === 'legacy';
+        const attachmentUrl =
+          (a as any).attachment_url ||
+          (a as any).attachmentUrl ||
+          (a as any).download_url ||
+          (a as any).downloadUrl ||
+          (a as any).resource_url ||
+          (a as any).resourceUrl ||
+          null;
+
+        // treat "legacy" rows as those explicitly marked or clearly file-based
+        return isLegacyKind || (!!attachmentUrl && !a.course_id);
+      }),
+    [learnerAssignments]
+  );
+
+  // 🚦 Partition into submitted vs pending
+  const { submittedAssignments, pendingAssignments } = React.useMemo(() => {
+    const submitted: OrgAssignmentRow[] = [];
+    const pending: OrgAssignmentRow[] = [];
+
+    legacyAssignments.forEach((a) => {
+      const submissionCount =
+        (a as any).submission_count ??
+        (a as any).submissions_count ??
+        (a as any).answers_count ??
+        0;
+
+      const hasFlag =
+        (a as any).has_submission ??
+        (a as any).hasSubmitted ??
+        false;
+
+      const submissionTimestamp =
+        (a as any).latest_submission_at ||
+        (a as any).submitted_at ||
+        (a as any).last_submitted_at ||
+        (a as any).my_submission_created_at ||
+        null;
+
+      const hasSubmitted =
+        Boolean(hasFlag) ||
+        Number(submissionCount) > 0 ||
+        Boolean(submissionTimestamp);
+
+      if (hasSubmitted) submitted.push(a);
+      else pending.push(a);
+    });
+
+    return { submittedAssignments: submitted, pendingAssignments: pending };
+  }, [legacyAssignments]);
 
   return (
     <div
@@ -1205,9 +1421,9 @@ export default function OrgElearnPortal() {
                   Assignments shared with you
                 </h1>
                 <div className="text-[#49739c] dark:text-white/70 text-xs sm:text-sm">
-                  These assignments were shared by your teachers using Robot Tutor
-                  (Teach with AI) or the classic exam flow. Start from the course,
-                  check for any attached files, then open the assignment or quiz.
+                  These file-based assignments (PDFs, docs, images) were shared by your
+                  teachers using the classic / legacy flow. Download the attachment,
+                  follow the instructions, and submit your work back to the teacher.
                   {learnerClassFromUrl && (
                     <>
                       {' '}You&apos;re currently viewing work for{' '}
@@ -1243,151 +1459,369 @@ export default function OrgElearnPortal() {
                 </div>
 
                 <div className="mt-2">
-                  {learnerAssignments.length === 0 && !learnerAssignmentsLoading && (
+                  {legacyAssignments.length === 0 && !learnerAssignmentsLoading && (
                     <div className="rounded-xl border border-dashed border-slate-300 dark:border-white/15 px-4 py-6 text-center text-xs sm:text-sm text-slate-500 dark:text-white/65">
-                      No assignments have been shared with you yet.
+                      No legacy assignments have been shared with you yet.
                       <br />
-                      When your teacher assigns work for your class or subject,
+                      When your teacher shares a file-based assignment for your class or subject,
                       it will appear here.
                     </div>
                   )}
 
-                  {learnerAssignments.length > 0 && (
-                    <ul className="space-y-2">
-                      {learnerAssignments.map((a) => {
-                        const key = String(a.id ?? a.invite_code ?? Math.random());
-                        const dueLabel = a.due_at
-                          ? new Date(a.due_at).toLocaleString()
-                          : 'No due date';
-                        const createdLabel = a.created_at
-                          ? new Date(a.created_at).toLocaleString()
-                          : null;
+                  {legacyAssignments.length > 0 && (
+                    <div className="space-y-4">
+                      {/* ✅ Submitted assignments always visible */}
+                      {submittedAssignments.length > 0 && (
+                        <div>
+                          <h3 className="text-xs sm:text-sm font-semibold text-slate-700 dark:text-white mb-1.5">
+                            Submitted assignments
+                          </h3>
+                          <ul className="space-y-2">
+                            {submittedAssignments.map((a) => {
+                              const key = String(a.id ?? a.invite_code ?? Math.random());
+                              const dueLabel = a.due_at
+                                ? new Date(a.due_at).toLocaleString()
+                                : 'No due date';
+                              const createdLabel = a.created_at
+                                ? new Date(a.created_at).toLocaleString()
+                                : null;
 
-                        const kind =
-                          (a.source_kind || '').toLowerCase().includes('robot') ||
-                          (a.source_kind || '').toLowerCase().includes('ai')
-                            ? 'Robot Tutor (Teach with AI)'
-                            : 'Legacy / classic';
+                              const kind = 'Legacy / classic (file-based)';
 
-                        const canOpen = !!a.invite_code;
-                        const inviteHref = canOpen
-                          ? `/org/join/${encodeURIComponent(a.invite_code!)}`
-                          : undefined;
+                              const rawCourseId =
+                                (a as any).course_id ??
+                                (a as any).courseId ??
+                                (a as any).course_uuid ??
+                                (a as any).courseUUID ??
+                                null;
+                              const courseIdForRow = rawCourseId ? String(rawCourseId) : '';
 
-                        // Try to resolve course id for deep link to progress
-                        const rawCourseId =
-                          (a as any).course_id ??
-                          (a as any).courseId ??
-                          (a as any).course_uuid ??
-                          (a as any).courseUUID ??
-                          null;
-                        const courseIdForRow = rawCourseId
-                          ? String(rawCourseId)
-                          : '';
+                              const attachmentUrl: string | null =
+                                (a as any).attachment_url ||
+                                (a as any).attachmentUrl ||
+                                (a as any).download_url ||
+                                (a as any).downloadUrl ||
+                                (a as any).resource_url ||
+                                (a as any).resourceUrl ||
+                                null;
 
-                        // Try to find a downloadable attachment
-                        const attachmentUrl: string | null =
-                          (a as any).attachment_url ||
-                          (a as any).attachmentUrl ||
-                          (a as any).download_url ||
-                          (a as any).downloadUrl ||
-                          (a as any).resource_url ||
-                          (a as any).resourceUrl ||
-                          null;
+                              return (
+                                <li
+                                  key={key}
+                                  className="rounded-xl border border-[#e7edf4] dark:border-white/10 bg-slate-50/80 dark:bg-[#111b28] px-3 py-3 sm:px-4 sm:py-3.5 flex flex-col gap-3"
+                                >
+                                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex flex-wrap items-center gap-1.5">
+                                        <span className="text-sm sm:text-base font-semibold truncate max-w-full">
+                                          {a.title || 'Untitled assignment'}
+                                        </span>
+                                      </div>
+                                      <div className="mt-1 flex flex-wrap gap-2 text-[11px] sm:text-xs text-slate-600 dark:text-white/70">
+                                        {a.course_title && (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-100 dark:bg-sky-500/10 dark:text-sky-100 dark:border-sky-500/40">
+                                            <span>📘</span>
+                                            <span>{a.course_title}</span>
+                                          </span>
+                                        )}
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-100 dark:border-emerald-500/40">
+                                          <span>⚙️</span>
+                                          <span>{kind}</span>
+                                        </span>
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-50 text-slate-700 border border-slate-200 dark:bg-white/5 dark:text-white/80 dark:border-white/10">
+                                          <span>📅</span>
+                                          <span>Due: {dueLabel}</span>
+                                        </span>
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-600/10 text-emerald-700 border border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-100">
+                                          <span>✅</span>
+                                          <span>Submitted</span>
+                                        </span>
+                                      </div>
 
-                        return (
-                          <li
-                            key={key}
-                            className="rounded-xl border border-[#e7edf4] dark:border-white/10 bg-slate-50/80 dark:bg-[#111b28] px-3 py-3 sm:px-4 sm:py-3.5 flex flex-col gap-3"
-                          >
-                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  <span className="text-sm sm:text-base font-semibold truncate max-w-full">
-                                    {a.title || 'Untitled assignment'}
-                                  </span>
-                                </div>
-                                <div className="mt-1 flex flex-wrap gap-2 text-[11px] sm:text-xs text-slate-600 dark:text-white/70">
-                                  {a.course_title && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-100 dark:bg-sky-500/10 dark:text-sky-100 dark:border-sky-500/40">
-                                      <span>📘</span>
-                                      <span>{a.course_title}</span>
-                                    </span>
-                                  )}
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-100 dark:border-emerald-500/40">
-                                    <span>⚙️</span>
-                                    <span>{kind}</span>
-                                  </span>
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-50 text-slate-700 border border-slate-200 dark:bg-white/5 dark:text-white/80 dark:border-white/10">
-                                    <span>📅</span>
-                                    <span>Due: {dueLabel}</span>
-                                  </span>
-                                </div>
+                                      {createdLabel && (
+                                        <div className="mt-1 text-[10px] text-slate-400 dark:text-white/50">
+                                          Assigned: {createdLabel}
+                                        </div>
+                                      )}
 
-                                {createdLabel && (
-                                  <div className="mt-1 text-[10px] text-slate-400 dark:text-white/50">
-                                    Assigned: {createdLabel}
+                                      {attachmentUrl && (
+                                        <div className="mt-2 text-[11px] sm:text-xs text-slate-600 dark:text-white/75">
+                                          <a
+                                            href={attachmentUrl}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="underline underline-offset-2 hover:text-sky-700 dark:hover:text-sky-200"
+                                          >
+                                            ⬇️ Download assignment file
+                                          </a>{' '}
+                                          to review what you submitted.
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <div className="shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                      {courseIdForRow && (
+                                        <Link
+                                          to={`/courses/${encodeURIComponent(courseIdForRow)}/progress`}
+                                          className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-white text-[#0d141c] ring-1 ring-[#d1e2f4] hover:bg-[#e7edf4] dark:bg-[#0b1420] dark:text-white dark:ring-white/15 dark:hover:bg:white/5"
+                                        >
+                                          <span className="text-base">📚</span>
+                                          <span>Go to course</span>
+                                        </Link>
+                                      )}
+
+                                      {attachmentUrl && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setSubmitAssignment(a as OrgAssignmentRow);
+                                            setSubmitText('');
+                                            setSubmitFile(null);
+                                            setSubmitOpen(true);
+                                          }}
+                                          className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-slate-900 text-white hover:bg-slate-800 dark:bg:white/10 dark:text-white dark:hover:bg:white/20"
+                                        >
+                                          <span className="text-base">✏️</span>
+                                          <span>Submit again</span>
+                                        </button>
+                                      )}
+                                    </div>
                                   </div>
-                                )}
 
-                                {attachmentUrl && (
-                                  <div className="mt-2 text-[11px] sm:text-xs text-slate-600 dark:text-white/75">
-                                    <a
-                                      href={attachmentUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="underline underline-offset-2 hover:text-sky-700 dark:hover:text-sky-200"
-                                    >
-                                      ⬇️ Download assignment file
-                                    </a>{' '}
-                                    and follow your teacher&apos;s instructions before submitting.
+                                  <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-white/55">
+                                    Your submission stays listed here so you can always see which work you&apos;ve already sent.
+                                  </p>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* 📝 Assignments still to work on */}
+                      {pendingAssignments.length > 0 && (
+                        <div>
+                          <h3 className="text-xs sm:text-sm font-semibold text-slate-700 dark:text:white mb-1.5">
+                            Assignments to work on
+                          </h3>
+                          <ul className="space-y-2">
+                            {pendingAssignments.map((a) => {
+                              const key = String(a.id ?? a.invite_code ?? Math.random());
+                              const dueLabel = a.due_at
+                                ? new Date(a.due_at).toLocaleString()
+                                : 'No due date';
+                              const createdLabel = a.created_at
+                                ? new Date(a.created_at).toLocaleString()
+                                : null;
+
+                              const kind = 'Legacy / classic (file-based)';
+
+                              const rawCourseId =
+                                (a as any).course_id ??
+                                (a as any).courseId ??
+                                (a as any).course_uuid ??
+                                (a as any).courseUUID ??
+                                null;
+                              const courseIdForRow = rawCourseId ? String(rawCourseId) : '';
+
+                              const attachmentUrl: string | null =
+                                (a as any).attachment_url ||
+                                (a as any).attachmentUrl ||
+                                (a as any).download_url ||
+                                (a as any).downloadUrl ||
+                                (a as any).resource_url ||
+                                (a as any).resourceUrl ||
+                                null;
+
+                              return (
+                                <li
+                                  key={key}
+                                  className="rounded-xl border border-[#e7edf4] dark:border-white/10 bg-slate-50/80 dark:bg-[#111b28] px-3 py-3 sm:px-4 sm:py-3.5 flex flex-col gap-3"
+                                >
+                                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex flex-wrap items-center gap-1.5">
+                                        <span className="text-sm sm:text-base font-semibold truncate max-w-full">
+                                          {a.title || 'Untitled assignment'}
+                                        </span>
+                                      </div>
+                                      <div className="mt-1 flex flex-wrap gap-2 text-[11px] sm:text-xs text-slate-600 dark:text-white/70">
+                                        {a.course_title && (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-100 dark:bg-sky-500/10 dark:text-sky-100 dark:border-sky-500/40">
+                                            <span>📘</span>
+                                            <span>{a.course_title}</span>
+                                          </span>
+                                        )}
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-100 dark:border-emerald-500/40">
+                                          <span>⚙️</span>
+                                          <span>{kind}</span>
+                                        </span>
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-50 text-slate-700 border border-slate-200 dark:bg:white/5 dark:text:white/80 dark:border:white/10">
+                                          <span>📅</span>
+                                          <span>Due: {dueLabel}</span>
+                                        </span>
+                                      </div>
+
+                                      {createdLabel && (
+                                        <div className="mt-1 text-[10px] text-slate-400 dark:text-white/50">
+                                          Assigned: {createdLabel}
+                                        </div>
+                                      )}
+
+                                      {attachmentUrl && (
+                                        <div className="mt-2 text-[11px] sm:text-xs text-slate-600 dark:text:white/75">
+                                          <a
+                                            href={attachmentUrl}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="underline underline-offset-2 hover:text-sky-700 dark:hover:text-sky-200"
+                                          >
+                                            ⬇️ Download assignment file
+                                          </a>{' '}
+                                          and follow your teacher&apos;s instructions before submitting.
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <div className="shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                      {courseIdForRow && (
+                                        <Link
+                                          to={`/courses/${encodeURIComponent(courseIdForRow)}/progress`}
+                                          className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-white text-[#0d141c] ring-1 ring-[#d1e2f4] hover:bg-[#e7edf4] dark:bg-[#0b1420] dark:text-white dark:ring-white/15 dark:hover:bg-white/5"
+                                        >
+                                          <span className="text-base">📚</span>
+                                          <span>Go to course</span>
+                                        </Link>
+                                      )}
+
+                                      {/* NEW: submit work for legacy / file-based assignments */}
+                                      {attachmentUrl && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setSubmitAssignment(a as OrgAssignmentRow);
+                                            setSubmitText('');
+                                            setSubmitFile(null);
+                                            setSubmitOpen(true);
+                                          }}
+                                          className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-slate-900 text-white hover:bg-slate-800 dark:bg:white/10 dark:text-white dark:hover:bg:white/20"
+                                        >
+                                          <span className="text-base">✏️</span>
+                                          <span>Submit work</span>
+                                        </button>
+                                      )}
+                                    </div>
                                   </div>
-                                )}
-                              </div>
 
-                              <div className="shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                                {courseIdForRow && (
-                                  <Link
-                                    to={`/courses/${encodeURIComponent(courseIdForRow)}/progress`}
-                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-white text-[#0d141c] ring-1 ring-[#d1e2f4] hover:bg-[#e7edf4] dark:bg-[#0b1420] dark:text-white dark:ring-white/15 dark:hover:bg-white/5"
-                                  >
-                                    <span className="text-base">📚</span>
-                                    <span>Go to course</span>
-                                  </Link>
-                                )}
-
-                                {canOpen && (
-                                  <a
-                                    href={inviteHref}
-                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-[#3d99f5] text-white hover:bg-[#2f83d6] dark:bg-[#3d99f5] dark:hover:bg-[#337fce]"
-                                  >
-                                    <span className="text-base">🚀</span>
-                                    <span>Open assignment</span>
-                                  </a>
-                                )}
-                              </div>
-                            </div>
-
-                            <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-white/55">
-                              After completing the work, your teacher may ask you to
-                              upload or share your answers through the course, quiz,
-                              or the Messages area of your portal.
-                            </p>
-                          </li>
-                        );
-                      })}
-                    </ul>
+                                  <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text:white/55">
+                                    After completing the work, your teacher may ask you to
+                                    upload or share your answers through the course, quiz,
+                                    or the Messages area of your portal.
+                                  </p>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
 
                 {learnerStudentId && (
-                  <p className="mt-3 text-[10px] sm:text-[11px] text-slate-500 dark:text-white/55">
+                  <p className="mt-3 text-[10px] sm:text-[11px] text-slate-500 dark:text:white/55">
                     Learner ID in this portal:{' '}
                     <span className="font-mono">{learnerStudentId}</span>. If this
                     doesn&apos;t match your login card, ask your teacher to confirm.
                   </p>
                 )}
               </section>
+
+              {submitOpen && submitAssignment && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4">
+                  <div className="w-full max-w-lg rounded-2xl bg-white text-[#0d141c] dark:bg-[#0f1821] dark:text-darkTextPrimary ring-1 ring-[#cedbe8] dark:ring-white/10 shadow-xl">
+                    <div className="px-4 py-3 border-b border-slate-200 dark:border-white/10 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-[11px] text-slate-500 dark:text:white/60">
+                          Submit assignment
+                        </div>
+                        <div className="text-sm sm:text-base font-semibold truncate">
+                          {submitAssignment.title || 'Untitled assignment'}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSubmitOpen(false)}
+                        className="text-xs px-2 py-1 rounded-lg bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg:white/10 dark:text-white dark:hover:bg:white/20"
+                      >
+                        Close
+                      </button>
+                    </div>
+
+                    <div className="px-4 py-3 space-y-3 max-h-[70vh] overflow-y-auto">
+                      <div className="text-[11px] sm:text-xs text-slate-600 dark:text:white/70">
+                        You can type your answer, attach a file (PDF, DOC, images),
+                        or both. Your teacher will see the time you submitted.
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-slate-700 dark:text:white/80 mb-1">
+                          Your answer (optional)
+                        </label>
+                        <textarea
+                          rows={4}
+                          value={submitText}
+                          onChange={(e) => setSubmitText(e.target.value)}
+                          className="w-full text-xs sm:text-sm rounded-xl border border-slate-200 dark:border:white/15 bg-slate-50 dark:bg-[#0b1420] text-[#0d141c] dark:text:white px-3 py-2 outline-none focus:ring-2 focus:ring-sky-500/70"
+                          placeholder="Type your working or short answers here…"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-slate-700 dark:text:white/80 mb-1">
+                          Attach file (optional)
+                        </label>
+                        <input
+                          type="file"
+                          onChange={(e) =>
+                            setSubmitFile(e.target.files?.[0] ?? null)
+                          }
+                          className="block w-full text-[11px] sm:text-xs text-slate-600 dark:text-slate-300
+                            file:mr-3 file:py-1.5 file:px-3 file:rounded-xl
+                            file:border-0 file:text-xs file:font-semibold
+                            file:bg-slate-900/90 file:text-white
+                            hover:file:bg-slate-900
+                            dark:file:bg-slate-200 dark:file:text-slate-900 dark:hover:file:bg-white/90"
+                        />
+                        {submitFile && (
+                          <div className="mt-1 text-[11px] text-slate-500 dark:text:white/65">
+                            Selected: <span className="font-mono">{submitFile.name}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="px-4 py-3 border-t border-slate-200 dark:border:white/10 flex flex-wrap items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSubmitOpen(false)}
+                        className="px-3 py-1.5 rounded-xl text-xs sm:text-sm bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg:white/10 dark:text:white dark:hover:bg:white/20"
+                        disabled={submitUploading}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSubmitLegacyWork}
+                        disabled={submitUploading}
+                        className="px-4 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {submitUploading ? 'Submitting…' : 'Submit work'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <>
@@ -1417,7 +1851,7 @@ export default function OrgElearnPortal() {
                             className={`px-3 py-1.5 rounded-xl text-sm ring-1 whitespace-nowrap ${
                               tab === t
                                 ? 'bg-[#3d99f5] text-white ring-[#3d99f5]'
-                                : 'bg-white/80 text-[#0d141c] ring-[#3d99f5]/60 hover:bg-[#e7edf4] dark:bg-[#0b1420]/80 dark:text-darkTextPrimary dark:ring-[#3d99f5]/90 dark:hover:bg-white/5'
+                                : 'bg-white/80 text-[#0d141c] ring-[#3d99f5]/60 hover:bg-[#e7edf4] dark:bg-[#0b1420]/80 dark:text-darkTextPrimary dark:ring-[#3d99f5]/90 dark:hover:bg:white/5'
                             }`}
                             onClick={() => setTab(t)}
                           >
@@ -1553,7 +1987,7 @@ export default function OrgElearnPortal() {
                   </div>
 
                   {isInstructor && (
-                    <div className="mt-2 text-[11px] text-[#49739c] dark:text-white/70">
+                    <div className="mt-2 text-[11px] text-[#49739c] dark:text:white/70">
                       Your institution owner/admin manages branding and subscriptions.
                       As an instructor you can create assignments and view analytics here.
                     </div>
@@ -1606,10 +2040,27 @@ export default function OrgElearnPortal() {
                   // NEW: assignment scope for class / subject
                   assignClassLabel={assignClassLabel}
                   assignSubjectKey={assignSubjectKey}
-                  setAssignScope={({ classLabel, subjectKey }) => {
-                    setAssignClassLabel(classLabel ?? '');
-                    setAssignSubjectKey(subjectKey ?? '');
+                  setAssignScope={(opts: { classLabel?: string; subjectKey?: string }) => {
+                    if ('classLabel' in opts) {
+                      setAssignClassLabel(opts.classLabel || '');
+                    }
+                    if ('subjectKey' in opts) {
+                      setAssignSubjectKey(opts.subjectKey || '');
+                    }
                   }}
+
+                  // NEW: legacy assignment props
+                  legacyTitle={legacyTitle}
+                  setLegacyTitle={setLegacyTitle}
+                  legacyInstructions={legacyInstructions}
+                  setLegacyInstructions={setLegacyInstructions}
+                  legacyDueAt={legacyDueAt}
+                  setLegacyDueAt={setLegacyDueAt}
+                  legacyAttachmentUrl={legacyAttachmentUrl}
+                  legacyUploadingAttachment={legacyUploadingAttachment}
+                  onUploadLegacyAttachment={handleUploadLegacyAttachment}
+                  onCreateLegacyAssignment={createLegacyAssignment}
+                  creatingLegacyAssignment={creatingLegacyAssignment}
                 />
               )}
 
@@ -1681,7 +2132,7 @@ export default function OrgElearnPortal() {
                           {lpRows.map((r) => (
                             <tr
                               key={String(r.user_id)}
-                              className="border-t border-[#e7edf4] dark:border-white/10"
+                              className="border-t border-[#e7edf4] dark:border:white/10"
                             >
                               <td className="py-2 pr-4">
                                 <div className="font-medium">
@@ -1715,7 +2166,7 @@ export default function OrgElearnPortal() {
                             </tr>
                           ))}
                           {!lpRows.length && !lpLoading && (
-                            <tr className="border-t border-[#e7edf4] dark:border-white/10">
+                            <tr className="border-t border-[#e7edf4] dark:border:white/10">
                               <td
                                 className="py-6 pr-4 text-slate-500 dark:text:white/60"
                                 colSpan={7}
@@ -1786,7 +2237,7 @@ export default function OrgElearnPortal() {
               </button>
               <button
                 onClick={() => setShowCongrats(false)}
-                className="px-3 py-1.5 rounded-xl bg-slate-100 text-[#0d141c] hover:bg-slate-200 dark:bg:white/10 dark:text:white dark:hover:bg-white/15"
+                className="px-3 py-1.5 rounded-xl bg-slate-100 text-[#0d141c] hover:bg-slate-200 dark:bg:white/10 dark:text:white dark:hover:bg:white/15"
               >
                 Not now
               </button>

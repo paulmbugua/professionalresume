@@ -397,7 +397,7 @@ const OrgLearnerHome: React.FC = () => {
             Learning tools
           </h3>
           <div className="grid gap-3 sm:grid-cols-2">
-            {/* Assignments – restricted to teacher-shared work */}
+            {/* Assignments – legacy / file-based only */}
             <Link
               to={assignmentsHref}
               className="group rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-3 flex flex-col justify-between transition"
@@ -405,19 +405,19 @@ const OrgLearnerHome: React.FC = () => {
               <div>
                 <div className="flex items-center justify-between gap-2">
                   <h4 className="text-sm font-semibold">
-                    Assignments
+                    Assignments (files)
                   </h4>
                   <span className="text-[11px] text-indigo-300 group-hover:translate-x-0.5 transition">
                     Open →
                   </span>
                 </div>
                 <p className="mt-1 text-xs text-white/70">
-                  See only the assignments that your teachers have shared
-                  with you – whether created with Robot Tutor (Teach with AI)
-                  or using classic (legacy) exams.
+                  See only file-based assignments (PDFs, docs, images) that your
+                  teachers have shared with you using the classic / legacy flow.
                 </p>
               </div>
             </Link>
+
 
             {/* Results & certificates (Robot Tutor + legacy overview) */}
             <Link
