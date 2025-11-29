@@ -356,34 +356,76 @@ export async function orgAnalytics(req, res) {
   const userId = req.user?.id;
   const { orgId } = req.params;
   const { period = 'month' } = req.query; // 'month' | 'term' | 'year'
+
   const mem = await pool.query(
-    `SELECT 1 FROM org_memberships WHERE org_id=$1 AND user_id=$2 AND role IN ('owner','admin','instructor')`,
+    `SELECT 1 
+       FROM org_memberships 
+      WHERE org_id=$1 AND user_id=$2 
+        AND role IN ('owner','admin','instructor')`,
     [orgId, userId]
   );
-  if (!mem.rowCount) return res.status(403).json({ message: 'Forbidden' });
+  if (!mem.rowCount) {
+    return res.status(403).json({ message: 'Forbidden' });
+  }
 
-  // month/term/year bucketing (keep it simple: month & year; term=4-month bucket)
-  const bucket = period === 'year'
-  ? `date_trunc('year', created_at)`
-  : period === 'term'
-    ? `date_trunc('quarter', created_at)`
-    : `date_trunc('month', created_at)`;
-
+  // Use submitted_at (not created_at) so analytics reflects *completed* quizzes only
+  const tsCol = 'submitted_at';
+  const bucketExpr =
+    period === 'year'
+      ? `date_trunc('year', ${tsCol})`
+      : period === 'term'
+      ? `date_trunc('quarter', ${tsCol})`
+      : `date_trunc('month', ${tsCol})`;
 
   const { rows } = await pool.query(
-    `SELECT ${bucket} AS bucket,
-            COUNT(*) AS attempts,
-            AVG(score_pct) AS avg_score,
-            SUM(CASE WHEN passed THEN 1 ELSE 0 END) AS passes
-       FROM org_quiz_attempts
-      WHERE org_id=$1
+    `
+      SELECT
+        ${bucketExpr}                         AS bucket,
+        COUNT(*)                              AS attempts,
+        AVG(score_pct)                        AS avg_score,
+        SUM(CASE WHEN passed THEN 1 ELSE 0 END) AS passes
+      FROM org_quiz_attempts
+      WHERE org_id = $1
+        AND status = 'submitted'
+        AND ${tsCol} IS NOT NULL
       GROUP BY 1
-      ORDER BY 1 DESC
-      LIMIT 36`,
+      ORDER BY 1 ASC
+      LIMIT 60
+    `,
     [orgId]
   );
-  res.json({ ok: true, data: rows });
+
+  const data = rows.map((r) => {
+    const attempts = Number(r.attempts || 0);
+    const passes = Number(r.passes || 0);
+    const avgScore =
+      r.avg_score === null || r.avg_score === undefined
+        ? null
+        : Number(r.avg_score);
+    const passRate = attempts > 0 ? Math.round((passes * 100) / attempts) : 0;
+
+    // pg returns bucket as JS Date
+    const bucketDate = r.bucket instanceof Date ? r.bucket : new Date(r.bucket);
+    const iso = bucketDate.toISOString();
+    const bucketLabel = iso.slice(0, 10); // YYYY-MM-DD; FE can reformat
+
+    return {
+      bucket: bucketDate,      // raw date (for serious consumers)
+      bucket_label: bucketLabel,
+      attempts,
+      avg_score: avgScore,
+      passes,
+      pass_rate: passRate,
+    };
+  });
+
+  return res.json({
+    ok: true,
+    period,
+    data,
+  });
 }
+
 
 export async function getMyOrg(req, res) {
   const userId = req.user?.id;
@@ -1745,3 +1787,33 @@ export async function removeOrgMember(req, res) {
   }
 }
 
+// controllers/orgController.js
+export async function setClassTeacherSignature(req, res) {
+  const userId = req.user?.id;
+  const { orgId, classLabel } = req.params;
+  const { signature_url } = req.body || {};
+
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+  if (!classLabel || !signature_url) {
+    return res.status(400).json({ message: 'Missing classLabel or signature_url' });
+  }
+
+  // staff gate: owner/admin/instructor only
+  const mem = await pool.query(
+    `SELECT role
+       FROM org_memberships
+      WHERE org_id=$1 AND user_id=$2
+      LIMIT 1`,
+    [orgId, userId]
+  );
+  if (!mem.rowCount) return res.status(403).json({ message: 'Forbidden' });
+
+  await pool.query(
+    `UPDATE org_learner_profiles
+        SET class_teacher_signature_url = $3
+      WHERE org_id=$1 AND class_label=$2`,
+    [orgId, classLabel, signature_url]
+  );
+
+  return res.json({ ok: true });
+}

@@ -1,6 +1,6 @@
 // apps/web/src/pages/org/InstitutionLogin.web.tsx
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import useInstitutionAuth from '@mytutorapp/shared/hooks/useInstitutionAuth';
 import CustomGoogleLoginButton from '../../components/CustomGoogleLoginButton';
 import { useShopContext } from '@mytutorapp/shared/context';
@@ -14,6 +14,8 @@ type AccountKind = 'institution' | 'instructor' | 'learner';
 
 const InstitutionLogin: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+
   const { orgToken } = useShopContext() as any;
 
   // If already authenticated as an institution member, go via /org router
@@ -48,21 +50,42 @@ useEffect(() => {
 }, [canSignUp, authMode]);
 
   // —— Auth hook —— //
-  const {
-    handleGoogleLoginSuccess,
-    handleGoogleLoginFailure,
-    loginWithEmail,
-    registerWithEmail,
-    sendResetOTP,
-    resetPasswordWithOTP,
-  } = useInstitutionAuth({
-    alertFn: (msg) => console.log('[org-auth]', msg),
-    // Always land on /org → OrgHomeRouter will send to correct home:
-    //   - owner/admin → /org/profile
-    //   - instructor  → /org/instructor
-    //   - learner     → /org/learn
-    navigateFn: () => navigate('/org', { replace: true }),
-  });
+  const navigateAfterAuth = useCallback(() => {
+  // 1) Prefer an explicit returnTo from the invite flow
+  try {
+    const saved = sessionStorage.getItem('auth:returnTo');
+    if (saved) {
+      sessionStorage.removeItem('auth:returnTo');
+      navigate(saved, { replace: true });
+      return;
+    }
+  } catch {
+    // ignore storage errors and fall through
+  }
+
+  // 2) If there’s an invite code in the URL, go back to that invite
+  const search = new URLSearchParams(location.search);
+  const inviteCode = search.get('code');
+  if (inviteCode) {
+    navigate(`/org/join/${inviteCode}`, { replace: true });
+    return;
+  }
+
+  // 3) Default: normal institution flow
+  navigate('/org', { replace: true });
+}, [navigate, location.search]);
+
+const {
+  handleGoogleLoginSuccess,
+  handleGoogleLoginFailure,
+  loginWithEmail,
+  registerWithEmail,
+  sendResetOTP,
+  resetPasswordWithOTP,
+} = useInstitutionAuth({
+  alertFn: (msg) => console.log('[org-auth]', msg),
+  navigateFn: navigateAfterAuth,
+});
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

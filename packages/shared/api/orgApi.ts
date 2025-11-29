@@ -105,11 +105,63 @@ export type OrgAnalyticsRow = {
   attempts: number;
   passes: number;
   avg_score: number | null;
+
+  // optional camelCase variant (backend flexibility)
+  avgScore?: number | null;
+
+  // optional source descriptors
+  source_kind?: string | null;
+  source?: string | null;
+  kind?: string | null;
+
+  // optional per-source numeric fields (used by deriveAnalyticsSummary)
+  exams_attempts?: number | null;
+  exams_passes?: number | null;
+
+  robot_attempts?: number | null;
+  robot_passes?: number | null;
+
+  assignment_attempts?: number | null;
+  assignment_passes?: number | null;
+
+  exam_cards_generated?: number | null;
+
+  // future-proofing
+  [k: string]: any;
 };
+
 export type OrgAnalyticsResponse = {
   ok: boolean;
   data: OrgAnalyticsRow[];
+
+  // optional summary/meta block used by OrgElearnPortal.loadAnalytics
+  summary?: {
+    totalAttempts?: number;
+    totalPasses?: number;
+    overallPassRate?: number;
+    overallAvgScore?: number;
+
+    examsAttempts?: number;
+    examsPasses?: number;
+    examsPassRate?: number;
+
+    robotQuizAttempts?: number;
+    robotQuizPasses?: number;
+    robotQuizPassRate?: number;
+
+    assignmentAttempts?: number;
+    assignmentPasses?: number;
+    assignmentPassRate?: number;
+
+    examCardsGenerated?: number;
+
+    [k: string]: any;
+  } | null;
+
+  // extra metadata if you ever want to push more info
+  meta?: Record<string, any> | null;
 };
+
 
 export type CreateAssignmentBody = {
   courseId: string;

@@ -28,7 +28,7 @@ import {
   acceptOrgMembershipInvite,
   getMyAttemptForAssignment,
   startAttempt,
- 
+ setClassTeacherSignature,
    
   } from '../controllers/orgController.js';
 
@@ -156,6 +156,12 @@ router.get(
   getOrgAssignments
 );
 
+// e.g. in org routes
+router.put(
+  '/:orgId/classes/:classLabel/class-teacher-signature',
+  requireAuth,
+  setClassTeacherSignature
+);
 
 
 // Create classic / legacy assignment

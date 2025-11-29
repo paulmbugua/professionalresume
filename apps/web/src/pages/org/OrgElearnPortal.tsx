@@ -27,6 +27,7 @@ import {
   getOrgAssignmentSubmissions,
 } from '@mytutorapp/shared/api/orgApi';
 
+
 import usePayPalCheckout from '@mytutorapp/shared/hooks/usePayPalCheckout';
 import { useOrg } from '@mytutorapp/shared/hooks/useOrg';
 
@@ -37,6 +38,173 @@ type TabKey = 'branding' | 'assign' | 'analytics';
 type Period = 'month' | 'term' | 'year';
 type BillingCycle = 'monthly' | 'annual';
 type PayMethod = 'PayPal' | 'M-Pesa';
+
+type OrgAnalyticsSummary = {
+  /** All graded learning events (Robot Teacher, exams, assignments) */
+  totalAttempts: number;
+  totalPasses: number;
+  overallPassRate: number; // 0–100
+  overallAvgScore: number; // 0–100
+
+  /** Exams – term reports / class reports coming from the exams portal */
+  examsAttempts: number;
+  examsPasses: number;
+  examsPassRate: number;
+
+  /** Robot Teacher quizzes (AI courses + org assignments powered by RT) */
+  robotQuizAttempts: number;
+  robotQuizPasses: number;
+  robotQuizPassRate: number;
+
+  /** Instructor grading on assignments (AI or legacy) */
+  assignmentAttempts: number;
+  assignmentPasses: number;
+  assignmentPassRate: number;
+
+  /** Optional: how many exam cards / class reports generated in this period */
+  examCardsGenerated?: number;
+};
+
+/**
+ * Merge backend summary (if provided) + per-bucket rows into one
+ * stable summary object. Safe even if backend hasn’t been upgraded yet.
+ */
+function deriveAnalyticsSummary(
+  rows: OrgAnalyticsRow[],
+  apiSummary?: Partial<OrgAnalyticsSummary> | null
+): OrgAnalyticsSummary {
+  type ExtRow = OrgAnalyticsRow & {
+    source_kind?: string | null;
+    source?: string | null;
+    kind?: string | null;
+    // optional per-source columns your backend can emit
+    exams_attempts?: number | null;
+    exams_passes?: number | null;
+    robot_attempts?: number | null;
+    robot_passes?: number | null;
+    assignment_attempts?: number | null;
+    assignment_passes?: number | null;
+    exam_cards_generated?: number | null;
+  };
+
+  const extRows = (rows || []) as ExtRow[];
+
+  let totalAttempts = 0;
+  let totalPasses = 0;
+  let scoreWeightedSum = 0;
+  let scoreWeight = 0;
+
+  let examsAttempts = 0;
+  let examsPasses = 0;
+  let robotAttempts = 0;
+  let robotPasses = 0;
+  let assignmentAttempts = 0;
+  let assignmentPasses = 0;
+  let examCardsGenerated = 0;
+
+  for (const r of extRows) {
+    const attempts = Number(r.attempts ?? 0);
+    const passes = Number(r.passes ?? 0);
+    const avg = Number(
+      // allow either snake_case or camelCase
+      (r as any).avg_score ?? (r as any).avgScore ?? 0
+    );
+
+    totalAttempts += attempts;
+    totalPasses += passes;
+
+    if (attempts > 0 && Number.isFinite(avg)) {
+      scoreWeightedSum += avg * attempts;
+      scoreWeight += attempts;
+    }
+
+    // Optional explicit per-source numeric columns
+    examsAttempts += Number(r.exams_attempts ?? 0);
+    examsPasses += Number(r.exams_passes ?? 0);
+
+    robotAttempts += Number(r.robot_attempts ?? 0);
+    robotPasses += Number(r.robot_passes ?? 0);
+
+    assignmentAttempts += Number(r.assignment_attempts ?? 0);
+    assignmentPasses += Number(r.assignment_passes ?? 0);
+
+    examCardsGenerated += Number(r.exam_cards_generated ?? 0);
+
+    // Fallback: infer source from kind/source field where possible
+    const kindRaw = String(
+      r.source_kind ?? r.kind ?? r.source ?? ''
+    ).toLowerCase();
+
+    if (kindRaw.includes('exam')) {
+      examsAttempts += attempts;
+      examsPasses += passes;
+    } else if (kindRaw.includes('assign')) {
+      assignmentAttempts += attempts;
+      assignmentPasses += passes;
+    } else if (kindRaw.includes('quiz') || kindRaw.includes('robot')) {
+      robotAttempts += attempts;
+      robotPasses += passes;
+    }
+  }
+
+  const overallPassRate =
+    totalAttempts > 0 ? Math.round((totalPasses * 100) / totalAttempts) : 0;
+  const overallAvgScore =
+    scoreWeight > 0 ? +(scoreWeightedSum / scoreWeight).toFixed(1) : 0;
+
+  // If backend hasn’t given us any per-source split at all, treat
+  // everything as Robot Teacher quizzes so the UI isn’t empty.
+  const hasAnySourceSplit =
+    examsAttempts > 0 || robotAttempts > 0 || assignmentAttempts > 0;
+
+  if (!hasAnySourceSplit && totalAttempts > 0) {
+    robotAttempts = totalAttempts;
+    robotPasses = totalPasses;
+  }
+
+  const safe = (v: number | undefined) =>
+    Number.isFinite(v as any) ? Number(v) : 0;
+
+  // Base derived summary
+  const base: OrgAnalyticsSummary = {
+    totalAttempts,
+    totalPasses,
+    overallPassRate,
+    overallAvgScore,
+    examsAttempts,
+    examsPasses,
+    examsPassRate:
+      examsAttempts > 0 ? Math.round((examsPasses * 100) / examsAttempts) : 0,
+    robotQuizAttempts: robotAttempts,
+    robotQuizPasses: robotPasses,
+    robotQuizPassRate:
+      robotAttempts > 0
+        ? Math.round((robotPasses * 100) / robotAttempts)
+        : 0,
+    assignmentAttempts,
+    assignmentPasses,
+    assignmentPassRate:
+      assignmentAttempts > 0
+        ? Math.round((assignmentPasses * 100) / assignmentAttempts)
+        : 0,
+    examCardsGenerated: examCardsGenerated || undefined,
+  };
+
+  // If backend already returns a summary block, let it override
+  // individual numbers when present, but keep our fallbacks.
+  if (!apiSummary) return base;
+
+  return {
+    ...base,
+    ...Object.fromEntries(
+      Object.entries(apiSummary).map(([k, v]) => [
+        k,
+        typeof v === 'number' ? safe(v) : v,
+      ])
+    ),
+  } as OrgAnalyticsSummary;
+}
+
 type MiniUser = { id: string | number; name?: string; email?: string };
 
 export const ORG_TIERS: Record<
@@ -536,6 +704,9 @@ const [submissionsRows, setSubmissionsRows] = useState<any[]>([]);
   const [period, setPeriod] = useState<Period>('month');
   const [analytics, setAnalytics] = useState<OrgAnalyticsRow[]>([]);
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+    const [analyticsSummary, setAnalyticsSummary] =
+    useState<OrgAnalyticsSummary | null>(null);
+
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingSignature, setUploadingSignature] = useState(false);
   const [uploadingInstructorSignature, setUploadingInstructorSignature] =
@@ -1132,20 +1303,42 @@ useEffect(() => {
   };
 
   /** Analytics */
-  const loadAnalytics = useCallback(async () => {
+   const loadAnalytics = useCallback(async () => {
     if (isLearnerView) return; // 🔐 learner view has no analytics dashboard
     if (!org?.id || !authToken) return;
     setLoadingAnalytics(true);
     try {
       const p: Period = canMultiPeriodAnalytics ? period : 'month';
       const resp = await getOrgAnalytics(backendUrl, authToken, org.id, p);
-      setAnalytics(resp?.data || []);
-    } catch {
+
+      const rows: OrgAnalyticsRow[] = Array.isArray(resp?.data)
+        ? resp.data
+        : [];
+
+      setAnalytics(rows);
+
+      // Optional: backend can send { summary: {...} }
+      const apiSummary = (resp?.summary ??
+        resp?.meta ??
+        null) as Partial<OrgAnalyticsSummary> | null;
+
+      setAnalyticsSummary(deriveAnalyticsSummary(rows, apiSummary));
+    } catch (e) {
+      console.warn('[OrgElearnPortal] loadAnalytics failed', e);
       setAnalytics([]);
+      setAnalyticsSummary(null);
     } finally {
       setLoadingAnalytics(false);
     }
-  }, [org?.id, backendUrl, authToken, period, canMultiPeriodAnalytics, isLearnerView]);
+  }, [
+    org?.id,
+    backendUrl,
+    authToken,
+    period,
+    canMultiPeriodAnalytics,
+    isLearnerView,
+  ]);
+
 
   useEffect(() => {
     loadAnalytics();
@@ -1811,7 +2004,7 @@ useEffect(() => {
                   <div className="w-full max-w-lg rounded-2xl bg-white text-[#0d141c] dark:bg-[#0f1821] dark:text-darkTextPrimary ring-1 ring-[#cedbe8] dark:ring-white/10 shadow-xl">
                     <div className="px-4 py-3 border-b border-slate-200 dark:border-white/10 flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <div className="text-[11px] text-slate-500 dark:text:white/60">
+                        <div className="text-[11px] text-slate-500 dark:text-white/60">
                           Submit assignment
                         </div>
                         <div className="text-sm sm:text-base font-semibold truncate">
@@ -1821,7 +2014,7 @@ useEffect(() => {
                       <button
                         type="button"
                         onClick={() => setSubmitOpen(false)}
-                        className="text-xs px-2 py-1 rounded-lg bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg:white/10 dark:text-white dark:hover:bg:white/20"
+                        className="text-xs px-2 py-1 rounded-lg bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-white/10 dark:text-white dark:hover:bg:white/20"
                       >
                         Close
                       </button>
@@ -1870,11 +2063,11 @@ useEffect(() => {
                       </div>
                     </div>
 
-                    <div className="px-4 py-3 border-t border-slate-200 dark:border:white/10 flex flex-wrap items-center justify-end gap-2">
+                    <div className="px-4 py-3 border-t border-slate-200 dark:border-white/10 flex flex-wrap items-center justify-end gap-2">
                       <button
                         type="button"
                         onClick={() => setSubmitOpen(false)}
-                        className="px-3 py-1.5 rounded-xl text-xs sm:text-sm bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg:white/10 dark:text:white dark:hover:bg:white/20"
+                        className="px-3 py-1.5 rounded-xl text-xs sm:text-sm bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-white/10 dark:text:white dark:hover:bg:white/20"
                         disabled={submitUploading}
                       >
                         Cancel
@@ -1929,16 +2122,24 @@ useEffect(() => {
                         ))}
                       </div>
 
-                      {/* 📊 Exam results – PRO & ENTERPRISE only */}
+                     {/* 📊 Exam results – PRO & ENTERPRISE only */}
                       {(tier === 'pro' || tier === 'enterprise') && (
                         <button
                           onClick={() => navigate('/org/exams')}
-                          className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl text-sm font-semibold bg-[#e7edf4] text-[#0d141c] hover:bg-[#d7e4f0] dark:bg-[#172534] dark:text:white dark:hover:bg-[#1f2f46]"
+                          className="
+                            hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl text-sm font-semibold
+                            bg-[#e7edf4] text-[#0d141c] hover:bg-[#d7e4f0]
+                            dark:bg-[#172534] dark:text-white dark:hover:bg-[#1f2f46]
+                            focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3d99f5]
+                            focus-visible:ring-offset-2 focus-visible:ring-offset-white
+                            dark:focus-visible:ring-offset-slate-900
+                          "
                         >
                           <span className="text-base">📊</span>
                           <span>Exam results</span>
                         </button>
                       )}
+
 
                       {/* Primary CTA */}
                       <button
@@ -2340,7 +2541,6 @@ useEffect(() => {
                   creatingLegacyAssignment={creatingLegacyAssignment}
                 />
               )}
-
               {tab === 'analytics' && (
                 <>
                   <AnalyticsPane
@@ -2351,6 +2551,7 @@ useEffect(() => {
                     canCSV={canCSV}
                     loadingAnalytics={loadingAnalytics}
                     analytics={analytics}
+                    summary={analyticsSummary ?? undefined}
                     onRefresh={loadAnalytics}
                     onExportCSV={downloadCSV}
                     onSendReportRow={async (bucketISO, p) => {
@@ -2370,6 +2571,7 @@ useEffect(() => {
                     }}
                     canMonthly={canMonthly}
                   />
+
 
                   {/* Overall learner progress (simple, read-only) */}
                   <section className="mt-4 rounded-2xl ring-1 ring-[#e7edf4] dark:ring-white/10 bg-white dark:bg-[#0f1821] p-3 sm:p-4">
@@ -2409,14 +2611,14 @@ useEffect(() => {
                           {lpRows.map((r) => (
                             <tr
                               key={String(r.user_id)}
-                              className="border-t border-[#e7edf4] dark:border:white/10"
+                              className="border-t border-[#e7edf4] dark:border-white/10"
                             >
                               <td className="py-2 pr-4">
                                 <div className="font-medium">
                                   {r.name || r.email || `User #${r.user_id}`}
                                 </div>
                                 {r.email && (
-                                  <div className="text-[11px] text-slate-500 dark:text:white/60">
+                                  <div className="text-[11px] text-slate-500 dark:text-white/60">
                                     {r.email}
                                   </div>
                                 )}
@@ -2443,9 +2645,9 @@ useEffect(() => {
                             </tr>
                           ))}
                           {!lpRows.length && !lpLoading && (
-                            <tr className="border-t border-[#e7edf4] dark:border:white/10">
+                            <tr className="border-t border-[#e7edf4] dark:border-white/10">
                               <td
-                                className="py-6 pr-4 text-slate-500 dark:text:white/60"
+                                className="py-6 pr-4 text-slate-500 dark:text-white/60"
                                 colSpan={7}
                               >
                                 No learner data yet.
@@ -2478,7 +2680,7 @@ useEffect(() => {
       {/* Congrats modal – only relevant to owners (not learners) */}
       {!isLearnerView && showCongrats && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white text-[#0d141c] dark:bg-[#0f1821] dark:text:white ring-1 ring-[#cedbe8] dark:ring:white/10 p-5">
+          <div className="w-full max-w-md rounded-2xl bg-white text-[#0d141c] dark:bg-[#0f1821] dark:text:white ring-1 ring-[#cedbe8] dark:ring-white/10 p-5">
             <div className="flex items-start gap-3">
               <div className="shrink-0 h-10 w-10 rounded-full bg-emerald-500/15 flex items-center justify-center">
                 <span className="text-xl">🎉</span>
@@ -2514,7 +2716,7 @@ useEffect(() => {
               </button>
               <button
                 onClick={() => setShowCongrats(false)}
-                className="px-3 py-1.5 rounded-xl bg-slate-100 text-[#0d141c] hover:bg-slate-200 dark:bg:white/10 dark:text:white dark:hover:bg:white/15"
+                className="px-3 py-1.5 rounded-xl bg-slate-100 text-[#0d141c] hover:bg-slate-200 dark:bg-white/10 dark:text:white dark:hover:bg:white/15"
               >
                 Not now
               </button>

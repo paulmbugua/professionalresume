@@ -111,7 +111,8 @@ const resultsRes = await client.query(
       p.house_label,
       p.dorm_label,
       p.club_label,
-      p.photo_url
+      p.photo_url,
+       p.class_teacher_signature_url
     from org_exam_results r
     join users u
       on u.id = r.student_user_id
@@ -143,6 +144,7 @@ const resultsRes = await client.query(
       dorm_label: firstRow.dorm_label,
       club_label: firstRow.club_label,
       photo_url: firstRow.photo_url,
+      class_teacher_signature_url: firstRow.class_teacher_signature_url || null,
     };
 
     const effectiveClassLabel = (firstRow.class_label || '').toString().trim();
@@ -424,6 +426,12 @@ const autoTitle = [
 // 🔹 Final title: manual > auto > hard default
 const reportTitle = orgReportTitle || autoTitle || 'TERM REPORT CARD';
 
+const classTeacherSig =
+  student.class_teacher_signature_url || // 👈 per-class (per learner)
+  org.instructor_signature_url ||        // org-level instructor sig
+  null;
+
+
 return {
   org,
   student,
@@ -447,6 +455,9 @@ return {
   progressSeries,
   attendance,
   reportTitle,
+  // 👇 NEW: flattened signature helpers for the PDF layer
+  class_teacher_signature_url: classTeacherSig,
+  instructor_signature_url: org.instructor_signature_url || null,
   helpers: {
     ordinalRank: computeOrdinalRank,
   },

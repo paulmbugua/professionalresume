@@ -338,6 +338,13 @@ export async function renderOrgExamStudentCardPdf(card) {
   const termLabel = card.term ? `${card.term.year} ${card.term.label}` : '';
   const examLabel = card.session?.label || '';
 
+    const classTeacherSig =
+    card.class_teacher_signature_url || // from service
+    card.instructor_signature_url ||    // flattened org-level instructor sig
+    card.org?.instructor_signature_url || // extra safety
+    null;
+
+
   // Deterministic report card number
   const reportNumber = generateReportCardNumber({
     brandName: schoolName,
@@ -370,20 +377,14 @@ export async function renderOrgExamStudentCardPdf(card) {
       exact: false,
       dpr: 2,
     }),
-    tryLoadImageBuffer(
-      card.teacher_signature_url ||
-        card.class_teacher_signature_url ||
-        card.summary?.teacher_signature_url ||
-        card.summary?.class_teacher_signature_url ||
-        card.org?.instructor_signature_url, // fallback
-      {
-        w: 520,
-        h: 200,
-        trim: true,
-        exact: false,
-        dpr: 2,
-      },
-    ),
+    tryLoadImageBuffer(classTeacherSig, {
+    w: 520,
+    h: 200,
+    trim: true,
+    exact: false,
+    dpr: 2,
+  }),
+
   ]);
 
   // ───────────────────────────────── HEADER ─────────────────────────────────
@@ -1506,10 +1507,12 @@ export async function renderOrgExamClassReportPdf(payload) {
 
   // Preload logo + signatures (principal + class teacher)
   const teacherSignatureSource =
-    examMeta.teacher_signature_url ||
-    examMeta.class_teacher_signature_url ||
-    org.instructor_signature_url ||
-    org.teacher_signature_url;
+  examMeta.class_teacher_signature_url || // 👈 per-class (same as learner card)
+  examMeta.teacher_signature_url ||       // optional per-exam override
+  org.instructor_signature_url ||         // org-level instructor sig
+  org.teacher_signature_url ||            // legacy/fallback
+  null;
+
 
   const registrarSignatureSource =
     org.signature_url ||

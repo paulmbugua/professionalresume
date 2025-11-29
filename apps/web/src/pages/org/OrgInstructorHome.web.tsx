@@ -49,6 +49,9 @@ const OrgInstructorHome: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // NEW: class label for per-class teacher signature
+  const [classLabel, setClassLabel] = useState('');
+
   // ─────────────────────────────────────────────────────────
   // Recent submissions state
   // ─────────────────────────────────────────────────────────
@@ -366,6 +369,59 @@ const OrgInstructorHome: React.FC = () => {
             background. Once saved, future report cards and certificates will
             automatically use this signature image.
           </p>
+
+          {/* NEW: Apply preview as class-teacher signature for a specific class */}
+          <div className="mt-4 space-y-2">
+            <label className="text-xs sm:text-sm text-mutedGray dark:text-darkTextSecondary">
+              Class / Grade this signature belongs to
+            </label>
+            <input
+              className="input w-full max-w-xs"
+              value={classLabel}
+              onChange={(e) => setClassLabel(e.target.value)}
+              placeholder="e.g. Grade 7 Blue"
+            />
+            <button
+              type="button"
+              disabled={!previewUrl || !classLabel || !org?.id || !authToken}
+              onClick={async () => {
+                try {
+                  setSigError(null);
+                  setSigSuccess(null);
+
+                  if (!backendUrl || !org?.id || !authToken) {
+                    throw new Error('Missing organization context.');
+                  }
+
+                  const res = await fetch(
+                    `${backendUrl}/api/orgs/${org!.id}/classes/${encodeURIComponent(
+                      classLabel
+                    )}/class-teacher-signature`,
+                    {
+                      method: 'PUT',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${authToken}`,
+                      },
+                      body: JSON.stringify({ signature_url: previewUrl }),
+                    }
+                  );
+                  if (!res.ok) {
+                    const j = await res.json().catch(() => ({}));
+                    throw new Error(j.message || `Failed (${res.status})`);
+                  }
+                  setSigSuccess(
+                    `Signature applied to ${classLabel}. New report cards for this class will use it.`
+                  );
+                } catch (e: any) {
+                  setSigError(e?.message || 'Failed to apply class teacher signature.');
+                }
+              }}
+              className="inline-flex items-center justify-center rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-xs sm:text-sm font-semibold text-white px-4 py-2.5 shadow-sm shadow-indigo-600/30 transition disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              Save as class teacher for this class
+            </button>
+          </div>
 
           {sigError && (
             <p className="mt-2 text-[11px] sm:text-xs text-red-500">

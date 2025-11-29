@@ -20,7 +20,7 @@ import {
 
 // ⬇️ Auth + tier guard
 import { requireAuth } from '../middleware/auth.js';
-import { requireOrgTier } from '../utils/orgTierGuard.js';
+
 
 const router = Router({ mergeParams: true });
 

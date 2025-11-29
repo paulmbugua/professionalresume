@@ -38,7 +38,8 @@ const resolveQuizSize = (meta: any): number | null => {
 
 export default function OrgInviteLanding() {
   const { code = '' } = useParams();
-  const { backendUrl, token: userToken } = useShopContext(); // normal user token
+  const { backendUrl, token, orgToken } = useShopContext() as any;
+  const learnerToken = token || orgToken;
   const nav = useNavigate();
 
   // NEW: consume kind + error from the hook
@@ -64,17 +65,23 @@ export default function OrgInviteLanding() {
       return;
     }
 
-    // Require sign-in; remember return target
-    if (!userToken) {
-      const next = `/org/join/${code}`;
-      try { sessionStorage.setItem('auth:returnTo', next); } catch {}
-      nav(`/org/join/${code}/login`, { replace: true });
-      return;
-    }
+   // Require sign-in; remember return target
+if (!learnerToken) {
+  const next = `/org/join/${code}`;
+  try {
+    sessionStorage.setItem('auth:returnTo', next);
+  } catch {}
+  // Send to InstitutionLogin (with a hint it's from an invite)
+  nav(`/org/login?from=invite&code=${encodeURIComponent(code)}`, {
+    replace: true,
+  });
+  return;
+}
+
 
     try {
       if (kind === 'membership') {
-        const resp = await acceptOrgMembershipInvite(backendUrl, userToken, code);
+        const resp = await acceptOrgMembershipInvite(backendUrl,learnerToken, code);
         if (!resp?.ok) {
           // No `message` on this type — let the catch block surface API errors.
           throw new Error('Failed to join organization.');
@@ -85,7 +92,7 @@ export default function OrgInviteLanding() {
 
 
       // Default/assignment path
-      const resp: any = await acceptOrgInvite(backendUrl, userToken, code);
+      const resp: any = await acceptOrgInvite(backendUrl,learnerToken, code);
       if (!resp?.ok) throw new Error(resp?.message || 'Failed to accept invite.');
 
       const enrollment = resp.enrollment ?? resp.attempt ?? resp;
@@ -181,7 +188,7 @@ export default function OrgInviteLanding() {
 
   const orgName = (meta as OrgInviteInfo | undefined)?.org_name || 'Organization';
 
-  const primaryCta = userToken
+  const primaryCta =learnerToken
     ? (kind === 'membership' ? 'Join Organization' : 'Accept & Join')
     : (domainRestricted ? 'Sign in with allowed email' : 'Sign in to continue');
 
@@ -284,7 +291,7 @@ export default function OrgInviteLanding() {
                 <div className="font-medium">Restricted invite</div>
                 <div className="mt-0.5">
                   Only emails from <b>{allowedDomains.join(', ')}</b> can accept this invite.
-                  {!!userToken ? (
+                  {!!learnerToken ? (
                     <> If this isn’t your organization email, sign out and sign back in with the permitted address.</>
                   ) : (
                     <> Please sign in using an email on one of those domains.</>

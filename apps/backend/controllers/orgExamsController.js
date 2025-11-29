@@ -1161,12 +1161,32 @@ export async function getOrgClassReportPdf(req, res, next) {
     }
     const session = sessionRows[0];
 
-    const examMeta = {
-      classLabel: String(classLabel || '').trim(),
-      termLabel: session.term_label || '',
-      termYear: session.term_year || '',
-      examLabel: session.exam_label || '',
-    };
+    // Try to find any per-class teacher signature for this class
+const { rows: classSigRows } = await pool.query(
+  `
+  SELECT class_teacher_signature_url
+  FROM org_learner_profiles
+  WHERE org_id = $1
+    AND class_label = $2
+    AND class_teacher_signature_url IS NOT NULL
+  LIMIT 1
+  `,
+  [orgId, classLabel],
+);
+
+const classTeacherSignatureUrl =
+  classSigRows[0]?.class_teacher_signature_url || null;
+
+
+const examMeta = {
+  classLabel: String(classLabel || '').trim(),
+  termLabel: session.term_label || '',
+  termYear: session.term_year || '',
+  examLabel: session.exam_label || '',
+  // 👇 NEW: per-class teacher signature for this report
+  class_teacher_signature_url: classTeacherSignatureUrl,
+};
+
 
     // ── Subject summary for this class ──
     const { rows: subjectStats } = await pool.query(

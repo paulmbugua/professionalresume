@@ -1,5 +1,6 @@
 // apps/web/src/pages/org/OrgPortalPanes.tsx
 import React from 'react';
+import { Link } from 'react-router-dom';
 import type {
   OrgResp as Org,
   OrgAnalyticsRow,
@@ -87,7 +88,9 @@ type BrandingAssignProps = {
   setLegacyDueAt: (v: string) => void;
   legacyAttachmentUrl: string;
   legacyUploadingAttachment: boolean;
-  onUploadLegacyAttachment: (file: File | null) => Promise<string | null> | Promise<null> | null;
+  onUploadLegacyAttachment: (
+    file: File | null
+  ) => Promise<string | null> | Promise<null> | null;
   onCreateLegacyAssignment: () => void;
   creatingLegacyAssignment: boolean;
 };
@@ -233,7 +236,9 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
     if (!canBranding && target !== 'instructor_signature_url') {
       // instructor signature is handled separately by instructor home,
       // but from here we keep general branding changes locked if needed.
-      alert('Branding settings can only be changed by your institution owner/admin.');
+      alert(
+        'Branding settings can only be changed by your institution owner/admin.'
+      );
       try {
         inputEl.value = '';
       } catch {}
@@ -274,7 +279,8 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
           {!canBranding && (
             <div className="sm:col-span-2 text-sm text-amber-700 dark:text-amber-300">
               Branding settings aren’t editable from this account. Please ask your
-              institution owner or admin to update logos, signatures, and contact details.
+              institution owner or admin to update logos, signatures, and contact
+              details.
             </div>
           )}
 
@@ -294,7 +300,9 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
             <input
               className="input mt-1 w-full"
               value={form.certificate_title || ''}
-              onChange={(e) => setForm({ ...form, certificate_title: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, certificate_title: e.target.value })
+              }
               placeholder="Certificate of Completion"
               disabled={!canBranding}
             />
@@ -321,7 +329,9 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                 <input
                   className="input w-full"
                   value={form.logo_url || ''}
-                  onChange={(e) => setForm({ ...form, logo_url: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, logo_url: e.target.value })
+                  }
                   placeholder="https://..."
                   disabled={!canBranding}
                 />
@@ -343,7 +353,9 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                       ? 'opacity-60 cursor-not-allowed bg-white/10'
                       : 'bg-emerald-600 hover:bg-emerald-500 cursor-pointer',
                   ].join(' ')}
-                  aria-disabled={uploadingLogo || !canBranding || !token || undefined}
+                  aria-disabled={
+                    uploadingLogo || !canBranding || !token || undefined
+                  }
                   title={!token ? 'Login required' : undefined}
                 >
                   {uploadingLogo ? 'Uploading…' : 'Upload Logo'}
@@ -373,7 +385,9 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                 <input
                   className="input w-full"
                   value={form.signature_url || ''}
-                  onChange={(e) => setForm({ ...form, signature_url: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, signature_url: e.target.value })
+                  }
                   placeholder="https://..."
                   disabled={!canBranding}
                 />
@@ -395,7 +409,9 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                       ? 'opacity-60 cursor-not-allowed bg-white/10'
                       : 'bg-emerald-600 hover:bg-emerald-500 cursor-pointer',
                   ].join(' ')}
-                  aria-disabled={uploadingSignature || !canBranding || !token || undefined}
+                  aria-disabled={
+                    uploadingSignature || !canBranding || !token || undefined
+                  }
                   title={!token ? 'Login required' : undefined}
                 >
                   {uploadingSignature ? 'Uploading…' : 'Upload Signature'}
@@ -426,7 +442,10 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                   className="input w-full"
                   value={form.instructor_signature_url || ''}
                   onChange={(e) =>
-                    setForm({ ...form, instructor_signature_url: e.target.value })
+                    setForm({
+                      ...form,
+                      instructor_signature_url: e.target.value,
+                    })
                   }
                   placeholder="https://..."
                   disabled={!canBranding}
@@ -450,7 +469,10 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                       : 'bg-emerald-600 hover:bg-emerald-500 cursor-pointer',
                   ].join(' ')}
                   aria-disabled={
-                    uploadingInstructorSignature || !canBranding || !token || undefined
+                    uploadingInstructorSignature ||
+                    !canBranding ||
+                    !token ||
+                    undefined
                   }
                   title={!token ? 'Login required' : undefined}
                 >
@@ -597,7 +619,9 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
               id="allow_retry"
               type="checkbox"
               checked={!!form.allow_retry}
-              onChange={(e) => setForm({ ...form, allow_retry: e.target.checked })}
+              onChange={(e) =>
+                setForm({ ...form, allow_retry: e.target.checked })
+              }
               disabled={!canCustomPassTimers}
               title={!canCustomPassTimers ? 'Available on Pro and Enterprise' : ''}
             />
@@ -621,14 +645,16 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
             <input
               className="input mt-1 w-full"
               value={form.email_domain || ''}
-              onChange={(e) => setForm({ ...form, email_domain: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, email_domain: e.target.value })
+              }
               placeholder="example.edu"
               disabled={!canSSO}
               title={!canSSO ? 'Available on Enterprise' : ''}
             />
             <div className="mt-1 text-[11px] text-[#49739c] dark:text-darkTextSecondary">
-              Comma-separated. Supports wildcards like <code>*.example.edu</code>. Learners
-              with other domains cannot accept invites.
+              Comma-separated. Supports wildcards like <code>*.example.edu</code>.
+              Learners with other domains cannot accept invites.
             </div>
           </div>
 
@@ -660,7 +686,9 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
             <input
               className="input mt-1 w-full"
               value={form.webhook_url || ''}
-              onChange={(e) => setForm({ ...form, webhook_url: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, webhook_url: e.target.value })
+              }
               placeholder="https://your.system/hooks/elearn"
               disabled={!canWebhooks}
               title={!canWebhooks ? 'Available on Enterprise' : ''}
@@ -853,9 +881,9 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                   Attach a worksheet or project brief
                 </div>
                 <div className="text-[11px] sm:text-xs text-slate-600 dark:text-white/70">
-                  Perfect for essays, worksheets, experiments and offline tasks. Learners
-                  download your file, complete the work, then submit their own file or
-                  typed answer.
+                  Perfect for essays, worksheets, experiments and offline tasks.
+                  Learners download your file, complete the work, then submit their own
+                  file or typed answer.
                 </div>
               </div>
             </div>
@@ -957,7 +985,7 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                     href={legacyAttachmentUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center px-3 py-1.5 rounded-xl text-[11px] sm:text-xs bg-white text-[#0d141c] ring-1 ring-[#d1e2f4] hover:bg-[#e7edf4] dark:bg-[#0b1420] dark:text-white dark:ring-white/15 dark:hover:bg-white/5"
+                    className="inline-flex items-center px-3 py-1.5 rounded-xl text-[11px] sm:text-xs bg-white text-[#0d141c] ring-1 ring-[#d1e2f4] hover:bg-[#e7edf4] dark:bg-[#0b1420] dark:text-white dark:ring-white/15 dark:hover:bg.white/5"
                   >
                     View attached file
                   </a>
@@ -1094,12 +1122,14 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                       Failed to load courses.
                     </div>
                   )}
-                  {!coursesLoading && !coursesError && (!courses || courses.length === 0) && (
-                    <div className="px-3 py-2 text-[11px] text-slate-500 dark:text-white/65">
-                      No courses found. Create a course with Robot Tutor first, then link
-                      it here.
-                    </div>
-                  )}
+                  {!coursesLoading &&
+                    !coursesError &&
+                    (!courses || courses.length === 0) && (
+                      <div className="px-3 py-2 text-[11px] text-slate-500 dark:text-white/65">
+                        No courses found. Create a course with Robot Tutor first, then
+                        link it here.
+                      </div>
+                    )}
                   {courses && courses.length > 0 && (
                     <ul className="divide-y divide-[#e7edf4] dark:divide-white/10">
                       {courses.map((c: any) => {
@@ -1186,7 +1216,8 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
                           className="chip"
                           title="Email invite link to instructors"
                         >
-                          Email instructors {bccChunks.length > 1 ? `(${idx + 1})` : ''}
+                          Email instructors{' '}
+                          {bccChunks.length > 1 ? `(${idx + 1})` : ''}
                         </a>
                       );
                     })
@@ -1219,8 +1250,8 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
 
             <p className="text-xs text-[#49739c] dark:text-darkTextSecondary">
               Share the AI invite link for timed quizzes and auto-marking. For open-ended
-              projects or long-form work, use the classic assignment card above so learners
-              can upload their files directly.
+              projects or long-form work, use the classic assignment card above so
+              learners can upload their files directly.
             </p>
           </section>
         </div>
@@ -1232,20 +1263,39 @@ export function BrandingAssignPane(props: BrandingAssignProps) {
 /** ─────────────────────────────────────────────────────────
  * ANALYTICS pane
  * ───────────────────────────────────────────────────────── */
-type AnalyticsProps = {
+
+type AnalyticsPaneProps = {
   period: Period;
   setPeriod: (p: Period) => void;
   canMultiPeriodAnalytics: boolean;
   canEmailReports: boolean;
   canCSV: boolean;
-  canMonthly: boolean;
-
   loadingAnalytics: boolean;
   analytics: OrgAnalyticsRow[];
+  summary?: {
+    totalAttempts: number;
+    totalPasses: number;
+    overallPassRate: number;
+    overallAvgScore: number;
 
+    examsAttempts: number;
+    examsPasses: number;
+    examsPassRate: number;
+
+    robotQuizAttempts: number;
+    robotQuizPasses: number;
+    robotQuizPassRate: number;
+
+    assignmentAttempts: number;
+    assignmentPasses: number;
+    assignmentPassRate: number;
+
+    examCardsGenerated?: number;
+  } | null;
   onRefresh: () => void;
   onExportCSV: () => void;
-  onSendReportRow: (bucketISO: string, period: Period) => Promise<void>;
+  onSendReportRow: (bucketISO: string, p: Period) => Promise<void> | void;
+  canMonthly: boolean;
 };
 
 export function AnalyticsPane({
@@ -1254,115 +1304,423 @@ export function AnalyticsPane({
   canMultiPeriodAnalytics,
   canEmailReports,
   canCSV,
-  canMonthly,
   loadingAnalytics,
   analytics,
+  summary,
   onRefresh,
   onExportCSV,
   onSendReportRow,
-}: AnalyticsProps) {
-  return (
-    <section className="rounded-2xl ring-1 ring-[#e7edf4] dark:ring-darkCard bg-white dark:bg-[#0f1821] p-3 sm:p-4">
-      <div className="flex flex-wrap items-center gap-2 mb-3">
-        <button
-          onClick={() => setPeriod('month')}
-          className={`chip ${period === 'month' ? 'chip-active' : ''}`}
-        >
-          Month
-        </button>
-        <button
-          onClick={() => canMultiPeriodAnalytics && setPeriod('term')}
-          className={`chip ${period === 'term' ? 'chip-active' : ''} ${
-            !canMultiPeriodAnalytics ? 'opacity-50 cursor-not-allowed' : ''
-          }`}
-          title={!canMultiPeriodAnalytics ? 'Termly analytics is Pro+' : ''}
-        >
-          Term
-        </button>
-        <button
-          onClick={() => canMultiPeriodAnalytics && setPeriod('year')}
-          className={`chip ${period === 'year' ? 'chip-active' : ''} ${
-            !canMultiPeriodAnalytics ? 'opacity-50 cursor-not-allowed' : ''
-          }`}
-          title={!canMultiPeriodAnalytics ? 'Yearly analytics is Pro+' : ''}
-        >
-          Year
-        </button>
+  canMonthly,
+}: AnalyticsPaneProps) {
+  const hasData = (analytics?.length ?? 0) > 0;
 
-        <div className="ml-auto flex items-center gap-2 w-full sm:w-auto">
-          {canCSV && (
-            <button
-              onClick={onExportCSV}
-              className="chip chip-active w-full sm:w-auto"
-              title="Export CSV (Enterprise)"
-            >
+  const effectiveSummary = React.useMemo(() => {
+    if (summary) return summary;
+
+    // Lightweight fallback: treat everything as "Robot Teacher quizzes"
+    const rows = (analytics || []) as any[];
+    let totalAttempts = 0;
+    let totalPasses = 0;
+    let scoreWeightedSum = 0;
+    let scoreWeight = 0;
+
+    for (const r of rows) {
+      const attempts = Number(r.attempts ?? 0);
+      const passes = Number(r.passes ?? 0);
+      const avg = Number(r.avg_score ?? (r as any).avgScore ?? 0);
+      totalAttempts += attempts;
+      totalPasses += passes;
+      if (attempts > 0 && Number.isFinite(avg)) {
+        scoreWeightedSum += avg * attempts;
+        scoreWeight += attempts;
+      }
+    }
+
+    const overallPassRate =
+      totalAttempts > 0 ? Math.round((totalPasses * 100) / totalAttempts) : 0;
+    const overallAvgScore =
+      scoreWeight > 0 ? +(scoreWeightedSum / scoreWeight).toFixed(1) : 0;
+
+    return {
+      totalAttempts,
+      totalPasses,
+      overallPassRate,
+      overallAvgScore,
+      examsAttempts: 0,
+      examsPasses: 0,
+      examsPassRate: 0,
+      robotQuizAttempts: totalAttempts,
+      robotQuizPasses: totalPasses,
+      robotQuizPassRate: overallPassRate,
+      assignmentAttempts: 0,
+      assignmentPasses: 0,
+      assignmentPassRate: 0,
+      examCardsGenerated: undefined,
+    };
+  }, [summary, analytics]);
+
+  const periodLabel =
+    period === 'month'
+      ? 'Last 30 days'
+      : period === 'term'
+      ? 'This term'
+      : 'This year';
+
+  const periodOptions: Period[] = ['month', 'term', 'year'];
+
+  // For a mini "sparkline" bar – we’ll just use widths
+  const maxAttemptsInBucket = Math.max(
+    0,
+    ...analytics.map((r) => Number((r as any).attempts ?? 0))
+  );
+
+  const formatDate = (iso: string) => {
+    if (!iso) return '—';
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+      });
+    } catch {
+      return iso;
+    }
+  };
+
+  const cardBase =
+    'rounded-2xl ring-1 ring-[#e7edf4] dark:ring-white/10 bg-white/95 dark:bg-[#0f1821] p-3 sm:p-4 flex flex-col justify-between';
+
+  const pillMuted =
+    'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-slate-50 text-slate-700 ring-1 ring-slate-200 dark:bg-white/5 dark:text-white/80 dark:ring-white/10';
+
+  return (
+    <section className="mt-4 space-y-4">
+      {/* Header row */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div>
+          <h2 className="text-sm sm:text-base md:text-lg font-semibold">
+            Learning analytics
+          </h2>
+          <p className="text-[11px] sm:text-xs text-slate-600 dark:text-darkTextSecondary">
+            One view that blends <b>Robot Teacher quizzes</b>,{' '}
+            <b>exam results</b> and <b>assignment grading</b> for your
+            institution.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Period selector */}
+          <div className="inline-flex rounded-lg overflow-hidden ring-1 ring-slate-200 dark:ring-white/10 text-xs sm:text-sm bg-white dark:bg-[#0b1420]">
+            {periodOptions.map((p) => {
+              const disabled =
+                p !== 'month' && (!canMultiPeriodAnalytics || !canMonthly);
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => !disabled && setPeriod(p)}
+                  className={[
+                    'px-2.5 sm:px-3 py-1.5',
+                    period === p
+                      ? 'bg-slate-200 dark:bg-white/15 text-slate-900 dark:text-white'
+                      : 'bg-transparent hover:bg-slate-100 dark:hover:bg-white/5 text-slate-600 dark:text-white/70',
+                    disabled ? 'opacity-50 cursor-not-allowed' : '',
+                  ].join(' ')}
+                  title={
+                    disabled
+                      ? 'Available on higher plans'
+                      : p === 'month'
+                      ? 'Monthly view'
+                      : p === 'term'
+                      ? 'Term view'
+                      : 'Year view'
+                  }
+                >
+                  {p === 'month'
+                    ? 'Month'
+                    : p === 'term'
+                    ? 'Term'
+                    : 'Year'}
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={onRefresh}
+            className="chip"
+            type="button"
+            disabled={loadingAnalytics}
+          >
+            {loadingAnalytics ? 'Refreshing…' : 'Refresh'}
+          </button>
+
+          {canCSV && hasData && (
+            <button onClick={onExportCSV} className="chip" type="button">
               Export CSV
             </button>
           )}
-          {loadingAnalytics && (
-            <span className="text-xs text-[#49739c] dark:text-darkTextSecondary">
-              Loading…
+        </div>
+      </div>
+
+      {/* Summary cards row */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+        {/* Exams card */}
+        <div className={cardBase}>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="text-xs text-slate-500 dark:text-darkTextSecondary">
+                Term exams
+              </div>
+              <div className="mt-1 text-xl font-semibold">
+                {effectiveSummary.examsAttempts || 0}
+              </div>
+              <div className="mt-0.5 text-[11px] text-slate-500 dark:text-darkTextSecondary">
+                graded exam results in {periodLabel.toLowerCase()}
+              </div>
+            </div>
+            <span className={pillMuted}>Exams</span>
+          </div>
+          <div className="mt-3 flex items-center justify-between text-[11px] text-slate-600 dark:text-darkTextSecondary">
+            <span>
+              Pass rate:{' '}
+              <b>
+                {effectiveSummary.examsAttempts
+                  ? `${effectiveSummary.examsPassRate}%`
+                  : '—'}
+              </b>
             </span>
-          )}
-          <button onClick={onRefresh} className="chip w-full sm:w-auto">
-            Refresh
-          </button>
+            {typeof effectiveSummary.examCardsGenerated === 'number' &&
+              effectiveSummary.examCardsGenerated > 0 && (
+                <span>
+                  Cards: <b>{effectiveSummary.examCardsGenerated}</b>
+                </span>
+              )}
+          </div>
+          <div className="mt-2 text-[11px] text-slate-500 dark:text-darkTextSecondary">
+            Use the{' '}
+            <Link
+              to="/org/exams"
+              className="underline underline-offset-2 hover:text-sky-700 dark:hover:text-sky-300"
+            >
+              exam results portal
+            </Link>{' '}
+            for deeper subject / term breakdowns.
+          </div>
+        </div>
+
+        {/* Robot Teacher quizzes */}
+        <div className={cardBase}>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="text-xs text-slate-500 dark:text-darkTextSecondary">
+                Robot Teacher quizzes
+              </div>
+              <div className="mt-1 text-xl font-semibold">
+                {effectiveSummary.robotQuizAttempts || 0}
+              </div>
+              <div className="mt-0.5 text-[11px] text-slate-500 dark:text-darkTextSecondary">
+                auto-graded quiz attempts in {periodLabel.toLowerCase()}
+              </div>
+            </div>
+            <span className={pillMuted}>AI</span>
+          </div>
+          <div className="mt-3 flex items-center justify-between text-[11px] text-slate-600 dark:text-darkTextSecondary">
+            <span>
+              Pass rate:{' '}
+              <b>{effectiveSummary.robotQuizPassRate || 0}%</b>
+            </span>
+            <span>
+              Avg score:{' '}
+              <b>{effectiveSummary.overallAvgScore || 0}%</b>
+            </span>
+          </div>
+          <div className="mt-2 text-[11px] text-slate-500 dark:text-darkTextSecondary">
+            Built from any course a teacher or learner runs through{' '}
+            <span className="font-semibold">Robot Teacher</span>.
+          </div>
+        </div>
+
+        {/* Assignments */}
+        <div className={cardBase}>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="text-xs text-slate-500 dark:text-darkTextSecondary">
+                Instructor grading
+              </div>
+              <div className="mt-1 text-xl font-semibold">
+                {effectiveSummary.assignmentAttempts || 0}
+              </div>
+              <div className="mt-0.5 text-[11px] text-slate-500 dark:text-darkTextSecondary">
+                graded assignments in {periodLabel.toLowerCase()}
+              </div>
+            </div>
+            <span className={pillMuted}>Assignments</span>
+          </div>
+          <div className="mt-3 flex items-center justify-between text-[11px] text-slate-600 dark:text-darkTextSecondary">
+            <span>
+              Pass rate:{' '}
+              <b>{effectiveSummary.assignmentPassRate || 0}%</b>
+            </span>
+            <span>
+              Overall graded: <b>{effectiveSummary.totalAttempts}</b>
+            </span>
+          </div>
+          <div className="mt-2 text-[11px] text-slate-500 dark:text-darkTextSecondary">
+            Includes AI-powered and legacy assignments targeted to specific
+            classes and subjects.
+          </div>
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-xs sm:text-sm">
-          <thead className="text-left text-[#49739c] dark:text-darkTextSecondary">
-            <tr>
-              <th className="py-2 pr-4">Bucket</th>
-              <th className="py-2 pr-4">Attempts</th>
-              <th className="py-2 pr-4">Passes</th>
-              <th className="py-2 pr-4">Avg Score</th>
-              {canEmailReports && <th className="py-2 pr-4">Send</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {analytics.map((r, i) => (
-              <tr key={i} className="border-t border-[#e7edf4] dark:border-white/10">
-                <td className="py-2 pr-4">
-                  {new Date(r.bucket).toLocaleDateString()}
-                </td>
-                <td className="py-2 pr-4">{r.attempts}</td>
-                <td className="py-2 pr-4">{r.passes}</td>
-                <td className="py-2 pr-4">{Math.round(r.avg_score || 0)}%</td>
-                {canEmailReports && (
-                  <td className="py-2 pr-4">
-                    <button
-                      className="px-2 py-1 rounded bg-[#e7edf4] dark:bg-white/10 hover:bg-[#d7e4f0] dark:hover:bg-white/15 text-xs text-[#0d141c] dark:text-darkTextPrimary"
-                      onClick={() =>
-                        onSendReportRow(new Date(r.bucket).toISOString(), period)
-                      }
+      {/* Trend table + mini bars */}
+      <div className="rounded-2xl ring-1 ring-[#e7edf4] dark:ring-white/10 bg-white dark:bg-[#0f1821] p-3 sm:p-4">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div>
+            <h3 className="text-sm sm:text-base font-semibold">
+              Attempts over time
+            </h3>
+            <p className="text-[11px] sm:text-xs text-slate-600 dark:text-darkTextSecondary">
+              Each row is a time bucket in this period. Use it to spot spikes in
+              activity (exams week, revision week, etc.).
+            </p>
+          </div>
+          <div className="text-[11px] text-slate-500 dark:text-darkTextSecondary">
+            Overall pass rate:{' '}
+            <b>{effectiveSummary.overallPassRate || 0}%</b>
+          </div>
+        </div>
+
+        {!hasData && !loadingAnalytics && (
+          <div className="mt-3 rounded-xl border border-dashed border-slate-300 dark:border-white/15 px-4 py-4 text-[11px] sm:text-xs text-slate-500 dark:text-darkTextSecondary">
+            No graded activity yet for this period. Once learners start taking
+            quizzes, exams or assignments inside DayBreak, you’ll see a trend
+            here.
+          </div>
+        )}
+
+        {hasData && (
+          <div className="overflow-x-auto mt-2">
+            <table className="min-w-full text-xs sm:text-sm">
+              <thead className="text-left text-slate-600 dark:text-white/70">
+                <tr>
+                  <th className="py-2 pr-3">Bucket</th>
+                  <th className="py-2 pr-3">Attempts</th>
+                  <th className="py-2 pr-3">Passes</th>
+                  <th className="py-2 pr-3">Avg score</th>
+                  <th className="py-2 pr-3">Activity</th>
+                  {canEmailReports && (
+                    <th className="py-2 pr-3 text-right">Email snapshot</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {analytics.map((r) => {
+                  const key = String(
+                    (r as any).bucket ?? (r as any).id ?? Math.random()
+                  );
+                  const attempts = Number((r as any).attempts ?? 0);
+                  const passes = Number((r as any).passes ?? 0);
+                  const avg = Number(
+                    (r as any).avg_score ?? (r as any).avgScore ?? 0
+                  );
+                  const bucketISO = String(
+                    (r as any).bucket ?? (r as any).bucket_iso ?? ''
+                  );
+                  const barWidth =
+                    maxAttemptsInBucket > 0
+                      ? Math.max(
+                          4,
+                          Math.round((attempts / maxAttemptsInBucket) * 100)
+                        )
+                      : 0;
+
+                  // Optional per-bucket hints
+                  const exams = Number(
+                    (r as any).exams_attempts ?? (r as any).exam_attempts ?? 0
+                  );
+                  const robots = Number(
+                    (r as any).robot_attempts ??
+                      (r as any).quiz_attempts ??
+                      0
+                  );
+                  const assigns = Number(
+                    (r as any).assignment_attempts ?? 0
+                  );
+
+                  return (
+                    <tr
+                      key={key}
+                      className="border-t border-[#e7edf4] dark:border-white/10 align-top"
                     >
-                      Email row
-                    </button>
-                  </td>
-                )}
-              </tr>
-            ))}
-            {!analytics.length && (
-              <tr className="border-t border-[#e7edf4] dark:border-white/10">
-                <td
-                  className="py-6 pr-4 text-[#49739c] dark:text-darkTextSecondary"
-                  colSpan={canEmailReports ? 5 : 4}
-                >
-                  No data for this period yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+                      <td className="py-2 pr-3 whitespace-nowrap">
+                        {bucketISO ? formatDate(bucketISO) : '—'}
+                      </td>
+                      <td className="py-2 pr-3">{attempts}</td>
+                      <td className="py-2 pr-3">{passes}</td>
+                      <td className="py-2 pr-3">
+                        {Number.isFinite(avg) ? `${Math.round(avg)}%` : '—'}
+                      </td>
+                      <td className="py-2 pr-3">
+                        <div className="flex flex-col gap-1">
+                          <div className="h-2 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-sky-400 to-indigo-400 dark:from-emerald-500 dark:via-sky-500 dark:to-indigo-500"
+                              style={{ width: `${barWidth}%` }}
+                            />
+                          </div>
+                          <div className="flex flex-wrap gap-1 text-[10px] text-slate-500 dark:text-darkTextSecondary">
+                            {exams > 0 && (
+                              <span className={pillMuted}>
+                                Exams: {exams}
+                              </span>
+                            )}
+                            {robots > 0 && (
+                              <span className={pillMuted}>
+                                AI quizzes: {robots}
+                              </span>
+                            )}
+                            {assigns > 0 && (
+                              <span className={pillMuted}>
+                                Assignments: {assigns}
+                              </span>
+                            )}
+                            {!exams && !robots && !assigns && attempts > 0 && (
+                              <span className={pillMuted}>
+                                Mixed activity
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      {canEmailReports && (
+                        <td className="py-2 pr-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              bucketISO &&
+                              onSendReportRow(bucketISO, period)
+                            }
+                            className="inline-flex items-center justify-center px-2.5 py-1 rounded-lg bg-slate-900 text-white text-[11px] hover:bg-slate-800 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
+                          >
+                            Send email
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
 
-      {!canMonthly && (
-        <div className="mt-3 text-xs text-amber-700 dark:text-amber-300">
-          Monthly analytics are not included. Upgrade to view analytics.
-        </div>
-      )}
+        {loadingAnalytics && (
+          <div className="mt-3 text-[11px] text-slate-500 dark:text-darkTextSecondary">
+            Loading analytics…
+          </div>
+        )}
+      </div>
     </section>
   );
 }

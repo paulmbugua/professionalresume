@@ -42,7 +42,7 @@ import ClassVaultUpload from './components/ClassVaultUpload.web';
 import { useShopContext } from '@mytutorapp/shared/context';
 // org role hook
 import { useOrg } from '@mytutorapp/shared/hooks/useOrg';
-import InviteLogin from './pages/org/InviteLogin.web';
+
 
 // Course lifecycle
 import CreateCourse from './components/CreateCourse.web';
@@ -423,16 +423,7 @@ const App: React.FC<{}> = () => {
           <Route path="/payment-flow" element={<PaymentFlow />} />
           <Route path="/unsubscribe" element={<UnsubscribePage />} />
 
-          {/* Org invite login (logged-out only) */}
-          <Route
-            path="/org/join/:code/login"
-            element={
-              <LoggedOutOnly>
-                <InviteLogin />
-              </LoggedOutOnly>
-            }
-          />
-
+         
           {/* Org public routes */}
           <Route path="/org/login" element={<InstitutionLogin />} />
           <Route path="/org/join/:code" element={<OrgInviteLanding />} />
