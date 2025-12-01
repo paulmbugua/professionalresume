@@ -13,7 +13,7 @@ console.info('[ttsSvc] VERSION wordmarks-v2', { file: thisFile, pid: process.pid
 let __voicesCache = { at: 0, list: [] };
 const VOICES_TTL_MS = 12 * 60 * 60 * 1000;
 
-const DEFAULT_VOICE  = process.env.GOOGLE_TTS_VOICE || 'en-US-Wavenet-D';
+const DEFAULT_VOICE  = process.env.GOOGLE_TTS_VOICE || 'en-US-Wavenet-C';
 const DEFAULT_LANG   = process.env.GOOGLE_TTS_LANG  || 'en-US';
 const AUDIO_ENCODING = 'MP3';
 const MAX_SSML_BYTES = 3800;
@@ -23,8 +23,16 @@ const tts = textToSpeech?.v1beta1?.TextToSpeechClient
   ? new textToSpeech.v1beta1.TextToSpeechClient()
   : new textToSpeech.TextToSpeechClient();
 
+// ─────────────────────────────────────────────────────────
+// SSML helpers (Azure → GCP normalization)
+// ─────────────────────────────────────────────────────────
+
+/**
+ * Strip Azure / Amazon extras + generic cleanup.
+ */
 function sanitizeForGoogle(ssmlInner) {
   let s = String(ssmlInner || '');
+  // Strip Azure mstts & Amazon tags and generic <voice> wrappers
   s = s.replace(/<\/?mstts:[^>]*>/gi, '');
   s = s.replace(/<\/?amazon:[^>]*>/gi, '');
   s = s.replace(/<\/?voice[^>]*>/gi, '');
@@ -32,11 +40,36 @@ function sanitizeForGoogle(ssmlInner) {
   return s;
 }
 
+/**
+ * Convert Azure-style SSML to something GCP likes:
+ * - <bookmark mark="..."/> → <mark name="..."/>
+ * - Remove xmlns:mstts + mstts:* tags
+ */
+function toGcpSsml(ssml) {
+  if (!ssml) return ssml;
+  let out = String(ssml);
+
+  // Azure bookmark → GCP <mark name="..."/>
+  out = out.replace(
+    /<bookmark\s+mark="([^"]+)"\s*\/>/gi,
+    '<mark name="$1"/>'
+  );
+
+  // Strip Azure mstts namespace + tags (defensive; GCP usually ignores unknowns)
+  out = out.replace(/\s+xmlns:mstts="[^"]*"/gi, '');
+  out = out.replace(/<\/?mstts:[^>]+>/gi, '');
+
+  return out;
+}
+
 const byteLen = (s) => Buffer.byteLength(s, 'utf8');
 const wrapSpeak = (inner) => `<speak>${inner}</speak>`;
 const unwrapSpeak = (s) =>
   String(s || '').replace(/^\s*<speak[^>]*>/i, '').replace(/<\/speak>\s*$/i, '');
 
+// ─────────────────────────────────────────────────────────
+// Param parsing
+// ─────────────────────────────────────────────────────────
 function parsePitch(pitch = '+0st') {
   const m = String(pitch).match(/(-?\d+(\.\d+)?)\s*st/i);
   return m ? Number(m[1]) : 0;
@@ -84,16 +117,29 @@ function normalizeVoices(list = []) {
   return arr;
 }
 
-// Inject <mark name="w#"/> into text nodes only
+// ─────────────────────────────────────────────────────────
+// Mark injection
+// ─────────────────────────────────────────────────────────
+
+/**
+ * Inject <mark name="w#"/> in *text nodes only* after:
+ *  - Normalizing Azure → GCP SSML
+ *  - Stripping Azure / Amazon / voice tags
+ */
 function injectMarksIntoSsml(ssml) {
-  const inner = sanitizeForGoogle(unwrapSpeak(ssml.trim()));
+  const raw = toGcpSsml(ssml.trim());
+  const inner = sanitizeForGoogle(unwrapSpeak(raw));
   const tokens = inner.split(/(<[^>]+>)/g).filter(Boolean);
   const wordRe = /([A-Za-z0-9]+(?:[’'\-][A-Za-z0-9]+)*)/g;
   let idx = 0;
   const words = [];
+
   const out = tokens
     .map((tok) => {
+      // leave tags untouched
       if (/^<[^>]+>$/.test(tok)) return tok;
+
+      // inject <mark name="w#"/> only into text nodes
       return tok.replace(wordRe, (m) => {
         const mark = `<mark name="w${idx}"/>`;
         words.push(m);
@@ -102,8 +148,13 @@ function injectMarksIntoSsml(ssml) {
       });
     })
     .join('');
+
   return { ssml: wrapSpeak(out), words };
 }
+
+// ─────────────────────────────────────────────────────────
+// Chunking helpers
+// ─────────────────────────────────────────────────────────
 
 function splitSsmlSmart(fullSsml, maxBytes = MAX_SSML_BYTES) {
   const inner = unwrapSpeak(fullSsml.trim());
@@ -156,6 +207,10 @@ function splitSsmlSmart(fullSsml, maxBytes = MAX_SSML_BYTES) {
   return merged;
 }
 
+// ─────────────────────────────────────────────────────────
+// Timepoints helpers
+// ─────────────────────────────────────────────────────────
+
 function timepointsToWords(allTps, wordsList) {
   const out = [];
   for (const tp of allTps || []) {
@@ -185,7 +240,17 @@ const approxTimings = (words, rateMult = 1) => {
   });
 };
 
-const SSML_MARK_ENUM = 'SSML_MARK';
+// ─────────────────────────────────────────────────────────
+// Proper enum for enableTimePointing
+// ─────────────────────────────────────────────────────────
+
+const { protos } = textToSpeech;
+
+// Try v1beta1 first, then v1, then fall back to literal 1 (SSML_MARK)
+const SSML_MARK_ENUM =
+  protos?.google?.cloud?.texttospeech?.v1beta1?.SynthesizeSpeechRequest?.TimepointType?.SSML_MARK ??
+  protos?.google?.cloud?.texttospeech?.v1?.SynthesizeSpeechRequest?.TimepointType?.SSML_MARK ??
+  1;
 
 // ─────────────────────────────────────────────────────────
 // TTS main entry
@@ -213,7 +278,8 @@ export async function synthesizeTtsLocalFirst({
       inputSSML = injected.ssml;
       wordsList = injected.words;
     } else {
-      inputSSML = ssml;
+      // still normalize Azure → GCP even if we don't want timepoints
+      inputSSML = toGcpSsml(ssml);
     }
   } else if (text) {
     const words = String(text).trim().split(/\s+/).filter(Boolean);
@@ -270,7 +336,7 @@ export async function synthesizeTtsLocalFirst({
       keyHead: cacheKey.slice(0, 8),
       ms: Math.round(ms),
       chunks: 0,
-      marksInFull: (inputSSML.match(/<mark\s+name="/g) || []).length,
+      marksInFull: (inputSSML.match(/<mark\s+name="/gi) || []).length,
       wordsOut: wordsJson?.length || 0,
     });
 
@@ -292,7 +358,7 @@ export async function synthesizeTtsLocalFirst({
   const chunks = ssmlBytes > MAX_SSML_BYTES ? splitSsmlSmart(inputSSML, MAX_SSML_BYTES) : [inputSSML];
   if (chunks.length > 1) console.log('[ttsSvc] CHUNK', { count: chunks.length, totalBytes: ssmlBytes });
 
-  const markCountAll = (inputSSML.match(/<mark\s+name="/g) || []).length;
+  const markCountAll = (inputSSML.match(/<mark\s+name="/gi) || []).length;
   if (wantTimepoints && !markCountAll) {
     console.warn(
       '[ttsSvc] no <mark> found after injection; timepoints unavailable → align/approx later'
@@ -305,7 +371,7 @@ export async function synthesizeTtsLocalFirst({
   // Just log per-chunk marks; don't disable timepoints if a chunk has 0 marks.
   if (wantTimepoints && markCountAll) {
     chunks.forEach((c, k) => {
-      const mc = (c.match(/<mark\s+name="/g) || []).length;
+      const mc = (c.match(/<mark\s+name="/gi) || []).length;
       console.debug('[ttsSvc] chunk marks', {
         chunk: k + 1,
         of: chunks.length,
@@ -321,17 +387,27 @@ export async function synthesizeTtsLocalFirst({
 
   for (let i = 0; i < chunks.length; i++) {
     const c = chunks[i];
+
+    // Normalize chunk SSML for GCP (bookmark → mark, strip mstts, etc.)
+    const ssmlForGcp = toGcpSsml(c);
+
     const req = {
-      input: { ssml: c },
+      input: { ssml: ssmlForGcp },
       voice: { name: voice, languageCode: langCode },
-      audioConfig: { audioEncoding: AUDIO_ENCODING, speakingRate: rateMult, pitch: pitchSt },
-      enableTimePointing: (wantTimepoints && !forceNoTimepoints) ? [SSML_MARK_ENUM] : undefined,
+      audioConfig: {
+        audioEncoding: AUDIO_ENCODING,
+        speakingRate: rateMult,
+        pitch: pitchSt,
+      },
+      // ✅ enableTimePointing MUST be at the top level, not in audioConfig
+      enableTimePointing:
+        wantTimepoints && !forceNoTimepoints ? [SSML_MARK_ENUM] : undefined,
     };
 
     console.debug('[ttsSvc] request flags', {
       chunk: i + 1,
       of: chunks.length,
-      hasMarks: /<mark\s+name=/.test(c),
+      hasMarks: /<mark\s+name=/i.test(ssmlForGcp),
       timepointFlag: req.enableTimePointing,
       client: tts.constructor?.name || 'TextToSpeechClient',
     });
@@ -357,7 +433,7 @@ export async function synthesizeTtsLocalFirst({
     const b64 = resp.audioContent || '';
     const buf = Buffer.from(b64, 'base64');
     const tps = Array.isArray(resp.timepoints) ? resp.timepoints : [];
-    const marksInChunk = (c.match(/<mark\s+name="/g) || []).length;
+    const marksInChunk = (c.match(/<mark\s+name="/gi) || []).length;
 
     const approxStepMs = Math.max(80, Math.round(190 / Math.max(rateMult, 0.25)));
     let stepForThisChunk = approxStepMs;

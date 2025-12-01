@@ -12,7 +12,7 @@ export type MainStackParamList = {
   Landing: undefined;
   InviteLogin: { code: string };
   Home: undefined;
-   Login: { switch?: boolean; force?: boolean } | undefined;
+  Login: { switch?: boolean; force?: boolean } | undefined;
   Help: undefined;
   Resources: undefined;
   CookiePolicy: undefined;
@@ -22,11 +22,11 @@ export type MainStackParamList = {
   ComplaintsFeedback: undefined;
   OerCollectionReader: { id: string };
   RefundsAndCancellations: undefined;
- Unsubscribe: { e?: string; t?: string; email?: string; token?: string } | undefined;
+  Unsubscribe: { e?: string; t?: string; email?: string; token?: string } | undefined;
   FulfillmentPolicy: undefined;
   PaymentFlow: undefined;
-  Videos: undefined;                          // ⬅️ NEW
-  VideoCollection: { id: string | number };   // ⬅️ NEW
+  Videos: undefined;
+  VideoCollection: { id: string | number };
   OerReaderFull: { id?: string };
 
   /* Verify (public) */
@@ -34,19 +34,41 @@ export type MainStackParamList = {
   VerifyCertificatePrint: { id?: string } | undefined;
 
   /* Org (public + protected in-app) */
-  InstitutionLogin: { logoutOrg?: boolean; force?: 'logout' } | undefined;
+  InstitutionLogin:
+    | {
+        logoutOrg?: boolean;
+        force?: 'logout';
+        next?: string;        // 👈 NEW – where to go after org login
+      }
+    | undefined;
+
   OrgInviteLanding: { code?: string } | undefined;
+
+  // ⬇️ NEW – mirror /org router on web
+  OrgHome: { next?: string } | undefined;
+  OrgLearnerHome:
+    | {
+        assignmentId?: string | number;
+        courseId?: string | number;
+        qt?: 'mcq' | 'short';
+        qs?: string | number;
+      }
+    | undefined;
+  OrgInstructorHome: undefined;
+
   OrgElearnPortal:
     | { tab?: 'branding' | 'assign' | 'analytics'; from?: string; courseId?: string }
     | undefined;
+
   OrgProfile: undefined;
+  OrgExamResultsPortal: undefined; // 👈 if you have a native exams screen
 
   /* Discovery & tutor */
   FindTutor: { subject?: string } | undefined;
   RobotTutor: undefined;
 
   /* Catalog & course details */
-  Courses: undefined; // list of courses (MyCourses)
+  Courses: undefined;
   CourseDetails: { courseId: string };
   CourseProgress: { courseId: string };
 
@@ -72,8 +94,8 @@ export type MainStackParamList = {
     pricing?: Record<string, string>;
     tab?: ActiveTab;
   };
-  Profile: { id?: string } | undefined; // public profile page
-   ProfileSelf: undefined;
+  Profile: { id?: string } | undefined;
+  ProfileSelf: undefined;
   Messages: { studentId?: string } | undefined;
   Settings: undefined;
   SettingsCreate: undefined;
@@ -84,7 +106,12 @@ export type MainStackParamList = {
   BuyTokens: undefined;
 
   /* Results */
-  Results: { courseId?: string; courseTitle?: string; grade?: { scorePct: number; passMark: number; passed: boolean } } | undefined;
-
+  Results:
+    | {
+        courseId?: string;
+        courseTitle?: string;
+        grade?: { scorePct: number; passMark: number; passed: boolean };
+      }
+    | undefined;
 };
 

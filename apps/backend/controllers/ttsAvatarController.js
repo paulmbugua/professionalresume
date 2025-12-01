@@ -59,12 +59,12 @@ export const speakRobot = async (req, res) => {
     // Map Azure-ish names → Google Wavenet defaults
     function mapVoice(v) {
       const s = String(v || '').toLowerCase();
-      const def = process.env.GOOGLE_TTS_VOICE || 'en-US-Wavenet-D';
+      const def = process.env.GOOGLE_TTS_VOICE || 'en-US-Wavenet-C';
       if (!s) return def;
       if (s.includes('wavenet') || s.includes('standard')) return v; // already Google
-      if (s.includes('jenny')) return 'en-US-Wavenet-D';
-      if (s.includes('guy'))   return 'en-US-Wavenet-D';
-      if (s.includes('aria'))  return 'en-US-Wavenet-D';
+      if (s.includes('jenny')) return 'en-US-Wavenet-C';
+      if (s.includes('guy'))   return 'en-US-Wavenet-C';
+      if (s.includes('aria'))  return 'en-US-Wavenet-C';
       if (s.includes('neerja') || s.includes('prabhat')) return 'en-IN-Wavenet-A';
       if (s.includes('libby')  || s.includes('mia'))     return 'en-GB-Wavenet-A';
       return def;

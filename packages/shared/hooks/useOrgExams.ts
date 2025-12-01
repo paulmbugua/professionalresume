@@ -137,40 +137,68 @@ export function useOrgExams({ backendUrl, token, orgId }: UseOrgExamsProps) {
   );
 
   const downloadStudentCardPdf = useCallback(
-    async (sessionId: string, studentId: number, fileName?: string) => {
-      if (!ensure()) return;
+  async (
+    sessionId: string,
+    studentId: number,
+    fileName?: string,
+  ): Promise<string | null> => {
+    if (!ensure()) return null;
+
+    const url = `${backendUrl}/api/orgs/${orgId}/exams/student/${studentId}/card.pdf?sessionId=${encodeURIComponent(
+      sessionId,
+    )}`;
+
+    // Web-only: actually perform the download via <a> click
+    if (typeof document !== 'undefined' && typeof window !== 'undefined') {
       try {
-        const url = `${backendUrl}/api/orgs/${orgId}/exams/student/${studentId}/card.pdf?sessionId=${encodeURIComponent(
-          sessionId
-        )}`;
         const res = await fetch(url, {
           headers: { Authorization: `Bearer ${token}` },
         });
+
         if (!res.ok) {
-          alert(`Failed to download PDF (HTTP ${res.status})`);
-          return;
+          if (typeof alert === 'function') {
+            alert(`Failed to download PDF (HTTP ${res.status})`);
+          } else {
+            console.error('Failed to download PDF', res.status);
+          }
+          return url;
         }
+
         const blob = await res.blob();
-        const blobUrl = URL.createObjectURL(blob);
+        const blobUrl = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = blobUrl;
         a.download = fileName || 'exam-report.pdf';
         document.body.appendChild(a);
         a.click();
         a.remove();
-        URL.revokeObjectURL(blobUrl);
+        window.URL.revokeObjectURL(blobUrl);
       } catch (e: any) {
         console.error(e);
-        alert(e?.message || 'Failed to download PDF');
+        if (typeof alert === 'function') {
+          alert(e?.message || 'Failed to download PDF');
+        }
       }
-    },
-    [backendUrl, token, orgId]
-  );
+    }
+
+    // Native (and web) callers can use this URL with Linking / window.open
+    return url;
+  },
+  [backendUrl, token, orgId],
+);
+
 
   const downloadClassReportPdf = useCallback(
-  async (sessionId: string, classLabel: string, fileName: string) => {
-    if (!sessionId) throw new Error('Missing sessionId');
-    if (!orgId) throw new Error('Missing orgId');
+  async (
+    sessionId: string,
+    classLabel: string,
+    fileName: string,
+  ): Promise<string | null> => {
+    if (!ensure()) return null;
+    if (!sessionId || !orgId) {
+      console.error('Missing sessionId or orgId for class report download');
+      return null;
+    }
 
     const params = new URLSearchParams();
     if (classLabel) params.set('classLabel', classLabel);
@@ -178,29 +206,48 @@ export function useOrgExams({ backendUrl, token, orgId }: UseOrgExamsProps) {
 
     const url = `${backendUrl}/api/orgs/${orgId}/exams/sessions/${sessionId}/class-report.pdf?${params.toString()}`;
 
-    const resp = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    // Web-only: fetch + force download
+    if (typeof document !== 'undefined' && typeof window !== 'undefined') {
+      try {
+        const resp = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => '');
-      throw new Error(text || 'Failed to download class report');
+        if (!resp.ok) {
+          const text = await resp.text().catch(() => '');
+          const msg = text || 'Failed to download class report';
+          if (typeof alert === 'function') {
+            alert(msg);
+          } else {
+            console.error(msg);
+          }
+          return url;
+        }
+
+        const blob = await resp.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(downloadUrl);
+      } catch (e: any) {
+        console.error('Failed to download class report', e);
+        if (typeof alert === 'function') {
+          alert(e?.message || 'Failed to download class report');
+        }
+      }
     }
 
-    const blob = await resp.blob();
-    const downloadUrl = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = downloadUrl;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.URL.revokeObjectURL(downloadUrl);
+    return url;
   },
   [backendUrl, orgId, token],
 );
+
 
     return {
     // config

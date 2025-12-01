@@ -847,16 +847,26 @@ export function useWordSync() {
           (typeof robot.getVisemes === 'function'
             ? robot.getVisemes()
             : []);
-        const text =
-          ex.ssml ?? ex.text ?? ex.rawText ?? '';
+        const plain = normalizeTextForFallback(
+          ex.ssml ?? ex.text ?? ex.rawText ?? '',
+        );
+        const wordCount = plain
+          ? plain.split(/\s+/).filter(Boolean).length
+          : 0;
+
+        // If we already know audio duration, use it. Otherwise rough-estimate.
+        const durationHint =
+          audioEl.current && Number.isFinite(audioEl.current.duration)
+            ? audioEl.current.duration
+            : Math.max(1.5, wordCount * 0.23); // ~230ms per word as a safe guess
+
         nextWords = vs?.length
-          ? approximateFromVisemes(vs, text)
-          : spreadEvenly(
-              normalizeTextForFallback(text),
-              1,
-            );
+          ? approximateFromVisemes(vs, plain)
+          : spreadEvenly(plain, durationHint);
+
         source = 'fallback';
       }
+
 
       if (cancelled) return;
 

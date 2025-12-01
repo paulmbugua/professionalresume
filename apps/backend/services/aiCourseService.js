@@ -36,6 +36,37 @@ function wordCountFromSsml(s) {
   return String(s || '').replace(/<[^>]+>/g, ' ').trim().split(/\s+/).filter(Boolean).length;
 }
 
+// ─────────────────────────────────────────────────────────
+// Language config helpers
+// ─────────────────────────────────────────────────────────
+const DEFAULT_LANGUAGE_CONFIG = {
+  mode: 'generic',
+  sourceLangCode: 'en',
+  targetLangCode: 'en',
+  sourceLabel: 'English',
+  targetLabel: 'English',
+  targetSpeechOnly: false,
+  styleHint: '',
+  ttsLang: null,
+};
+
+function normalizeLanguageConfig(raw) {
+  if (!raw || typeof raw !== 'object') {
+    return { ...DEFAULT_LANGUAGE_CONFIG };
+  }
+
+  const mode =
+    raw.mode === 'language_course' || raw.mode === 'bilingual_phrases'
+      ? raw.mode
+      : 'generic';
+
+  return {
+    ...DEFAULT_LANGUAGE_CONFIG,
+    ...raw,
+    mode,
+  };
+}
+
 /* ─────────────────────────────────────────────────────────
  * Service methods (used by controllers)
  * Each returns { status, data, headers }
@@ -304,6 +335,7 @@ export async function generateOutlineService({
   courseSize,
   totalLessons: explicitLessons,
   programTrack,
+  languageConfig, 
 }) {
   dlog('outline', 'enter', {
     courseId,
@@ -313,6 +345,7 @@ export async function generateOutlineService({
     courseSize,
     explicitLessons,
     programTrack,
+    hasLanguageConfig: !!languageConfig,
   });
 
   // Load DB meta
@@ -673,7 +706,9 @@ export async function generateLessonSSMLService({
   count,
   start = 0, // NEW: offset for paging
   programTrack,
+  languageConfig,
 }, _opts = { prewarm: true }) {
+  const langCfg = normalizeLanguageConfig(languageConfig);
   log('log', 'lesson', 'enter', {
     courseId,
     outlineIsArray: Array.isArray(outline),
@@ -694,6 +729,10 @@ export async function generateLessonSSMLService({
 const isFirstClip = ((Number(start) || 0) === 0) && ((Number(count) || 1) === 1);
 const FAST_FIRST = process.env.FAST_FIRST_SSML === '1';
 const pace = paceFor(preset.key);
+  const xmlLang =
+    (langCfg.ttsLang && String(langCfg.ttsLang)) ||
+    (voiceName && String(voiceName).slice(0, 5)) ||   // e.g. "de-DE" from "de-DE-KatjaNeural"
+    'en-US';
 
 // === Length knobs (env) ==================================
 const UNIFORM_SHORT = process.env.LESSON_UNIFORM_SHORT === '1';
@@ -809,7 +848,7 @@ const cached = await cacheGetJSON(cacheKey);
     const kp = Array.isArray(o?.keyPoints) ? o.keyPoints.slice(0, 4) : [];
     const goalsLine = kp.length ? kp.join('; ') : 'a small set of core ideas';
     const ssml = `
-<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+<speak version="1.0" xml:lang="${xmlLang}" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="${voiceName}">
     <prosody rate="${pace.ratePct}" pitch="+0st">
       <p><bookmark mark="${id}.S1"/>${title}. We’ll work through ${goalsLine}, keeping it practical and clear.</p>
@@ -849,17 +888,32 @@ const cached = await cacheGetJSON(cacheKey);
     const title = o?.title || `Lesson ${absoluteIdx + 1}`;
     const kp = Array.isArray(o?.keyPoints) ? o.keyPoints.slice(0, 4) : [];
 
- const system = `You are a master teacher. Return ONLY valid Azure SSML for a single narrated lesson (no JSON, no backticks).
+    const langIntro =
+      langCfg.mode === 'generic'
+        ? ''
+        : `
+LANGUAGE COURSE CONTEXT:
+- Learner UI / base language: ${langCfg.sourceLabel} (${langCfg.sourceLangCode}).
+- Target language to learn (narration language): ${langCfg.targetLabel} (${langCfg.targetLangCode}).
+- Speak mainly in ${langCfg.targetLabel}${
+            langCfg.targetSpeechOnly
+              ? ' and avoid repeating full sentences in ' + langCfg.sourceLabel + '.'
+              : ' but you may occasionally give very short explanations in ' +
+                langCfg.sourceLabel +
+                '.'
+          }
+${langCfg.styleHint ? `- Style hint: ${langCfg.styleHint}` : ''}`.trim();
+
+    const system = `You are a master teacher. Return ONLY valid Azure SSML for a single narrated lesson (no JSON, no backticks).
+${langIntro ? langIntro + '\n' : ''}
 Wrap exactly:
-<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="${pace.ratePct}" pitch="+0st"> ... </prosody></voice></speak>
+<speak version="1.0" xml:lang="${xmlLang}" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="${pace.ratePct}" pitch="+0st"> ... </prosody></voice></speak>
 Rules:
  - (Keep paragraphs short)
  - (Natural, teacherly tone)
  - (Do not use literal labels like "Hook:", "Core concept:", "Micro-check:", or "Recap:")
  - Punctuation: Every sentence MUST end with ., ?, or !. Use commas for introductory phrases (e.g., "However," "For example,") and for nonessential clauses. Prefer the Oxford comma in 3+ item lists. Keep "e.g." and "i.e." with periods intact. No comma splices.`;
-/* If you also want bookmarks on the plain path, add one more bullet above:
- - Insert <bookmark mark="L{ABS}.S{n}"/> at the start of EVERY <p>, where ABS is the absolute 1-based lesson number in the whole course.
-*/
+
 
     const user = `Course: ${courseTitle}
 Absolute lesson #: ${absoluteIdx + 1}
@@ -890,7 +944,7 @@ Write the narration.`;
     let ssml = content?.trim() || '';
     if (!/^\s*<speak[\s>]/i.test(ssml)) {
       ssml = `
-<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+<speak version="1.0" xml:lang="${xmlLang}" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="${voiceName}">
     <prosody rate="${pace.ratePct}" pitch="+0st">
 ${ssml}
@@ -960,6 +1014,38 @@ const estSeconds = Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 
     const minImages   = signals.minImages || 0;
     const minSnippets = signals.minSnippets || 0;
 
+        const langSystemIntro =
+      langCfg.mode === 'generic'
+        ? ''
+        : `
+LANGUAGE COURSE CONTEXT:
+- Learner UI / base language: ${langCfg.sourceLabel} (${langCfg.sourceLangCode}).
+- Target language to learn (narration language): ${langCfg.targetLabel} (${langCfg.targetLangCode}).
+- Speak sentences primarily in ${langCfg.targetLabel}${
+            langCfg.targetSpeechOnly
+              ? ' (avoid repeating full sentences in ' + langCfg.sourceLabel + ').'
+              : ', but you may very briefly gloss key phrases in ' +
+                langCfg.sourceLabel +
+                ' when helpful.'
+          }
+${langCfg.styleHint ? `- Style hint: ${langCfg.styleHint}` : ''}`.trim();
+
+    const langMarkdownRules =
+      langCfg.mode === 'bilingual_phrases'
+        ? `
+Markdown MUST be structured for language learning:
+- Include a "## Dialogue" section with 4–8 short exchanges.
+  Each bullet should be exactly:
+  - **${langCfg.targetLabel}:** <target sentence>
+    **${langCfg.sourceLabel}:** <natural translation in ${langCfg.sourceLabel}>
+- Include a "## Vocabulary" section with a table:
+  | ${langCfg.targetLabel} | ${langCfg.sourceLabel} | Hint |
+- Include a "## Mini drill" section with 3–5 numbered items.
+  For each item, show the ${langCfg.sourceLabel} sentence and ask the learner to say the ${langCfg.targetLabel} version.
+`
+        : '';
+
+
     const json = await withGate(
       'openai:lesson',
       process.env.NODE_ENV === 'production' ? 1 : 2,
@@ -968,6 +1054,7 @@ const estSeconds = Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 
 Return JSON STRICTLY matching the provided JSON Schema. Do not include Markdown code fences or any text outside the JSON fields.
 The JSON MUST contain a "lessons" array of EXACTLY ${takeCount} item(s)—one per section in the request slice.
 
+${langMarkdownRules}
 Guidelines for each lesson (write *naturally*, no section labels):
 - Target ~${targetWords} words (min ${wordsMin}, soft max ${maxWords}); present tense; conversational and clear.
 - Structure as ${paraMin}–${paraMax} paragraphs. Each <p> has ${sentencesPerPara} short sentences (≤ 140 chars).
@@ -975,7 +1062,7 @@ Guidelines for each lesson (write *naturally*, no section labels):
 - Punctuation: end every sentence with ., ?, or !; use commas after introductory phrases and for nonessential clauses; prefer the Oxford comma in 3+ item lists; keep "e.g."/"i.e." properly punctuated; avoid comma splices.
 
 - Wrap Azure SSML exactly:
-  <speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="${pace.ratePct}" pitch="+0st"> ... </prosody></voice></speak>
+  <speak version="1.0" xml:lang="${xmlLang}" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="${pace.ratePct}" pitch="+0st"> ... </prosody></voice></speak>
 
 Content artifacts (MANDATORY):
 - "markdown": slide-style notes in GFM. Use headings + bullet points — no literal labels like "Hook:" or "Recap:". Include:
@@ -1031,7 +1118,7 @@ Write one self-contained lesson per section with a hook, goals, core concept, wo
       let ssml = String(l?.ssml || '');
       if (!/^\s*<speak[\s>]/i.test(ssml)) {
         ssml = `
-<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+<speak version="1.0" xml:lang="${xmlLang}" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="${voiceName}">
     <prosody rate="${pace.ratePct}" pitch="+0st">
 ${ssml}
@@ -1093,6 +1180,17 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
       const charts   = Array.isArray(l?.charts) ? l.charts : [];
        const images   = Array.isArray(l?.images) ? l.images : [];
       const snippets = Array.isArray(l?.snippets) ? l.snippets : [];
+
+       // 🔍 compact per-lesson artifact summary (only when DEBUG_AI=1)
+      dlog('lesson', 'artifacts', {
+        lessonId: id,
+        formulas: formulas.length,
+        tables:   tables.length,
+        charts:   charts.length,
+        images:   images.length,
+        snippets: snippets.length,
+      });
+
 
       let lesson = { id, title, goals, ssml: ssml.trim(), estSeconds, markdown, formulas, tables, charts, images, snippets };
       lesson = ensureAnchorsForArtifacts(lesson, lesson.ssml);
@@ -1223,7 +1321,7 @@ Do not use literal labels like "Hook:" etc. Keep the same prosody rate (${pace.r
     });
 
     const joinedSsml = `
-<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+<speak version="1.0" xml:lang="${xmlLang}" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="${voiceName}">
     <prosody rate="${pace.ratePct}" pitch="+0st">
 ${bodies.join('\n')}
@@ -1243,6 +1341,21 @@ ${bodies.join('\n')}
     const payload = { lessons, joinedSsml, queue: { nextStart, hasMore, total: outline.length } };
     await cacheSetJSON(cacheKey, payload, REDIS_TTL.ssml);
     log('log', 'lesson', 'success', { lessons: lessons.length, joinedBytes: joinedSsml.length });
+
+        const artifactTotals = lessons.reduce((acc, L) => {
+      acc.formulas += Array.isArray(L.formulas) ? L.formulas.length : 0;
+      acc.tables   += Array.isArray(L.tables)   ? L.tables.length   : 0;
+      acc.charts   += Array.isArray(L.charts)   ? L.charts.length   : 0;
+      acc.images   += Array.isArray(L.images)   ? L.images.length   : 0;
+      acc.snippets += Array.isArray(L.snippets) ? L.snippets.length : 0;
+      return acc;
+    }, { formulas: 0, tables: 0, charts: 0, images: 0, snippets: 0 });
+
+    dlog('lesson', 'artifacts-total', {
+      lessons: lessons.length,
+      ...artifactTotals,
+    });
+
     
     // 🔥 Fire-and-forget prewarm for the next chunk to keep UX instant
     try {
@@ -1281,6 +1394,15 @@ ${bodies.join('\n')}
       const produced = pack.lessons?.length ?? 0;
       const hasMore = safeStart + produced < outline.length;
       const nextStart = hasMore ? safeStart + produced : null;
+      dlog('lesson', 'artifacts-total', {
+      lessons: produced,
+      formulas: 0,
+      tables: 0,
+      charts: 0,
+      images: 0,
+      snippets: 0,
+      fallback: 'scaffold',
+    });
       return {
         status: 503,
         data: { ...pack, notice: fallbackNotice(c.kind), queue: { nextStart, hasMore, total: outline.length } },
@@ -1300,6 +1422,19 @@ ${bodies.join('\n')}
     const produced = pack.lessons?.length ?? 0;
     const hasMore = safeStart + produced < outline.length;
     const nextStart = hasMore ? safeStart + produced : null;
+
+   const L0 = pack.lessons?.[0] || {};
+dlog('lesson', 'artifacts-total', {
+  lessons: pack.lessons?.length ?? 0,
+  formulas: Array.isArray(L0.formulas) ? L0.formulas.length : 0,
+  tables:   Array.isArray(L0.tables)   ? L0.tables.length   : 0,
+  charts:   Array.isArray(L0.charts)   ? L0.charts.length   : 0,
+  images:   Array.isArray(L0.images)   ? L0.images.length   : 0,
+  snippets: Array.isArray(L0.snippets) ? L0.snippets.length : 0,
+  fallback: 'plain_ssml',
+});
+
+
     return {
       status: 206,
       data: { ...pack, notice: fallbackNotice('schema_error_plain_ssml'), queue: { nextStart, hasMore, total: outline.length } },
@@ -1373,8 +1508,10 @@ function normalizeQuizArray(questions, desired, courseTitle, outline, quizType =
   return out.slice(0, desired).map((q, i) => ({ ...q, id: `q${i + 1}` }));
 }
 
-export async function generateQuizService({ courseId, outline, numQuestions, courseSize, programTrack, quizType }) {
-  dlog('quiz', 'enter', { courseId, outlineLen: Array.isArray(outline) ? outline.length : 0, numQuestions, courseSize, programTrack, quizType });
+export async function generateQuizService({ courseId, outline, numQuestions, courseSize, programTrack, quizType,languageConfig, }) {
+  
+  const langCfg = normalizeLanguageConfig(languageConfig);
+  dlog('quiz', 'enter', { courseId, outlineLen: Array.isArray(outline) ? outline.length : 0, numQuestions, courseSize, programTrack, quizType,hasLanguageConfig: !!languageConfig, });
 
   
  // Require explicit quizType: 'mcq' | 'short'
@@ -1556,8 +1693,14 @@ Rules for prompts (MUST follow):
   }
 }
 
-export async function generateCoursePackageService({ courseId, level = 'beginner', targetMinutes, voiceName = 'en-US-JennyNeural', numQuestions, courseSize, programTrack, totalLessons, quizType }) {
-   const qt = String(quizType || '').toLowerCase();
+export async function generateCoursePackageService({ courseId, level = 'beginner', targetMinutes, voiceName = 'en-US-JennyNeural', numQuestions, courseSize, programTrack, totalLessons, quizType,languageConfig }) {
+  const langCfg = normalizeLanguageConfig(languageConfig); // NEW
+
+  const xmlLang =
+    (langCfg.ttsLang && String(langCfg.ttsLang)) ||
+    (voiceName && String(voiceName).slice(0, 5)) ||
+    'en-US';
+  const qt = String(quizType || '').toLowerCase();
    if (!['mcq', 'short'].includes(qt)) {
      return { status: 400, data: { error: 'INVALID_QUIZ_TYPE', message: "quizType must be 'mcq' or 'short' (explicit)." }, headers: {} };
    }
@@ -1580,7 +1723,7 @@ export async function generateCoursePackageService({ courseId, level = 'beginner
     : defaultTargetMinutesOf(preset);
 
   // Outline
-  let outline, outlineResp = await generateOutlineService({ courseId, title: courseTitle, level, targetMinutes: effectiveTarget, courseSize, programTrack,totalLessons,});
+  let outline, outlineResp = await generateOutlineService({ courseId, title: courseTitle, level, targetMinutes: effectiveTarget, courseSize, programTrack,totalLessons,languageConfig: langCfg,});
   if (outlineResp.status === 200) outline = outlineResp.data.outline;
   else if (outlineResp.data?.outline) outline = outlineResp.data.outline;
   else outline = makeFallbackOutline(courseTitle).slice(0, totalLessonsOf(preset));
@@ -1591,14 +1734,14 @@ export async function generateCoursePackageService({ courseId, level = 'beginner
   let anyDegradedLesson = false;
   for (let i = 0; i < outline.length; i++) {
     try {
-      const r = await generateLessonSSMLService({ courseId, outline, voiceName, courseSize, count: 1, start: i, programTrack });
+      const r = await generateLessonSSMLService({ courseId, outline, voiceName, courseSize, count: 1, start: i, programTrack,languageConfig: langCfg });
       const L = r.data?.lessons?.[0];
       if (L) {
         lessons.push(L);
         ssmlParts.push(L.ssml);
         if (r.status && r.status !== 200) anyDegradedLesson = true;
       } else {
-        const tmp = await generateLessonSSMLService({ courseId, outline: [outline[i]], voiceName, courseSize, count: 1, start: 0, programTrack });
+        const tmp = await generateLessonSSMLService({ courseId, outline: [outline[i]], voiceName, courseSize, count: 1, start: 0, programTrack,languageConfig: langCfg, });
         const F = tmp.data?.lessons?.[0];
         if (F) {
           lessons.push(F);
@@ -1614,7 +1757,7 @@ export async function generateCoursePackageService({ courseId, level = 'beginner
         id: `L${i + 1}`,
         title,
         goals: kp,
-        ssml: `<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="${paceFor(preset.key).ratePct}" pitch="+0st"><p><bookmark mark="L${i + 1}.S1"/>${title}</p><p><bookmark mark="L${i + 1}.S2"/>We’ll revisit this in the next pass.</p></prosody></voice></speak>`,
+        ssml: `<speak version="1.0" xml:lang="${xmlLang}" xmlns:mstts="http://www.w3.org/2001/mstts"><voice name="${voiceName}"><prosody rate="${paceFor(preset.key).ratePct}" pitch="+0st"><p><bookmark mark="L${i + 1}.S1"/>${title}</p><p><bookmark mark="L${i + 1}.S2"/>We’ll revisit this in the next pass.</p></prosody></voice></speak>`,
         estSeconds: Math.round((preset.estAudioMinSec + preset.estAudioMaxSec) / 2),
         markdown: '',
         formulas: [],
@@ -1633,7 +1776,7 @@ export async function generateCoursePackageService({ courseId, level = 'beginner
     return i === 0 ? body : `<p><break time="${pace.sectionBreakMs}ms"/></p>\n${body}`;
   });
   const joinedSsml = `
-<speak version="1.0" xml:lang="en-US" xmlns:mstts="http://www.w3.org/2001/mstts">
+<speak version="1.0" xml:lang="${xmlLang}" xmlns:mstts="http://www.w3.org/2001/mstts">
   <voice name="${voiceName}">
     <prosody rate="${pace.ratePct}" pitch="+0st">
 ${bodies.join('\n')}
@@ -1649,6 +1792,7 @@ ${bodies.join('\n')}
     courseSize,
     programTrack,
     quizType: derivedQuizType,
+     languageConfig: langCfg,
   });
    const quiz = quizResp.data?.quiz
   || {

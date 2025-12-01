@@ -7,6 +7,7 @@ import { FontAwesome } from '@expo/vector-icons';
 import tw from '../../tailwind';
 import { useThemePref } from '../theme/ThemeContext';
 import { useShopContext } from '@mytutorapp/shared/context';
+import { useOrg } from '@mytutorapp/shared/hooks/useOrg';
 
 type Props = {
   aiRouteName?: string;       // default: 'RobotTutor'
@@ -26,7 +27,10 @@ function getActiveRouteName(state: any): string {
     while (s && s.routes && typeof s.index === 'number') {
       const r = s.routes[s.index];
       if (!r) break;
-      if (r.state) { s = r.state; continue; }
+      if (r.state) {
+        s = r.state;
+        continue;
+      }
       return r.name || '';
     }
   } catch {}
@@ -43,8 +47,11 @@ const FooterNav: FC<Props> = ({
   const { resolvedScheme } = useThemePref();
   const isDark = resolvedScheme === 'dark';
 
-  // Pull org context info
-  const { token, orgToken, orgRole } = (useShopContext() as any) ?? {};
+  // Shop context
+  const { token, orgToken } = (useShopContext() as any) ?? {};
+
+  // Org hook (same source of truth as web Navbar)
+  const { role } = (useOrg?.() ?? {}) as any;
 
   useEffect(() => {
     try {
@@ -57,7 +64,9 @@ const FooterNav: FC<Props> = ({
         setActive(getActiveRouteName(state));
       } catch {}
     });
-    return () => { if (typeof unsub === 'function') unsub(); };
+    return () => {
+      if (typeof unsub === 'function') unsub();
+    };
   }, [navigation]);
 
   const go = (name: string) => navigation.navigate(name as never);
@@ -82,15 +91,27 @@ const FooterNav: FC<Props> = ({
   const homeIsActive = isActive(token ? homeRouteName : 'Landing');
 
   // ────────────────────────────────────────────────────────────
-  // NEW: decide if user is in org mode and which profile screen to use
-  // Treat any orgToken as org-mode; or infer from orgRole
-  const isOrgMember = useMemo(() => {
-    const role = String(orgRole || '').toLowerCase();
-    return Boolean(orgToken) || ['admin', 'instructor', 'learner'].includes(role);
-  }, [orgToken, orgRole]);
+  // ORG MODE + ROLE (mirrors web Navbar logic)
+  // ────────────────────────────────────────────────────────────
 
+  const isOrgMember = !!orgToken;
+
+  const normalizedRole = (role || '').toString().toLowerCase();
+  const isLearnerRole =
+    normalizedRole === 'learner' || normalizedRole === 'student';
+  const isInstructorRole =
+    normalizedRole === 'instructor' || normalizedRole === 'teacher';
+
+  // We still route to OrgProfile for all org roles; only label changes
   const effectiveProfileRoute = isOrgMember ? 'OrgProfile' : profileRouteName;
   const profileIsActive = isActive(effectiveProfileRoute);
+
+  const profileLabel = useMemo(() => {
+    if (!isOrgMember) return 'Profile';
+    if (isLearnerRole) return 'Learner';
+    if (isInstructorRole) return 'Instructor';
+    return 'Org';
+  }, [isOrgMember, isLearnerRole, isInstructorRole]);
   // ────────────────────────────────────────────────────────────
 
   const RoundBtn: FC<{
@@ -124,7 +145,9 @@ const FooterNav: FC<Props> = ({
       >
         <FontAwesome name={iconName} size={ICON_SIZE} color={iconColor} />
       </TouchableOpacity>
-      <Text style={tw`mt-1 text-[11px] text-gray-700 dark:text-white/90`}>{label}</Text>
+      <Text style={tw`mt-1 text-[11px] text-gray-700 dark:text-white/90`}>
+        {label}
+      </Text>
       {active && <Dot />}
     </View>
   );
@@ -159,14 +182,14 @@ const FooterNav: FC<Props> = ({
             label="Home"
           />
 
-          {/* Profile → OrgProfile if in org mode */}
+          {/* Profile / Org / Learner / Instructor */}
           <RoundBtn
             onPress={() => go(effectiveProfileRoute)}
             bgClassActive="bg-emerald-100 dark:bg-emerald-900/40"
             iconName="user"
             iconColor={profileIsActive ? profileActiveIcon : baseIcon}
             active={profileIsActive}
-            label={isOrgMember ? 'Org' : 'Profile'}
+            label={profileLabel}
           />
         </View>
       </View>

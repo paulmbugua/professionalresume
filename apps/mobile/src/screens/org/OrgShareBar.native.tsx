@@ -16,6 +16,7 @@ export default function OrgShareBar({
   align = 'right',
 }: Props) {
   const { isOwnerOrAdmin, activeOrgId, org } = useOrg();
+  const [open, setOpen] = React.useState(false);
 
   const isInstructor =
     org?.my_role === 'instructor' ||
@@ -24,13 +25,18 @@ export default function OrgShareBar({
 
   const canShare = (isOwnerOrAdmin || isInstructor) && !!activeOrgId;
 
+  // If user cannot share, hide everything
   if (!canShare) return null;
 
-  const [open, setOpen] = React.useState(false);
   const disabled = !(courseId || (courseTitle && courseTitle.trim()));
 
   return (
-    <View style={tw`w-full mt-3 ${align === 'right' ? 'items-end' : 'items-start'}`}>
+    <View
+      style={tw.style(
+        'w-full mt-3',
+        align === 'right' ? 'items-end' : 'items-start',
+      )}
+    >
       <TouchableOpacity
         disabled={disabled}
         onPress={() => setOpen(true)}

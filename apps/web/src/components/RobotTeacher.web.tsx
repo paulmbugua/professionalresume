@@ -217,7 +217,8 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
 
   // ── Contexts & hooks ─────────────────────────────────────
   const effectiveVoice = voiceName || defaultVoice;
-  const { backendUrl, token, role: globalRole } = useShopContext();
+  const { backendUrl, token, orgToken, role: globalRole } = useShopContext() as any;
+  const authToken = token || orgToken || undefined;
   const isGlobalAdmin = globalRole === 'admin' || globalRole === 'superadmin';
 
   const [internalThemeOpen, setInternalThemeOpen] = useState(false);
@@ -229,10 +230,10 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     onThemeOpenChange?.(v);
   };
 
-  const ai = useAiCourse(backendUrl, token || undefined, {
-    urlQuizTypeHint,
-    defaultQuizType: 'mcq',
-  });
+  const ai = useAiCourse(backendUrl, authToken, {
+  urlQuizTypeHint,
+  defaultQuizType: 'mcq',
+});
 
   const {
     topCourses,
@@ -246,6 +247,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     grade,
     step,
     ttsLoading,
+     error: aiError, 
     loadTopCourses,
     selectCourse,
     startWithAI,
@@ -266,8 +268,18 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     clearTopCoursesCacheNow,
   } = ai;
 
-  const { skus, loading: aiCertLoading, error: aiCertError, message: aiCertMsg, claim, generate: generateAICert } =
-    useAICertificates({ backendUrl, token: token || '', courseId: selectedCourse?.id });
+  const {
+  skus,
+  loading: aiCertLoading,
+  error: aiCertError,
+  message: aiCertMsg,
+  claim,
+  generate: generateAICert,
+} = useAICertificates({
+  backendUrl,
+  token: authToken,
+  courseId: selectedCourse?.id,
+});
 
   const orgAssign = useOrgAssignment();
   const assignmentId = orgAssign?.assignmentId ?? undefined;
@@ -382,20 +394,57 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
     ? (typeof lockedQuizSize === 'number' ? Math.max(4, lockedQuizSize) : 16)
     : (overrideQuiz ? quizCount : defaultQuizForLessons(lessonsEffective));
 
-  const safeLessons = lessonsEffective;
+    const safeLessons = lessonsEffective;
   const safeQuiz = quizEffective;
 
- // Only allow a (re)start if there is no content yet (fresh run)
-  const canStartNow = useMemo(() => {
-    if (!selectedCourse && !customTitle.trim()) return false;
-    // Only idle/error-without-content may start
-    const noContentYet =
-      !(joinedSsml && joinedSsml.trim()) &&
-      !(ssml && ssml.trim()) &&
-      lessons.length === 0 &&
-      outline.length === 0;
-    return step === 'idle' || (step === 'error' && noContentYet);
-  }, [selectedCourse, customTitle, step, joinedSsml, ssml, lessons.length, outline.length]);
+  // ── Busy helpers (must be declared before canStartNow) ──
+  const isAiBusy = step === 'outlining' || step === 'narrating' || ttsLoading;
+  const busyUi = ((activeRunId !== null) && isAiBusy) || preparing;
+
+ const canStartNow = useMemo(() => {
+  // need either a picked course or a custom topic
+  if (!selectedCourse && !customTitle.trim()) return false;
+
+  // treat AI as “really busy” only when a run is actually active
+  const aiReallyBusy = (activeRunId !== null) && isAiBusy;
+  if (aiReallyBusy || startMutexRef.current) return false;
+
+  return true;
+}, [selectedCourse, customTitle, activeRunId, isAiBusy]);
+
+useEffect(() => {
+  dlog('state: canStartNow/busyUi update', {
+    canStartNow,
+    busyUi,
+    isAiBusy,
+    activeRunId,
+    startMutex: startMutexRef.current,
+    customTitle: customTitle.trim(),
+    selectedCourseId: selectedCourse?.id || null,
+    step,
+    ttsLoading,
+  });
+}, [
+  canStartNow,
+  busyUi,
+  isAiBusy,
+  activeRunId,
+  customTitle,
+  selectedCourse,
+  step,
+  ttsLoading,
+]);
+
+useEffect(() => {
+  dlog('state: ai progress', {
+    step,
+    ttsLoading,
+    outlineLen: outline.length,
+    lessonsLen: lessons.length,
+    selectedCourseId: selectedCourse?.id || null,
+    error: aiError || null,
+  });
+}, [step, ttsLoading, outline, lessons, selectedCourse]);
 
 
   // ── Effects that depend on deriveds ──────────────────────
@@ -405,10 +454,10 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const shouldPrepare =
     step === 'outlining' ||
     step === 'narrating' ||
-    ttsLoading ||
-    !hasJoined; // no joined SSML yet => still preparing
+    ttsLoading;
   setPreparing(shouldPrepare);
-}, [activeRunId, step, ttsLoading, hasJoined]);
+}, [activeRunId, step, ttsLoading]);
+
 
 useEffect(() => {
   // whenever course changes, revert UI to “Start with AI”
@@ -523,18 +572,34 @@ useEffect(() => {
     }
   }, [hasAIContent]);
 
-  // ── Auth helpers ─────────────────────────────────────────
+    // ── Auth helpers ─────────────────────────────────────────
   const goToLoginWithReturn = (reason?: string, message?: string) => {
     const next = `${location.pathname}${location.search}${location.hash}`;
     try { sessionStorage.setItem('auth:returnTo', next); } catch {}
-    dlog('navigate → /login', { reason, message, next });
-    navigate('/login', { state: { next, reason, message }, replace: true });
+
+    // If we're in an org/assignment flow, prefer the institution login page
+    const dest = isOrgFlow || orgToken ? '/org/login' : '/login';
+
+    dlog('navigate → login', {
+      dest,
+      reason,
+      message,
+      next,
+      isOrgFlow,
+      hasToken: !!token,
+      hasOrgToken: !!orgToken,
+    });
+
+    navigate(dest, { state: { next, reason, message }, replace: true });
   };
+
   const requireAuth = (reason?: string, message?: string) => {
-    if (token) return true;
+    // ✅ Accept either normal user token or org token
+    if (authToken) return true;
     goToLoginWithReturn(reason, message);
     return false;
   };
+
 
   // ── Quiz helpers ─────────────────────────────────────────
   const disableQuiz = Boolean(
@@ -546,13 +611,28 @@ useEffect(() => {
   }, [disableQuiz, answerQuestion]);
 
   // ── Start course (uses deriveds above) ───────────────────
-  const onStart = useCallback(async () => {
-    if (!canStartNow) {
-      dlog('onStart ignored: already running/has content', { step, hasJoined, lessons: lessons.length, outline: outline.length });
-      return;
-    }
-    if (startMutexRef.current) return; // single-flight
-    startMutexRef.current = true;
+ const onStart = useCallback(async () => {
+  // Block if basic preconditions fail (no course & no custom title, or AI is busy)
+  if (!canStartNow) {
+    return;
+  }
+
+  // ✅ Custom topic path requires authentication
+  if (!selectedCourse && customTitle.trim() && !authToken) {
+    requireAuth(
+      'ai_custom_topic',
+      'Please sign in to generate a custom AI lesson.'
+    );
+    return;
+  }
+
+  // Prevent double-taps / race conditions
+  if (startMutexRef.current) {
+    return;
+  }
+  startMutexRef.current = true;
+
+  try {
     const id = ++runIdRef.current;
     setActiveRunId(id);
     setBlockedUntilStart(false);
@@ -568,18 +648,36 @@ useEffect(() => {
       totalLessons: safeLessons,
       voiceName: effectiveVoice,
     };
+
     if (!selectedCourse && customTitle.trim()) {
+      // Custom sandbox topic
       await startCustomTopic(customTitle.trim(), opts);
     } else {
+      // Existing course from the list
       await startWithAI(opts);
     }
-   
-  }, [
-     canStartNow,
-    assignmentId, sizePreset, classLevel, minutesEffective, programTrack, safeLessons,
-    effectiveVoice, selectedCourse, customTitle, startWithAI, startCustomTopic, step, hasJoined, lessons.length, outline.length
-   
-  ]);
+  } catch (e) {
+    console.error('[RobotTeacher] onStart error', e);
+  } finally {
+    startMutexRef.current = false;
+  }
+}, [
+  canStartNow,
+  selectedCourse,
+  customTitle,
+  authToken,
+  assignmentId,
+  sizePreset,
+  classLevel,
+  minutesEffective,
+  programTrack,
+  safeLessons,
+  effectiveVoice,
+  startWithAI,
+  startCustomTopic,
+  requireAuth,
+]);
+
 
   const onRequestStartGuarded = useCallback(() => {
     // Player may ask to "start" — ignore if we already have content or we're busy
@@ -603,9 +701,7 @@ useEffect(() => {
     await onStart();
   }, [selectedCourse, clearSelectedCourseCacheNow, selectCourse, onStart]);
 
-  const busy = step === 'outlining' || step === 'narrating' || ttsLoading;
-  const busyUi = ((activeRunId !== null) && busy) || preparing;
-
+  
   return (
     <div className="text-darkText dark:text-white">
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4 sm:gap-6">
@@ -710,6 +806,7 @@ useEffect(() => {
               setOverrideLessons={setOverrideLessons}
               overrideQuiz={overrideQuiz}
               setOverrideQuiz={setOverrideQuiz}
+               canStartNow={canStartNow} 
           />
 
           {/* Classroom + Outline + Quiz */}
@@ -735,9 +832,9 @@ useEffect(() => {
             onStart={onStart}
             onPlayerLoadingChange={(b) => {
               if (activeRunId === null) return;
-              // persist "Preparing..." until we have joined SSML/audio
-              setPreparing(b || !hasJoined);
+              setPreparing(b);   // ⬅️ just mirror the player’s loading state
             }}
+
 
             themeOpen={themeOpen}
             onThemeOpenChange={(open) => { dlog('themeOpen →', open); setThemeOpen(open); }}
@@ -771,7 +868,7 @@ useEffect(() => {
             allAnswered={allAnswered}
             grade={grade}
             gradeNow={async () => { await gradeNow(); }}
-            token={token || ''}
+            token={authToken || ''}
             requireAuth={requireAuth}
             isOrgFlowFlag={isOrgFlow}
             skus={skus}

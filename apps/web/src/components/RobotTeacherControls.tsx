@@ -124,6 +124,7 @@ interface ControlsPanelProps {
   setTotalLessons: (n: number) => void;
   quizCount: number;
   setQuizCount: (n: number) => void;
+  canStartNow: boolean;
 }
 
 const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
@@ -159,6 +160,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
     setTotalLessons,
     quizCount,
     setQuizCount,
+    canStartNow, 
   } = props;
 
   return (
@@ -322,7 +324,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
               <button
                 type="button"
                 onClick={() => onStart?.()}
-                disabled={busy}
+                 disabled={busy || !canStartNow}
                 className={`w-full sm:w-auto px-4 py-2 rounded-xl text-sm font-semibold transition ring-1 ${
                   busy
                     ? 'opacity-60 cursor-not-allowed bg-indigo-50 text-indigo-700 ring-indigo-300 dark:bg-indigo-600/30 dark:text-white dark:ring-indigo-500'
@@ -440,21 +442,28 @@ const ControlsPanel: React.FC<ControlsPanelProps> = React.memo((props) => {
                   className="input mt-1"
                 />
               </div>
-              <div className="flex items-end">
-                <button
-                 type="button"
-                  disabled={!customTitle.trim() || busy}
-                  onClick={() => onStart()}
-                  className={`w-full md:w-auto px-4 py-2 rounded-xl text-sm font-semibold transition ring-1 ${
-                    !customTitle.trim() || busy
-                      ? 'opacity-60 cursor-not-allowed bg-indigo-50 text-indigo-700 ring-indigo-300 dark:bg-indigo-600/30 dark:text-white dark:ring-indigo-500'
-                      : 'bg-indigo-50 text-indigo-700 ring-indigo-300 hover:bg-indigo-100 dark:bg-indigo-600/40 dark:text-white dark:ring-indigo-500 dark:hover:bg-indigo-600/50'
-                  }`}
-                  title="Spin up an AI sandbox course for this topic"
-                >
-                  Teach me
-                </button>
-              </div>
+              <div className="flex flex-col items-start">
+            <button
+              type="button"
+              className={`w-full md:w-auto px-4 py-2 rounded-xl text-sm font-semibold transition ring-1 ${
+                !customTitle.trim() || busy || !canStartNow
+                  ? 'opacity-60 cursor-not-allowed bg-indigo-50 text-indigo-700 ring-indigo-300 dark:bg-indigo-600/30 dark:text-white dark:ring-indigo-500'
+                  : 'bg-indigo-50 text-indigo-700 ring-indigo-300 hover:bg-indigo-100 dark:bg-indigo-600/40 dark:text-white dark:ring-indigo-500 dark:hover:bg-indigo-600/50'
+              }`}
+              onClick={() => onStart()}
+              disabled={!customTitle.trim() || busy || !canStartNow}
+              title="Spin up an AI sandbox course for this topic"
+            >
+              {busy ? 'Preparing…' : 'Teach me'}
+            </button>
+
+            {!selectedCourse && !customTitle.trim() && (
+              <p className="mt-1 text-xs text-red-500">
+                Pick a course or enter a custom topic first.
+              </p>
+            )}
+          </div>
+
             </div>
           )}
         </>

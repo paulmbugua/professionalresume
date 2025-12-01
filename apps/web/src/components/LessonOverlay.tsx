@@ -99,6 +99,28 @@ type OverlayItem =
 
 const SENTENCE_END = /[.!?…]+["')\]]?$/;
 
+// ─────────────────────────────────────────────────────────
+// Lightweight debug logging for overlay
+// ─────────────────────────────────────────────────────────
+function overlayDebugEnabled() {
+  if (typeof window === 'undefined') return false;
+  try {
+    const qs = new URLSearchParams(window.location.search);
+    // enable via ?dbgOverlay=1 or ?dbg=1 or localStorage("DBG_OVERLAY" = "1")
+    if (qs.has('dbgOverlay') || qs.get('dbg') === '1') return true;
+    return localStorage.getItem('DBG_OVERLAY') === '1';
+  } catch {
+    return false;
+  }
+}
+
+const olog = (...args: unknown[]) => {
+  if (!overlayDebugEnabled()) return;
+  // eslint-disable-next-line no-console
+  console.log('[LessonOverlay]', ...args);
+};
+
+
 function groupSignature(arr: OverlayItem[]): string {
   return arr.map((it) => `${it.key}:${it.md.length}`).sort().join('|');
 }
@@ -371,6 +393,26 @@ export default function LessonOverlay({
   fullOnMaximize = true,
   allowMarkdownFallback = false,
 }: LessonOverlayProps) {
+
+    // Log raw props whenever lesson or word stream changes
+  useEffect(() => {
+    olog('props', {
+      wordsLen: words.length,
+      currentIndex,
+      lessonId: lesson?.id,
+      lessonTitle: lesson?.title,
+      hasLesson: !!lesson,
+      hasMarkdown: typeof lesson?.markdown === 'string' && lesson.markdown.length > 0,
+      formulas: lesson?.formulas?.length ?? 0,
+      tables: lesson?.tables?.length ?? 0,
+      images: lesson?.images?.length ?? 0,
+      snippets: lesson?.snippets?.length ?? 0,
+      charts: lesson?.charts?.length ?? 0,
+      allowMarkdownFallback,
+    });
+  }, [words.length, currentIndex, lesson, allowMarkdownFallback]);
+
+
   const portaled = portal && typeof document !== 'undefined';
   const positionClass = portaled ? 'fixed' : 'absolute';
 
@@ -658,6 +700,37 @@ if (allowMarkdownFallback && !out.length && typeof lesson.markdown === 'string' 
     currentGroupSig,
   ]);
 
+    useEffect(() => {
+    olog('visibility', {
+      latestIdx,
+      activeIdx,
+      currentSentenceIndex,
+      groupLen: group.length,
+      currentGroupSig,
+      dismissedSig,
+      visible,
+      minimized,
+      pinned,
+      maximized,
+      lastSeenAt,
+      lingerMs,
+    });
+  }, [
+    latestIdx,
+    activeIdx,
+    currentSentenceIndex,
+    group,
+    currentGroupSig,
+    dismissedSig,
+    visible,
+    minimized,
+    pinned,
+    maximized,
+    lastSeenAt,
+    lingerMs,
+  ]);
+
+
   // 5) Dragging (move)
   const cardRef = useRef<HTMLDivElement | null>(null);
   const dragState = useRef<{ dx: number; dy: number } | null>(null);
@@ -755,6 +828,26 @@ if (allowMarkdownFallback && !out.length && typeof lesson.markdown === 'string' 
       </button>
     );
     return portaled ? ReactDOM.createPortal(chip, document.body) : chip;
+  }
+
+    if (!group.length || !visible) {
+    olog('hidden', {
+      reason: !group.length ? 'no-items-for-current-sentence' : 'visible=false',
+      groupLen: group.length,
+      visible,
+      activeIdx,
+      latestIdx,
+      sentencesLen: sentences.length,
+      currentSentenceIndex,
+      itemsLen: items.length,
+      minimized,
+      pinned,
+      maximized,
+      dismissedSig,
+      currentGroupSig,
+      lastSeenAt,
+      lingerMs,
+    });
   }
 
   if (!group.length || !visible) return null;

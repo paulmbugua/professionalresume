@@ -2,9 +2,11 @@
 import * as React from 'react';
 import type { ReactNode } from 'react';
 import { View } from 'react-native'; // StatusBar intentionally handled by the root; none here
+import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createStackNavigator } from '@react-navigation/stack';
+import { useOrg } from '@mytutorapp/shared/hooks/useOrg';
 
 import type { MainStackParamList } from './navigation/types';
 import { useShopContext } from '@mytutorapp/shared/context';
@@ -73,18 +75,27 @@ import VerifyCertificatePrintPage from './screens/VerifyCertificatePrintScreen.n
 // Payments
 import PaymentFlow from './screens/PaymentFlow.native';
 
+// Organizations
+import OrgHomeRouterNative from './screens/org/OrgHomeRouter.native';
+import OrgLearnerHomeNative from './screens/org/OrgLearnerHome.native';
+import OrgInstructorHomeNative from './screens/org/OrgInstructorHome.native';
+import OrgExamResultsPortal from './screens/org/OrgExamResultsPortal.native'; // if you have this
+
 const Stack = createStackNavigator<MainStackParamList>();
 
 /* ───────── First-login helpers (per identity) ───────── */
-const firstLoginKey = (userId?: string | number | null, email?: string | null | undefined) =>
-  `tutorapp_hasLoggedInOnce::${userId ?? email ?? 'unknown'}`;
+const firstLoginKey = (
+  userId?: string | number | null,
+  email?: string | null | undefined
+) => `tutorapp_hasLoggedInOnce::${userId ?? email ?? 'unknown'}`;
 
 /** Compute a stable per-user key only when we actually know identity. */
 const useIdentityKey = () => {
   const { userId, userEmail, profile } = useShopContext() as any;
   const id = userId ?? profile?.id ?? null;
   const email = userEmail ?? profile?.email ?? null;
-  const stable = id != null || (typeof email === 'string' && email.trim().length > 0);
+  const stable =
+    id != null || (typeof email === 'string' && email.trim().length > 0);
   const key = firstLoginKey(id ?? null, email ?? null);
   return { key, stable };
 };
@@ -93,7 +104,7 @@ const useIdentityKey = () => {
 const useIsFirstLogin = () => {
   const { key, stable } = useIdentityKey();
   return React.useCallback(async () => {
-    if (!stable) return true;                 // assume "first" before identity is known
+    if (!stable) return true; // assume "first" before identity is known
     const v = await AsyncStorage.getItem(key);
     return v !== 'true';
   }, [key, stable]);
@@ -109,9 +120,10 @@ const useMarkFirstLoginSeen = () => {
 
 /* ───────── Route guards ───────── */
 
-interface ProtectedRouteProps { children: ReactNode }
+type ProtectedRouteProps = { children: ReactNode };
+
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const { token } = useShopContext();
+  const { token } = useShopContext() as any;
   if (!token) return <LoginScreen />;
   return <>{children}</>;
 };
@@ -122,10 +134,100 @@ const OrgProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   return <>{children}</>;
 };
 
+/* ───────── ORG ROLE GUARDS (native equivalents of web guards) ───────── */
+
+const OrgAdminOnlyGuard: React.FC<ProtectedRouteProps> = ({ children }) => {
+  const navigation = useNavigation<any>();
+  const { role, loading, isLoading } = (useOrg() ?? {}) as any;
+  const busy = typeof loading === 'boolean' ? loading : isLoading;
+
+  if (busy || !role) return <Spinner />;
+
+  const normalized = String(role || '').toLowerCase();
+  const isAdmin = normalized === 'owner' || normalized === 'admin';
+  const isInstructor =
+    normalized === 'instructor' || normalized === 'teacher';
+  const isLearner = normalized === 'learner' || normalized === 'student';
+
+  if (isAdmin) return <>{children}</>;
+
+  if (isInstructor) {
+    navigation.reset({ index: 0, routes: [{ name: 'OrgInstructorHome' }] });
+    return null;
+  }
+
+  if (isLearner) {
+    navigation.reset({ index: 0, routes: [{ name: 'OrgLearnerHome' }] });
+    return null;
+  }
+
+  navigation.reset({ index: 0, routes: [{ name: 'InstitutionLogin' }] });
+  return null;
+};
+
+const OrgLearnerOnlyGuard: React.FC<ProtectedRouteProps> = ({ children }) => {
+  const navigation = useNavigation<any>();
+  const { role, loading, isLoading } = (useOrg() ?? {}) as any;
+  const busy = typeof loading === 'boolean' ? loading : isLoading;
+
+  if (busy || !role) return <Spinner />;
+
+  const normalized = String(role || '').toLowerCase();
+  const isLearner = normalized === 'learner' || normalized === 'student';
+  const isInstructor =
+    normalized === 'instructor' || normalized === 'teacher';
+  const isAdmin = normalized === 'owner' || normalized === 'admin';
+
+  if (isLearner) return <>{children}</>;
+
+  if (isInstructor) {
+    navigation.reset({ index: 0, routes: [{ name: 'OrgInstructorHome' }] });
+    return null;
+  }
+
+  if (isAdmin) {
+    navigation.reset({ index: 0, routes: [{ name: 'OrgProfile' }] });
+    return null;
+  }
+
+  navigation.reset({ index: 0, routes: [{ name: 'InstitutionLogin' }] });
+  return null;
+};
+
+const OrgInstructorOnlyGuard: React.FC<ProtectedRouteProps> = ({
+  children,
+}) => {
+  const navigation = useNavigation<any>();
+  const { role, loading, isLoading } = (useOrg() ?? {}) as any;
+  const busy = typeof loading === 'boolean' ? loading : isLoading;
+
+  if (busy || !role) return <Spinner />;
+
+  const normalized = String(role || '').toLowerCase();
+  const isInstructor =
+    normalized === 'instructor' || normalized === 'teacher';
+  const isLearner = normalized === 'learner' || normalized === 'student';
+  const isAdmin = normalized === 'owner' || normalized === 'admin';
+
+  if (isInstructor) return <>{children}</>;
+
+  if (isLearner) {
+    navigation.reset({ index: 0, routes: [{ name: 'OrgLearnerHome' }] });
+    return null;
+  }
+
+  if (isAdmin) {
+    navigation.reset({ index: 0, routes: [{ name: 'OrgProfile' }] });
+    return null;
+  }
+
+  navigation.reset({ index: 0, routes: [{ name: 'InstitutionLogin' }] });
+  return null;
+};
+
 /* ───────── App ───────── */
 const App: React.FC = () => {
   const [bootReady, setBootReady] = React.useState(false);
-
   const [initialRoute, setInitialRoute] =
     React.useState<keyof MainStackParamList>('Landing');
 
@@ -138,6 +240,7 @@ const App: React.FC = () => {
 
   React.useEffect(() => {
     let mounted = true;
+
     const decide = async () => {
       if (!mounted) return;
 
@@ -153,8 +256,11 @@ const App: React.FC = () => {
       setInitialRoute(first ? 'ProfileSelf' : 'Home');
       setBootReady(true);
     };
+
     void decide();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, [token, isFirstLogin, markSeen]);
 
   if (initializing === true) return <Spinner />;
@@ -167,7 +273,10 @@ const App: React.FC = () => {
 
       {/* Main navigator content */}
       <View style={{ flex: 1 }}>
-        <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
+        <Stack.Navigator
+          initialRouteName={initialRoute}
+          screenOptions={{ headerShown: false }}
+        >
           {/* Public: Landing first */}
           <Stack.Screen name="Landing" component={Landing} />
           <Stack.Screen name="InviteLogin" component={InviteLoginScreen} />
@@ -180,27 +289,128 @@ const App: React.FC = () => {
           <Stack.Screen name="Help" component={HelpPage} />
           <Stack.Screen name="Resources" component={ResourcesPage} />
           <Stack.Screen name="Videos" component={VideosScreen} />
-          <Stack.Screen name="VideoCollection" component={VideosScreen} />
+          <Stack.Screen
+            name="VideoCollection"
+            component={VideosScreen}
+          />
 
           {/* 🔗 NEW: unified OER reader (books + collections, doc + video) */}
-          <Stack.Screen name="OerReaderFull" component={OerReaderFullNative} />
+          <Stack.Screen
+            name="OerReaderFull"
+            component={OerReaderFullNative}
+          />
 
-          <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicy} />
-          <Stack.Screen name="TermsOfService" component={TermsOfService} />
-          <Stack.Screen name="AntiSpamPolicy" component={AntiSpamPolicy} />
-          <Stack.Screen name="ComplaintsFeedback" component={ComplaintsFeedback} />
-          <Stack.Screen name="RefundsAndCancellations" component={RefundsAndCancellations} />
-          <Stack.Screen name="Unsubscribe" component={UnsubscribePage} />
-          <Stack.Screen name="FulfillmentPolicy" component={FulfillmentPolicy} />
+          <Stack.Screen
+            name="PrivacyPolicy"
+            component={PrivacyPolicy}
+          />
+          <Stack.Screen
+            name="TermsOfService"
+            component={TermsOfService}
+          />
+          <Stack.Screen
+            name="AntiSpamPolicy"
+            component={AntiSpamPolicy}
+          />
+          <Stack.Screen
+            name="ComplaintsFeedback"
+            component={ComplaintsFeedback}
+          />
+          <Stack.Screen
+            name="RefundsAndCancellations"
+            component={RefundsAndCancellations}
+          />
+          <Stack.Screen
+            name="Unsubscribe"
+            component={UnsubscribePage}
+          />
+          <Stack.Screen
+            name="FulfillmentPolicy"
+            component={FulfillmentPolicy}
+          />
           <Stack.Screen name="PaymentFlow" component={PaymentFlow} />
 
           {/* Public verify routes */}
-          <Stack.Screen name="VerifyCertificate" component={VerifyCertificatePage} />
-          <Stack.Screen name="VerifyCertificatePrint" component={VerifyCertificatePrintPage} />
+          <Stack.Screen
+            name="VerifyCertificate"
+            component={VerifyCertificatePage}
+          />
+          <Stack.Screen
+            name="VerifyCertificatePrint"
+            component={VerifyCertificatePrintPage}
+          />
 
           {/* Org public */}
-          <Stack.Screen name="InstitutionLogin" component={InstitutionLogin} />
-          <Stack.Screen name="OrgInviteLanding" component={OrgInviteLanding} />
+          <Stack.Screen
+            name="InstitutionLogin"
+            component={InstitutionLogin}
+          />
+          <Stack.Screen
+            name="OrgInviteLanding"
+            component={OrgInviteLanding}
+          />
+
+          {/* 🔁 ORG HOME ROUTER (like /org on web) */}
+          <Stack.Screen name="OrgHome">
+            {() => (
+              <OrgProtectedRoute>
+                <OrgHomeRouterNative />
+              </OrgProtectedRoute>
+            )}
+          </Stack.Screen>
+
+          {/* Org learner home (role-guarded) */}
+          <Stack.Screen name="OrgLearnerHome">
+            {() => (
+              <OrgProtectedRoute>
+                <OrgLearnerOnlyGuard>
+                  <OrgLearnerHomeNative />
+                </OrgLearnerOnlyGuard>
+              </OrgProtectedRoute>
+            )}
+          </Stack.Screen>
+
+          {/* Org instructor home (role-guarded) */}
+          <Stack.Screen name="OrgInstructorHome">
+            {() => (
+              <OrgProtectedRoute>
+                <OrgInstructorOnlyGuard>
+                  <OrgInstructorHomeNative />
+                </OrgInstructorOnlyGuard>
+              </OrgProtectedRoute>
+            )}
+          </Stack.Screen>
+
+          {/* Org portal (shared E-learning) */}
+          <Stack.Screen name="OrgElearnPortal">
+            {() => (
+              <OrgProtectedRoute>
+                <OrgElearnPortal />
+              </OrgProtectedRoute>
+            )}
+          </Stack.Screen>
+
+          {/* Org profile – admin only */}
+          <Stack.Screen name="OrgProfile">
+            {() => (
+              <OrgProtectedRoute>
+                <OrgAdminOnlyGuard>
+                  <OrgProfilePage />
+                </OrgAdminOnlyGuard>
+              </OrgProtectedRoute>
+            )}
+          </Stack.Screen>
+
+          {/* Exams portal – instructor only (matches native instructor home shortcut) */}
+          <Stack.Screen name="OrgExamResultsPortal">
+            {() => (
+              <OrgProtectedRoute>
+                <OrgInstructorOnlyGuard>
+                  <OrgExamResultsPortal />
+                </OrgInstructorOnlyGuard>
+              </OrgProtectedRoute>
+            )}
+          </Stack.Screen>
 
           {/* Public catalog / details */}
           <Stack.Screen name="Profile">
@@ -208,15 +418,22 @@ const App: React.FC = () => {
           </Stack.Screen>
 
           <Stack.Screen name="Courses" component={MyCourses} />
-          <Stack.Screen name="CourseDetails" component={CourseDetails} />
+          <Stack.Screen
+            name="CourseDetails"
+            component={CourseDetails}
+          />
 
           {/* ClassVault listing (public entry; filtered UI inside) */}
           <Stack.Screen name="ClassVaultLibrary">
             {() => {
               const classVaultFilters = React.useMemo(
                 () => ({
-                  category: (filters as any)?.videoCategory ?? (filters as any)?.category,
-                  ageGroup: (filters as any)?.videoAgeGroup ?? (filters as any)?.ageGroup,
+                  category:
+                    (filters as any)?.videoCategory ??
+                    (filters as any)?.category,
+                  ageGroup:
+                    (filters as any)?.videoAgeGroup ??
+                    (filters as any)?.ageGroup,
                 }),
                 [filters]
               );
@@ -230,7 +447,10 @@ const App: React.FC = () => {
             }}
           </Stack.Screen>
 
-          <Stack.Screen name="ClassVaultDetail" component={ClassVaultDetailScreen} />
+          <Stack.Screen
+            name="ClassVaultDetail"
+            component={ClassVaultDetailScreen}
+          />
 
           {/* Protected Sections (user token) */}
           <Stack.Screen name="ProfileSelf">
@@ -336,30 +556,19 @@ const App: React.FC = () => {
               </ProtectedRoute>
             )}
           </Stack.Screen>
-
-          {/* Org portal (protected by orgToken) */}
-          <Stack.Screen name="OrgElearnPortal">
-            {() => (
-              <OrgProtectedRoute>
-                <OrgElearnPortal />
-              </OrgProtectedRoute>
-            )}
-          </Stack.Screen>
-
-          <Stack.Screen name="OrgProfile">
-            {() => (
-              <OrgProtectedRoute>
-                <OrgProfilePage />
-              </OrgProtectedRoute>
-            )}
-          </Stack.Screen>
         </Stack.Navigator>
       </View>
 
       {/* Bottom overlay footer */}
       <View
         pointerEvents="box-none"
-        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 50 }}
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 50,
+        }}
       >
         <FooterNav
           aiRouteName="RobotTutor"

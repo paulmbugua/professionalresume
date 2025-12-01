@@ -307,7 +307,7 @@ export async function generateLessonSSML(req, res) {
       const { status, data, headers } = await generateLessonSSMLService({
         courseId,
         outline,
-         voiceName: voiceName || process.env.GOOGLE_TTS_VOICE || 'en-US-Wavenet-D',
+         voiceName: voiceName || process.env.GOOGLE_TTS_VOICE || 'en-US-Wavenet-C',
         courseSize,
         count,
         start,
@@ -684,10 +684,11 @@ export async function generateCoursePackage(req, res) {
         courseId,
         level = 'beginner',
         targetMinutes,
-        voiceName = (process.env.GOOGLE_TTS_VOICE || 'en-US-Wavenet-D'),
+        voiceName = (process.env.GOOGLE_TTS_VOICE || 'en-US-Wavenet-C'),
         numQuestions,
         courseSize,
         totalLessons,
+        languageConfig,
       } = req.body || {};
       if (!courseId) return res.status(400).json({ error: 'courseId is required' });
       const programTrack = getProgramTrack(req);           // <-- read safely
@@ -744,6 +745,7 @@ export async function generateCoursePackage(req, res) {
    totalLessons,
    programTrack,
    quizType,
+   languageConfig, 
  });
  
 

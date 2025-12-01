@@ -16,7 +16,7 @@ export default function RobotTutorPage() {
     <div className="min-h-screen app-body py-16 sm:py-20 lg:py-24">
       {/* Theme-aware wrapper; spacing keeps clear of Navbar/Footer */}
       <div className="mx-auto w-full max-w-7xl px-3 sm:px-4">
-        <RobotTeacher initialSsml={DEFAULT_SSML} voiceName="en-US-Wavenet-D" />
+        <RobotTeacher initialSsml={DEFAULT_SSML} voiceName="en-US-Wavenet-C" />
       </div>
     </div>
   );

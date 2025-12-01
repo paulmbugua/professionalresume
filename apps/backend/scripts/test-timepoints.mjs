@@ -11,7 +11,7 @@ async function main() {
     input: { ssml },
     voice: {
       languageCode: 'en-US',
-      name: 'en-US-Wavenet-D',
+      name: 'en-US-Wavenet-C',
     },
     audioConfig: {
       audioEncoding: 'MP3',

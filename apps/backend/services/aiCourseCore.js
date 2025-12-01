@@ -844,11 +844,15 @@ export async function aiJson({ system, user, temperature = 0.2, tries = 3, maxTo
       dlog('openai', `response ok in ${ms}ms`);
 
       try {
-        return JSON.parse(content);
-      } catch (e) {
-        console.warn(`[${LOG_NS}:openai] JSON.parse failed`, { message: String(e?.message || e) });
-        if (i === tries - 1) return {};
-      }
+          return JSON.parse(content);
+        } catch (e) {
+          console.warn(`[${LOG_NS}:openai] JSON.parse failed`, {
+            message: String(e?.message || e),
+            snippet: String(content || '').slice(0, 1000), // careful: truncate
+          });
+          if (i === tries - 1) return {};
+        }
+
     } catch (e) {
       const c = classifyOpenAIError(e);
       e.aiKind = c.kind;

@@ -72,11 +72,13 @@ const normalizeQuizType = (v: unknown): QuizType | null => {
 
 const resolveLockedConfig = (meta: any) =>
   meta?.locked_config ?? meta?.meta?.locked_config ?? meta?.assignment?.locked_config ?? null;
+
 const resolveQuizType = (meta: any): QuizType | null => {
   const lc = resolveLockedConfig(meta);
   const raw = lc?.quizType ?? meta?.quiz_type ?? meta?.quizType ?? null;
   return normalizeQuizType(raw);
 };
+
 const resolveQuizSize = (meta: any): number | null => {
   const lc = resolveLockedConfig(meta);
   const raw = lc?.quizSize ?? meta?.quiz_size ?? meta?.quizSize ?? null;
@@ -91,7 +93,9 @@ const OrgInviteLandingNative: React.FC = () => {
   const navigation = useNavigation<Nav>();
   const code = route.params?.code ?? '';
 
-  const { backendUrl, token } = useShopContext();
+  // ⬇️ Match web: allow both direct token and orgToken
+  const { backendUrl, token, orgToken } = useShopContext() as any;
+  const learnerToken = token || orgToken;
 
   // NEW: get kind + error from hook (assignment | membership)
   const { kind, data: meta, error: hookError, loading } = useOrgInvite(code);
@@ -104,14 +108,15 @@ const OrgInviteLandingNative: React.FC = () => {
     setError(hookError || '');
   }, [hookError]);
 
-  // Policy (assignment-only)
+  // Policy (assignment-only in practice)
   const policy = useMemo(() => (meta as any)?.policy || {}, [meta]);
   const allowedDomains: string[] = useMemo(
     () => (Array.isArray(policy?.allowed_domains) ? policy.allowed_domains : []),
     [policy]
   );
-  const domainRestricted =
-    kind === 'assignment' && !!policy?.domain_restricted && allowedDomains.length > 0;
+
+  // Match web logic: domainRestricted from policy, but we only *show* UI for assignments
+  const domainRestricted = !!policy?.domain_restricted && allowedDomains.length > 0;
 
   // Labels (assignment-only)
   const passMarkLabel = useMemo(() => {
@@ -175,14 +180,16 @@ const OrgInviteLandingNative: React.FC = () => {
   const logoUrl = kind === 'assignment' ? (meta as OrgInviteInfo | undefined)?.logo_url : undefined;
   const signatureUrl =
     kind === 'assignment' ? (meta as OrgInviteInfo | undefined)?.signature_url : undefined;
-  const maxAttempts = kind === 'assignment' ? (meta as OrgInviteInfo | undefined)?.max_attempts : undefined;
+  const maxAttempts = kind === 'assignment'
+    ? (meta as OrgInviteInfo | undefined)?.max_attempts
+    : undefined;
 
-  const primaryCta = token
+  const primaryCta = learnerToken
     ? kind === 'membership'
       ? 'Join Organization'
       : 'Accept & Join'
     : domainRestricted
-      ? 'Sign in with org email'
+      ? 'Sign in with allowed email'
       : 'Sign in to continue';
 
   const onAccept = useCallback(async () => {
@@ -192,8 +199,8 @@ const OrgInviteLandingNative: React.FC = () => {
       return;
     }
 
-    // Require auth; send to org login with return target
-    if (!token) {
+    // Require auth; send to org login with return target (similar to web)
+    if (!learnerToken) {
       navigation.navigate('OrgLogin', {
         next: `/org/join/${code}`,
         reason: 'org_invite',
@@ -204,17 +211,15 @@ const OrgInviteLandingNative: React.FC = () => {
     setAccepting(true);
     try {
       if (kind === 'membership') {
-        const resp: any = await acceptOrgMembershipInvite(backendUrl, token, code);
+        const resp: any = await acceptOrgMembershipInvite(backendUrl, learnerToken, code);
         if (!resp?.ok) throw new Error('Failed to join organization.');
         Alert.alert('Joined', 'You have joined the organization.');
-        // Choose the route that exists in your stack:
-        // navigation.navigate('OrgProfile' as never);
         navigation.navigate('OrgElearnPortal' as never);
         return;
       }
 
       // assignment path
-      const resp: any = await acceptOrgInvite(backendUrl, token, code);
+      const resp: any = await acceptOrgInvite(backendUrl, learnerToken, code);
       if (!resp?.ok) {
         throw new Error(resp?.message || 'Failed to accept invite.');
       }
@@ -257,7 +262,16 @@ const OrgInviteLandingNative: React.FC = () => {
     } finally {
       setAccepting(false);
     }
-  }, [backendUrl, token, code, navigation, meta, kind, domainRestricted, allowedDomains]);
+  }, [
+    backendUrl,
+    learnerToken,
+    code,
+    navigation,
+    meta,
+    kind,
+    domainRestricted,
+    allowedDomains,
+  ]);
 
   return (
     <View style={tw`flex-1 bg-[#0b1220] px-3 pt-6 pb-4`}>
@@ -360,7 +374,7 @@ const OrgInviteLandingNative: React.FC = () => {
                 </View>
               </View>
 
-              {/* Domain restriction (assignment-only) */}
+              {/* Domain restriction (assignment-only UI) */}
               {kind === 'assignment' && domainRestricted && (
                 <View style={tw`mt-3 rounded-lg bg-yellow-500/10 border border-yellow-400/20 p-3`}>
                   <Text style={tw`text-yellow-200 text-xs font-semibold`}>Restricted invite</Text>
@@ -368,7 +382,7 @@ const OrgInviteLandingNative: React.FC = () => {
                     Only emails from{' '}
                     <Text style={tw`font-bold`}>{allowedDomains.join(', ')}</Text> can accept this
                     invite.
-                    {token
+                    {learnerToken
                       ? ' If this isn’t your organization email, sign out and sign back in with the permitted address.'
                       : ' Please sign in using an email on one of those domains.'}
                   </Text>
@@ -418,8 +432,8 @@ const OrgInviteLandingNative: React.FC = () => {
                 <Text style={tw`mt-4 text-[12px] text-white/60`}>
                   {kind === 'membership' ? (
                     <>
-                      By joining, you’ll be added to <Text style={tw`font-semibold`}>{orgName}</Text
-                      >. Your admins may assign courses to you.
+                      By joining, you’ll be added to <Text style={tw`font-semibold`}>{orgName}</Text>
+                      . Your admins may assign courses to you.
                     </>
                   ) : (
                     <>

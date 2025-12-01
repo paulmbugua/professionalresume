@@ -83,7 +83,7 @@ function formatTime(sec: number): string {
 
 function Container(props: Props) {
   const {
-    ssml, lessons = [], title = 'AI Lesson', voiceName = 'en-US-Wavenet-D',
+    ssml, lessons = [], title = 'AI Lesson', voiceName = 'en-US-Wavenet-C',
     maximized, onToggleMaximize, onNext, onPrev, isBuildingNext,
     course, outline = [], backendUrlOverride, playing = true, onEnded, onBeforePlay,
     onToggleThemePanel, onPlayerLoadingChange, onRequestStart,
@@ -129,15 +129,22 @@ function Container(props: Props) {
 
   // Voice
   const [voice, setVoice] = React.useState<string>(() => {
-    try { return localStorage.getItem('classroomVoiceName') || voiceName || 'en-US-Wavenet-D'; }
-    catch { return voiceName || 'en-US-Wavenet-D'; }
+    try { return localStorage.getItem('classroomVoiceName') || voiceName || 'en-US-Wavenet-C'; }
+    catch { return voiceName || 'en-US-Wavenet-C'; }
   });
   React.useEffect(()=>{ if (voiceName && voiceName !== voice) setVoice(voiceName); },[voiceName]);
   React.useEffect(()=>{ try { localStorage.setItem('classroomVoiceName', voice); } catch {} },[voice]);
   const [templateId, setTemplateId] = React.useState<HighlightTemplate>(() => {
-    try { return (localStorage.getItem('classroomHighlightTemplate') as HighlightTemplate) || 'clean-stripe'; }
-    catch { return 'clean-stripe'; }
-  });
+  try {
+    return (
+      (localStorage.getItem('classroomHighlightTemplate') as HighlightTemplate) ||
+      'ribbon'
+    );
+  } catch {
+    return 'ribbon';
+  }
+});
+
   React.useEffect(() => { try { localStorage.setItem('classroomHighlightTemplate', templateId); } catch {} }, [templateId]);
 
   // Load voices

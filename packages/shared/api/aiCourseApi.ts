@@ -412,6 +412,9 @@ export async function createCoursePackage(
 /* ────────────────────────────────────────────────────────────
  * POST /api/courses/ai-sandbox
  * ─────────────────────────────────────────────────────────── */
+// reuse your existing CommonOpts type above
+// type CommonOpts = { signal?: AbortSignal; token?: string; programTrack?: string; timeoutMs?: number; };
+
 export async function createAiSandboxCourse(
   backendUrl: string,
   titleOrInit:
@@ -421,8 +424,9 @@ export async function createAiSandboxCourse(
         courseSize?: DbCourseSize;
         size?: LegacySize;
         minutes?: number;
+        assignmentId?: string;
       },
-  opts?: { signal?: AbortSignal; timeoutMs?: number }
+  opts?: CommonOpts
 ): Promise<{ id: string; title: string; description?: string }> {
   const base = normalizeBase(backendUrl);
 
@@ -434,15 +438,18 @@ export async function createAiSandboxCourse(
           courseSize: titleOrInit.courseSize,
           size: titleOrInit.size,
           minutes: titleOrInit.minutes,
+          assignmentId: titleOrInit.assignmentId,
         };
 
+  const headers = buildHeaders(opts?.token, true); // ✅ send Authorization when present
   const { signal, cancel } = withTimeoutSignal(opts?.signal, opts?.timeoutMs);
+
   try {
-    return await fetchJson(
+    return await fetchJson<{ id: string; title: string; description?: string }>(
       `${base}/api/courses/ai-sandbox`,
       {
         method: 'POST',
-        headers: buildHeaders(undefined, true),
+        headers,
         body: JSON.stringify(body),
         signal,
       },
@@ -453,6 +460,7 @@ export async function createAiSandboxCourse(
     cancel();
   }
 }
+
 
 /* ────────────────────────────────────────────────────────────
  * POST /api/ai/cache/clear-course

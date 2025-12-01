@@ -8,12 +8,12 @@ import {
   Alert,
   Linking,
   TextInput,
-  Modal,
   Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Clipboard from 'expo-clipboard';
+import * as ImagePicker from 'expo-image-picker';
 import { useNavigation } from '@react-navigation/native';
 import Animated, {
   FadeIn,
@@ -27,14 +27,38 @@ import { Ionicons } from '@expo/vector-icons';
 import tw from '../../../tailwind';
 
 import { useShopContext } from '@mytutorapp/shared/context';
-import { getMyOrgOrBootstrap, getOrgUsage } from '@mytutorapp/shared/api';
+import { getMyOrgOrBootstrap, getOrgUsage, uploadAsset } from '@mytutorapp/shared/api';
 import {
   getOrgRoster as apiRoster,
   createOrgMembershipInvite,
   removeOrgMember,
 } from '@mytutorapp/shared/api/orgApi';
+import { setOrgLearnerPhotoByAdmission } from '@mytutorapp/shared/api/orgLearnersApi';
+import {
+  createOrgInstructor as apiCreateOrgInstructor,
+} from '@mytutorapp/shared/api/orgInstructorsApi';
+import {
+  createOrgLearner as apiCreateOrgLearner,
+} from '@mytutorapp/shared/api/orgLearnersApi';
+
 import ThemeToggle from '../ThemeToggle.native';
 import { useThemePref } from '../../theme/ThemeContext';
+
+// Shared native helpers + UI
+import {
+  MiniUser,
+  resolveAsset,
+  tierTone,
+  Skeleton,
+  PersonRow,
+} from './OrgProfileShared.native';
+
+// Native modals
+import {
+  InviteModal,
+  AddInstructorModal,
+  AddLearnerModal,
+} from './OrgProfileModals.native';
 
 /* ---------------- types ---------------- */
 type Org = {
@@ -48,9 +72,19 @@ type Org = {
   seats_used?: number;
   owner_email?: string;
   email_domain?: string;
-};
 
-type MiniUser = { id: string | number; name?: string; email?: string };
+  // School contact fields
+  address_line1?: string;
+  address_line2?: string;
+  phone_number?: string;
+  contact_email?: string;
+  website_url?: string;
+
+  // Learner grouping labels
+  house_label?: string;
+  dorm_label?: string;
+  club_label?: string;
+};
 
 /* ---------------- theming ---------------- */
 function usePalette() {
@@ -149,47 +183,7 @@ async function tryFetchRoster(backendUrl: string, token: string, orgId: string) 
   return { instructors: [] as MiniUser[], learners: [] as MiniUser[] };
 }
 
-const FALLBACK = (n = 'Org') =>
-  `https://ui-avatars.com/api/?name=${encodeURIComponent(
-    n,
-  )}&background=047857&color=ffffff`;
-
-const resolveAsset = (raw?: string, backendUrl?: string, fallbackName?: string) => {
-  if (!raw) return FALLBACK(fallbackName ?? 'Org');
-  if (raw.startsWith('/') && backendUrl) {
-    return `${backendUrl.replace(/\/+$/, '')}${raw}`;
-  }
-  return raw;
-};
-
-const getInitials = (name?: string, email?: string) => {
-  const src = (name && name.trim()) || (email && email.split('@')[0]) || '';
-  const parts = src.split(/\s+/).slice(0, 2);
-  return (
-    parts
-      .map((p) => p[0]?.toUpperCase() || '')
-      .join('') || '👤'
-  );
-};
-
-const tierTone = (t?: string) => {
-  const tier = (t || 'starter').toLowerCase();
-  if (tier === 'enterprise') return { color: '#f59e0b', label: 'Enterprise' };
-  if (tier === 'pro') return { color: '#6366f1', label: 'Pro' };
-  return { color: '#10b981', label: 'Starter' };
-};
-
 /* ---------------- micro UI ---------------- */
-const Skeleton: React.FC<{ style?: any }> = ({ style }) => (
-  <View
-    style={[
-      tw`rounded-xl`,
-      { backgroundColor: 'rgba(148,163,184,0.16)' },
-      style,
-    ]}
-  />
-);
-
 const StatCard: React.FC<{
   label: string;
   value: string;
@@ -232,123 +226,6 @@ const ProgressBar: React.FC<{
   );
 };
 
-const PersonRow: React.FC<{
-  u: MiniUser;
-  palette: ReturnType<typeof usePalette>;
-  onRemove?: () => Promise<void> | void;
-}> = ({ u, palette, onRemove }) => {
-  const emailHref = u.email ? `mailto:${u.email}` : null;
-  const waText = `Hi${u.name ? ` ${u.name}` : ''}, I’d like to get in touch.`;
-
-  const openEmail = () => {
-    if (emailHref) Linking.openURL(emailHref).catch(() => {});
-  };
-  const openWhatsApp = () =>
-    Linking.openURL(`https://wa.me/?text=${encodeURIComponent(waText)}`).catch(
-      () => {},
-    );
-
-  const [removing, setRemoving] = useState(false);
-  const doRemove = () => {
-    if (!onRemove || removing) return;
-    Alert.alert(
-      'Remove member',
-      `${u.name || u.email || `User #${u.id}`} will lose access to this portal.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setRemoving(true);
-              await onRemove();
-            } finally {
-              setRemoving(false);
-            }
-          },
-        },
-      ],
-    );
-  };
-
-  const iconBtn = [
-    tw`h-8 w-8 mr-1.5 rounded-xl items-center justify-center`,
-    { backgroundColor: palette.divider },
-  ];
-  const removeBtn = [
-    tw`h-8 w-8 rounded-xl items-center justify-center`,
-    { backgroundColor: '#dc2626' },
-  ];
-
-  return (
-    <View style={tw`flex-row items-center justify-between px-2 py-2 rounded-2xl`}>
-      <View style={tw`flex-row items-center gap-3 flex-1 min-w-0`}>
-        <View
-          style={[
-            tw`h-9 w-9 rounded-2xl items-center justify-center`,
-            { backgroundColor: palette.divider },
-          ]}
-        >
-          <Text style={[tw`text-xs`, { color: palette.text }]}>
-            {getInitials(u.name, u.email)}
-          </Text>
-        </View>
-        <View style={tw`flex-1 min-w-0`}>
-          <Text
-            numberOfLines={1}
-            style={[tw`font-medium`, { color: palette.text }]}
-          >
-            {u.name || u.email || `User #${u.id}`}
-          </Text>
-          {!!u.email && (
-            <Text
-              numberOfLines={1}
-              style={[tw`text-xs`, { color: palette.textMuted }]}
-            >
-              {u.email}
-            </Text>
-          )}
-        </View>
-      </View>
-
-      <View style={tw`flex-row items-center`}>
-        {!!u.email && (
-          <>
-            <TouchableOpacity
-              onPress={openEmail}
-              style={iconBtn}
-              accessibilityRole="button"
-              accessibilityLabel="Email user"
-            >
-              <Ionicons name="mail-outline" size={18} color={palette.text} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={openWhatsApp}
-              style={iconBtn}
-              accessibilityRole="button"
-              accessibilityLabel="Open WhatsApp"
-            >
-              <Ionicons name="logo-whatsapp" size={18} color={palette.text} />
-            </TouchableOpacity>
-          </>
-        )}
-        {onRemove && (
-          <TouchableOpacity
-            onPress={doRemove}
-            disabled={removing}
-            style={removeBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Remove from organization"
-          >
-            <Ionicons name="close" size={18} color="#ffffff" />
-          </TouchableOpacity>
-        )}
-      </View>
-    </View>
-  );
-};
-
 /* press feedback for CTAs */
 const usePressScale = () => {
   const s = useSharedValue(1);
@@ -362,196 +239,6 @@ const usePressScale = () => {
     s.value = withSpring(1, { damping: 16, stiffness: 200 });
   };
   return { style, onIn, onOut };
-};
-
-/* ---------------- invite modal (native) ---------------- */
-const InviteSheet: React.FC<{
-  open: boolean;
-  onClose: () => void;
-  onCreate: (
-    role: 'instructor' | 'learner',
-    email?: string,
-  ) => Promise<{ url: string } | void>;
-  palette: ReturnType<typeof usePalette>;
-  initialRole?: 'instructor' | 'learner';
-}> = ({ open, onClose, onCreate, palette, initialRole = 'learner' }) => {
-  const [role, setRole] = useState<'instructor' | 'learner'>(initialRole);
-  const [email, setEmail] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [url, setUrl] = useState('');
-
-  useEffect(() => {
-    if (!open) {
-      setRole(initialRole);
-      setEmail('');
-      setUrl('');
-      setCreating(false);
-    }
-  }, [open, initialRole]);
-
-  const copy = async () => {
-    if (url) {
-      await Clipboard.setStringAsync(url);
-      Alert.alert('Copied', 'Invite link copied');
-    }
-  };
-  const emailShare = () =>
-    Linking.openURL(
-      `mailto:?subject=${encodeURIComponent(
-        'You’re invited',
-      )}&body=${encodeURIComponent(url)}`,
-    ).catch(() => {});
-  const waShare = () =>
-    Linking.openURL(`https://wa.me/?text=${encodeURIComponent(url)}`).catch(
-      () => {},
-    );
-
-  return (
-    <Modal
-      visible={open}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <View style={tw`flex-1 items-center justify-center bg-black/40 p-3`}>
-        <View
-          style={[
-            tw`w-full max-w-xl rounded-3xl p-4`,
-            { backgroundColor: palette.card, borderColor: palette.border, borderWidth: 1 },
-          ]}
-        >
-          <View style={tw`flex-row items-center justify-between`}>
-            <Text
-              style={[tw`text-lg font-bold`, { color: palette.text }]}
-            >
-              Create invite
-            </Text>
-            <TouchableOpacity
-              onPress={onClose}
-              style={[
-                tw`px-3 py-1.5 rounded-2xl`,
-                { backgroundColor: palette.divider },
-              ]}
-            >
-              <Text style={{ color: palette.text }}>Close</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={tw`mt-3`}>
-            <Text
-              style={[tw`text-xs mb-1`, { color: palette.textMuted }]}
-            >
-              Role
-            </Text>
-            <View style={tw`flex-row`}>
-              {(['learner', 'instructor'] as const).map((r) => (
-                <TouchableOpacity
-                  key={r}
-                  onPress={() => setRole(r)}
-                  style={tw.style(
-                    'px-3 py-2 rounded-2xl mr-2',
-                    role === r ? 'bg-white/10' : 'bg-white/5',
-                  )}
-                >
-                  <Text style={{ color: palette.text }}>{r}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text
-              style={[tw`text-xs mt-3 mb-1`, { color: palette.textMuted }]}
-            >
-              Email (optional)
-            </Text>
-            <TextInput
-              value={email}
-              onChangeText={setEmail}
-              placeholder="name@example.edu"
-              placeholderTextColor={palette.textSubtle}
-              style={palette.input()}
-              autoCapitalize="none"
-              keyboardType={Platform.select({
-                ios: 'email-address',
-                android: 'email-address',
-                default: 'email-address',
-              })}
-            />
-
-            {!url ? (
-              <TouchableOpacity
-                disabled={creating}
-                onPress={async () => {
-                  try {
-                    setCreating(true);
-                    const r = await onCreate(role, email || undefined);
-                    if (r?.url) setUrl(r.url);
-                  } catch (e: any) {
-                    Alert.alert(
-                      'Invite',
-                      e?.message || 'Failed to create invite.',
-                    );
-                  } finally {
-                    setCreating(false);
-                  }
-                }}
-                style={[tw`mt-3`, palette.button('primary')]}
-              >
-                <Text style={tw`text-white font-semibold`}>
-                  {creating ? 'Creating…' : 'Create invite'}
-                </Text>
-              </TouchableOpacity>
-            ) : (
-              <View style={tw`mt-3`}>
-                <View
-                  style={[
-                    tw`rounded-2xl p-3`,
-                    {
-                      backgroundColor: palette.bg,
-                      borderColor: palette.border,
-                      borderWidth: 1,
-                    },
-                  ]}
-                >
-                  <Text selectable style={{ color: palette.text }}>
-                    {url}
-                  </Text>
-                </View>
-                <View style={tw`mt-2 flex-row flex-wrap`}>
-                  <TouchableOpacity
-                    onPress={copy}
-                    style={[
-                      tw`px-3 py-2 rounded-2xl mr-2 mb-2`,
-                      { backgroundColor: palette.divider },
-                    ]}
-                  >
-                    <Text style={{ color: palette.text }}>Copy</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={emailShare}
-                    style={[
-                      tw`px-3 py-2 rounded-2xl mr-2 mb-2`,
-                      { backgroundColor: palette.divider },
-                    ]}
-                  >
-                    <Text style={{ color: palette.text }}>Email</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={waShare}
-                    style={[
-                      tw`px-3 py-2 rounded-2xl mb-2`,
-                      { backgroundColor: palette.divider },
-                    ]}
-                  >
-                    <Text style={{ color: palette.text }}>WhatsApp</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
 };
 
 /* ---------------- screen ---------------- */
@@ -574,6 +261,14 @@ const OrgProfileNative: React.FC = () => {
   const [inviteRole, setInviteRole] =
     useState<'instructor' | 'learner'>('learner');
 
+  // add-learner / add-instructor modals
+  const [addInstructorOpen, setAddInstructorOpen] = useState(false);
+  const [addLearnerOpen, setAddLearnerOpen] = useState(false);
+
+  // learner photo mapping state
+  const [photoAdmCode, setPhotoAdmCode] = useState('');
+  const [photoUploading, setPhotoUploading] = useState(false);
+
   const seatCap = useCallback((tier?: string) => {
     switch ((tier || 'starter').toLowerCase()) {
       case 'enterprise':
@@ -584,6 +279,34 @@ const OrgProfileNative: React.FC = () => {
         return 50;
     }
   }, []);
+
+  const refreshRoster = useCallback(
+    async (orgId: string) => {
+      if (!orgToken || !orgId) return;
+      try {
+        const roster = await apiRoster(backendUrl, orgToken, orgId);
+        setInstructors(
+          Array.isArray(roster?.instructors) ? roster.instructors : [],
+        );
+        setLearners(
+          Array.isArray(roster?.learners) ? roster.learners : [],
+        );
+      } catch {
+        try {
+          const roster = await tryFetchRoster(backendUrl, orgToken, orgId);
+          setInstructors(
+            Array.isArray(roster?.instructors) ? roster.instructors : [],
+          );
+          setLearners(
+            Array.isArray(roster?.learners) ? roster.learners : [],
+          );
+        } catch {
+          // ignore
+        }
+      }
+    },
+    [backendUrl, orgToken],
+  );
 
   useEffect(() => {
     let stop = false;
@@ -606,31 +329,8 @@ const OrgProfileNative: React.FC = () => {
           if (!stop) setSeatsUsed(Number(o?.seats_used ?? 0));
         }
 
-        // Prefer official API; fall back to heuristic
-        try {
-          const roster = await apiRoster(backendUrl, orgToken, o.id);
-          if (!stop) {
-            setInstructors(
-              Array.isArray(roster?.instructors) ? roster.instructors : [],
-            );
-            setLearners(
-              Array.isArray(roster?.learners) ? roster.learners : [],
-            );
-          }
-        } catch {
-          try {
-            const roster = await tryFetchRoster(backendUrl, orgToken, o.id);
-            if (!stop) {
-              setInstructors(
-                Array.isArray(roster?.instructors) ? roster.instructors : [],
-              );
-              setLearners(
-                Array.isArray(roster?.learners) ? roster.learners : [],
-              );
-            }
-          } catch {
-            // ignore
-          }
+        if (!stop) {
+          await refreshRoster(o.id);
         }
       } catch (e: any) {
         Alert.alert('Error', e?.message || 'Failed to load organization.');
@@ -641,7 +341,7 @@ const OrgProfileNative: React.FC = () => {
     return () => {
       stop = true;
     };
-  }, [backendUrl, orgToken, seatCap]);
+  }, [backendUrl, orgToken, seatCap, refreshRoster]);
 
   const logo = useMemo(
     () => resolveAsset(org?.logo_url, backendUrl, org?.name),
@@ -652,7 +352,14 @@ const OrgProfileNative: React.FC = () => {
     100,
     Math.round(((seatsUsed || 0) / (seatsMax || 1)) * 100),
   );
-  const tier = tierTone(org?.tier);
+
+  // 🔧 tierTone fix: it returns { bg, text, ring }, not { color }
+  const tierColors = tierTone(org?.tier);
+
+  const hasGroupingLabels =
+    !!org?.house_label?.trim() ||
+    !!org?.dorm_label?.trim() ||
+    !!org?.club_label?.trim();
 
   const exitOrgMode = async () => {
     try {
@@ -679,6 +386,8 @@ const OrgProfileNative: React.FC = () => {
         'auth:returnTo',
         'orgToken',
         'auth:token',
+        'org:role',
+        'org:activeId',
       ]);
     } catch {
       // ignore
@@ -703,19 +412,13 @@ const OrgProfileNative: React.FC = () => {
 
       // best-effort roster refresh
       try {
-        const roster = await apiRoster(backendUrl, orgToken, org.id);
-        setInstructors(
-          Array.isArray(roster?.instructors) ? roster.instructors : [],
-        );
-        setLearners(
-          Array.isArray(roster?.learners) ? roster.learners : [],
-        );
+        await refreshRoster(org.id);
       } catch {
         // ignore
       }
       return { url };
     },
-    [backendUrl, org?.id, orgToken],
+    [backendUrl, org?.id, orgToken, refreshRoster],
   );
 
   // Remove member (optimistic updates)
@@ -748,12 +451,135 @@ const OrgProfileNative: React.FC = () => {
     [backendUrl, org?.id, orgToken, learners],
   );
 
+  // create instructor (no CSV, native)
+  const handleCreateInstructor = useCallback(
+    async (payload: {
+      name: string;
+      email?: string;
+      subject?: string;
+      staff_code?: string;
+    }) => {
+      if (!org?.id || !orgToken) {
+        throw new Error('Organization or token missing.');
+      }
+      const resp = await apiCreateOrgInstructor(
+        backendUrl,
+        orgToken,
+        org.id,
+        payload,
+      );
+      await refreshRoster(org.id);
+      return { tempPassword: (resp as any)?.tempPassword ?? null };
+    },
+    [backendUrl, org?.id, orgToken, refreshRoster],
+  );
+
+  // create learner (native, no CSV)
+  const handleCreateLearner = useCallback(
+    async (payload: {
+      name: string;
+      email?: string;
+      class_label?: string;
+      guardian_email?: string;
+      admission_code?: string;
+      house?: string;
+      dormitory?: string;
+      club?: string;
+    }) => {
+      if (!org?.id || !orgToken) {
+        throw new Error('Organization or token missing.');
+      }
+      const resp = await apiCreateOrgLearner(
+        backendUrl,
+        orgToken,
+        org.id,
+        payload,
+      );
+      await refreshRoster(org.id);
+      return { tempPassword: (resp as any)?.tempPassword ?? null };
+    },
+    [backendUrl, org?.id, orgToken, refreshRoster],
+  );
+
   // press feedback
   const portalBtn = usePressScale();
   const exitBtn = usePressScale();
   const logoutBtn = usePressScale();
 
   const bottomPad = Math.max(24, insets.bottom + 24);
+
+  // Single learner photo upload (manual mapping)
+  const handleUploadLearnerPhoto = useCallback(async () => {
+    if (!org?.id || !orgToken) {
+      Alert.alert('Learner photo', 'Organization is not loaded yet.');
+      return;
+    }
+    const code = photoAdmCode.trim();
+    if (!code) {
+      Alert.alert('Learner photo', 'Enter the Admission No/Code first.');
+      return;
+    }
+
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert(
+        'Permission needed',
+        'Please allow photo library access to upload learner photos.',
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+    });
+
+    if (result.canceled || !result.assets || !result.assets.length) return;
+
+    const picked = result.assets[0];
+    if (!picked || !picked.uri) {
+      Alert.alert('Learner photo', 'No image selected.');
+      return;
+    }
+
+    try {
+      setPhotoUploading(true);
+
+      const file: any = {
+        uri: picked.uri,
+        name:
+          (picked as any).fileName ||
+          `learner-${code}.jpg`,
+        type: picked.mimeType || 'image/jpeg',
+      };
+
+      const res: any = await uploadAsset(backendUrl, orgToken, file, 'image');
+      const photoUrl =
+        typeof res === 'string'
+          ? res
+          : res?.url || res?.secure_url || res?.data?.url || '';
+
+      if (!photoUrl) {
+        throw new Error('Upload completed but no URL was returned.');
+      }
+
+      await setOrgLearnerPhotoByAdmission(backendUrl, orgToken, org.id, {
+        admission_code: code,
+        photo_url: photoUrl,
+      });
+
+      Alert.alert('Learner photo', 'Photo mapped to learner. Future report cards will use it.');
+    } catch (e: any) {
+      Alert.alert(
+        'Learner photo',
+        e?.response?.data?.message ||
+          e?.message ||
+          'Failed to upload learner photo.',
+      );
+    } finally {
+      setPhotoUploading(false);
+    }
+  }, [backendUrl, org?.id, orgToken, photoAdmCode]);
 
   /* ---------------- render ---------------- */
 
@@ -852,13 +678,22 @@ const OrgProfileNative: React.FC = () => {
                         <View
                           style={[
                             tw`ml-2 px-2 py-0.5 rounded-full flex-row items-center`,
-                            { backgroundColor: palette.chipBg(tier.color) },
+                            {
+                              // 🔧 use tierColors.bg instead of tier.color
+                              backgroundColor: palette.chipBg(
+                                tierColors.bg,
+                              ),
+                            },
                           ]}
                         >
                           <View
                             style={[
                               tw`h-1.5 w-1.5 rounded-full mr-1`,
-                              { backgroundColor: palette.chipDot(tier.color) },
+                              {
+                                backgroundColor: palette.chipDot(
+                                  tierColors.bg,
+                                ),
+                              },
                             ]}
                           />
                           <Text
@@ -891,31 +726,31 @@ const OrgProfileNative: React.FC = () => {
                 {/* Right: actions */}
                 <View style={tw`ml-3 items-end`}>
                   <Animated.View style={portalBtn.style}>
-                  <TouchableOpacity
-                    onPress={() =>
-                      navigation.navigate('OrgElearnPortal', {
-                        tab: 'branding',
-                        from: 'profile',
-                      })
-                    }
-                    onPressIn={portalBtn.onIn}
-                    onPressOut={portalBtn.onOut}
-                    style={tw`h-9 px-3 rounded-2xl bg-indigo-600 items-center justify-center flex-row`}
-                    accessibilityRole="button"
-                    accessibilityLabel="Open organization portal"
-                  >
-                    <Ionicons
-                      name="play-circle-outline"
-                      size={16}
-                      color="#fff"
-                    />
-                    <Text
-                      style={tw`text-white text-xs font-semibold ml-1`}
+                    <TouchableOpacity
+                      onPress={() =>
+                        navigation.navigate('OrgElearnPortal', {
+                          tab: 'branding',
+                          from: 'profile',
+                        })
+                      }
+                      onPressIn={portalBtn.onIn}
+                      onPressOut={portalBtn.onOut}
+                      style={tw`h-9 px-3 rounded-2xl bg-indigo-600 items-center justify-center flex-row`}
+                      accessibilityRole="button"
+                      accessibilityLabel="Open organization portal"
                     >
-                      Portal
-                    </Text>
-                  </TouchableOpacity>
-                </Animated.View>        
+                      <Ionicons
+                        name="play-circle-outline"
+                        size={16}
+                        color="#fff"
+                      />
+                      <Text
+                        style={tw`text-white text-xs font-semibold ml-1`}
+                      >
+                        Portal
+                      </Text>
+                    </TouchableOpacity>
+                  </Animated.View>
 
                   <Animated.View style={[exitBtn.style, tw`mt-2`]}>
                     <TouchableOpacity
@@ -1022,6 +857,37 @@ const OrgProfileNative: React.FC = () => {
                     </TouchableOpacity>
                   )}
                 </View>
+
+                <View style={palette.smallSurface()}>
+                  <Text
+                    style={[tw`text-[10px]`, { color: palette.textMuted }]}
+                  >
+                    Certificates
+                  </Text>
+                  {loading ? (
+                    <Skeleton style={tw`h-4 w-40 mt-2 rounded`} />
+                  ) : (
+                    <>
+                      <Text
+                        numberOfLines={2}
+                        style={[
+                          tw`mt-1 text-xs font-semibold`,
+                          { color: palette.text },
+                        ]}
+                      >
+                        {org?.certificate_title || 'Certificate of Completion'}
+                      </Text>
+                      <Text
+                        style={[
+                          tw`mt-1 text-[11px]`,
+                          { color: palette.textSubtle },
+                        ]}
+                      >
+                        Signature & pass marks live in Branding.
+                      </Text>
+                    </>
+                  )}
+                </View>
               </View>
             </View>
           </Animated.View>
@@ -1041,6 +907,21 @@ const OrgProfileNative: React.FC = () => {
                 Instructors
               </Text>
               <View style={tw`flex-row items-center`}>
+                <TouchableOpacity
+                  onPress={() => setAddInstructorOpen(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add instructor"
+                >
+                  <Text
+                    style={[
+                      tw`underline text-xs mr-3`,
+                      { color: palette.textMuted },
+                    ]}
+                  >
+                    Add instructor
+                  </Text>
+                </TouchableOpacity>
+
                 <TouchableOpacity
                   onPress={() => {
                     setInviteRole('instructor');
@@ -1095,7 +976,7 @@ const OrgProfileNative: React.FC = () => {
                   <PersonRow
                     key={String(u.id)}
                     u={u}
-                    palette={palette}
+                    // 🔧 palette prop removed – PersonRow doesn’t accept it
                     onRemove={() => handleRemoveMember(u)}
                   />
                 ))}
@@ -1127,6 +1008,14 @@ const OrgProfileNative: React.FC = () => {
                 >
                   No instructors yet.
                 </Text>
+                <Text
+                  style={[
+                    tw`text-[11px] mt-1 text-center`,
+                    { color: palette.textSubtle },
+                  ]}
+                >
+                  Use invites or the web portal to add instructors and share login details.
+                </Text>
               </View>
             )}
           </Animated.View>
@@ -1142,23 +1031,40 @@ const OrgProfileNative: React.FC = () => {
               >
                 Learners
               </Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setInviteRole('learner');
-                  setInviteOpen(true);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="Invite learner"
-              >
-                <Text
-                  style={[
-                    tw`underline text-xs`,
-                    { color: palette.textMuted },
-                  ]}
+              <View style={tw`flex-row items-center gap-3`}>
+                <TouchableOpacity
+                  onPress={() => setAddLearnerOpen(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add learner"
                 >
-                  Invite learners
-                </Text>
-              </TouchableOpacity>
+                  <Text
+                    style={[
+                      tw`underline text-xs`,
+                      { color: palette.textMuted },
+                    ]}
+                  >
+                    Add learner
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => {
+                    setInviteRole('learner');
+                    setInviteOpen(true);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Invite learner"
+                >
+                  <Text
+                    style={[
+                      tw`underline text-xs`,
+                      { color: palette.textMuted },
+                    ]}
+                  >
+                    Invite learners
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {loading ? (
@@ -1176,7 +1082,7 @@ const OrgProfileNative: React.FC = () => {
                   <PersonRow
                     key={String(u.id)}
                     u={u}
-                    palette={palette}
+                    // 🔧 palette prop removed here as well
                     onRemove={() => handleRemoveMember(u)}
                   />
                 ))}
@@ -1208,15 +1114,118 @@ const OrgProfileNative: React.FC = () => {
                 >
                   No learners yet.
                 </Text>
+                <Text
+                  style={[
+                    tw`text-[11px] mt-1 text-center`,
+                    { color: palette.textSubtle },
+                  ]}
+                >
+                  Use invites, direct add, or CSV import from the web portal to enroll learners.
+                </Text>
               </View>
             )}
+          </Animated.View>
+        </View>
+
+        {/* Learner photos (manual mapping) */}
+        <View style={tw`px-4 mt-4`}>
+          <Animated.View
+            entering={FadeInDown.delay(160).duration(380)}
+            style={palette.surface()}
+          >
+            <View style={tw`flex-row items-center justify-between`}>
+              <Text
+                style={[tw`text-lg font-bold`, { color: palette.text }]}
+              >
+                Learner photos
+              </Text>
+              <Text
+                style={[
+                  tw`text-[10px]`,
+                  { color: palette.textSubtle },
+                ]}
+              >
+                Map a photo to an admission code
+              </Text>
+            </View>
+
+            <Text
+              style={[
+                tw`mt-2 text-[11px]`,
+                { color: palette.textSubtle },
+              ]}
+            >
+              For bulk CSV imports and bulk photo mapping, use the web portal on desktop.
+              Here you can quickly map a single learner photo to an Admission No/Code.
+            </Text>
+
+            <View
+              style={[
+                tw`mt-3 rounded-2xl p-3`,
+                {
+                  backgroundColor: palette.divider,
+                  borderColor: palette.border,
+                  borderWidth: 1,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  tw`text-[10px] mb-1`,
+                  { color: palette.textMuted },
+                ]}
+              >
+                Admission No / Code
+              </Text>
+              <TextInput
+                value={photoAdmCode}
+                onChangeText={setPhotoAdmCode}
+                placeholder="e.g. ADM-2025-001"
+                placeholderTextColor={palette.textSubtle}
+                style={palette.input()}
+                autoCapitalize="characters"
+              />
+
+              <TouchableOpacity
+                onPress={handleUploadLearnerPhoto}
+                disabled={photoUploading}
+                style={[
+                  tw`mt-3 h-10 px-4 rounded-xl flex-row items-center justify-center`,
+                  { backgroundColor: palette.divider },
+                ]}
+              >
+                <Ionicons
+                  name="cloud-upload-outline"
+                  size={16}
+                  color={palette.text}
+                />
+                <Text
+                  style={[
+                    tw`ml-2 text-[11px] font-semibold`,
+                    { color: palette.text },
+                  ]}
+                >
+                  {photoUploading ? 'Uploading…' : 'Pick photo & upload'}
+                </Text>
+              </TouchableOpacity>
+
+              <Text
+                style={[
+                  tw`mt-2 text-[10px]`,
+                  { color: palette.textSubtle },
+                ]}
+              >
+                Use clear passport-style photos. If the admission code does not exist, the
+                backend will return an error so you can correct it.
+              </Text>
+            </View>
           </Animated.View>
         </View>
 
         {/* Branding */}
         <View style={tw`px-4 mt-4`}>
           <Animated.View
-            entering={FadeInDown.delay(180).duration(380)}
+            entering={FadeInDown.delay(200).duration(380)}
             style={palette.surface()}
           >
             <View style={tw`flex-row items-center justify-between`}>
@@ -1323,7 +1332,7 @@ const OrgProfileNative: React.FC = () => {
               {/* Email domain */}
               <View
                 style={[
-                  tw`rounded-2xl p-3`,
+                  tw`rounded-2xl p-3 mb-2`,
                   {
                     backgroundColor: palette.divider,
                     borderColor: palette.border,
@@ -1351,6 +1360,188 @@ const OrgProfileNative: React.FC = () => {
                   </Text>
                 )}
               </View>
+
+              {/* School contact */}
+              <View
+                style={[
+                  tw`rounded-2xl p-3`,
+                  {
+                    backgroundColor: palette.divider,
+                    borderColor: palette.border,
+                    borderWidth: 1,
+                  },
+                ]}
+              >
+                <Text
+                  style={[tw`text-[10px]`, { color: palette.textMuted }]}
+                >
+                  School contact
+                </Text>
+                {loading ? (
+                  <Skeleton
+                    style={tw`h-10 w-full mt-2 rounded-xl`}
+                  />
+                ) : (
+                  <View style={tw`mt-2`}>
+                    {!!org?.address_line1 && (
+                      <Text
+                        style={[
+                          tw`text-xs`,
+                          { color: palette.text },
+                        ]}
+                      >
+                        {org.address_line1}
+                      </Text>
+                    )}
+                    {!!org?.address_line2 && (
+                      <Text
+                        style={[
+                          tw`text-xs`,
+                          { color: palette.text },
+                        ]}
+                      >
+                        {org.address_line2}
+                      </Text>
+                    )}
+                    {!!org?.phone_number && (
+                      <Text
+                        style={[
+                          tw`text-[11px] mt-1`,
+                          { color: palette.textSubtle },
+                        ]}
+                      >
+                        Tel: {org.phone_number}
+                      </Text>
+                    )}
+                    {!!org?.contact_email && (
+                      <Text
+                        style={[
+                          tw`text-[11px]`,
+                          { color: palette.textSubtle },
+                        ]}
+                      >
+                        Email: {org.contact_email}
+                      </Text>
+                    )}
+                    {!!org?.website_url && (
+                      <Text
+                        style={[
+                          tw`text-[11px]`,
+                          { color: palette.textSubtle },
+                        ]}
+                      >
+                        Website: {org.website_url}
+                      </Text>
+                    )}
+                    {!org?.address_line1 &&
+                      !org?.phone_number &&
+                      !org?.contact_email &&
+                      !org?.website_url && (
+                        <Text
+                          style={[
+                            tw`text-[11px]`,
+                            { color: palette.textSubtle },
+                          ]}
+                        >
+                          Not set yet.
+                        </Text>
+                      )}
+                  </View>
+                )}
+              </View>
+
+              {/* Grouping labels */}
+              {!loading && hasGroupingLabels && (
+                <View style={tw`mt-3`}>
+                  {!!org?.house_label?.trim() && (
+                    <View
+                      style={[
+                        tw`rounded-2xl px-3 py-2 mb-2`,
+                        {
+                          backgroundColor: palette.divider,
+                          borderColor: palette.border,
+                          borderWidth: 1,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          tw`text-[10px] uppercase tracking-wide`,
+                          { color: palette.textSubtle },
+                        ]}
+                      >
+                        House label
+                      </Text>
+                      <Text
+                        style={[
+                          tw`mt-1 text-xs`,
+                          { color: palette.text },
+                        ]}
+                      >
+                        {org.house_label}
+                      </Text>
+                    </View>
+                  )}
+                  {!!org?.dorm_label?.trim() && (
+                    <View
+                      style={[
+                        tw`rounded-2xl px-3 py-2 mb-2`,
+                        {
+                          backgroundColor: palette.divider,
+                          borderColor: palette.border,
+                          borderWidth: 1,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          tw`text-[10px] uppercase tracking-wide`,
+                          { color: palette.textSubtle },
+                        ]}
+                      >
+                        Dorm label
+                      </Text>
+                      <Text
+                        style={[
+                          tw`mt-1 text-xs`,
+                          { color: palette.text },
+                        ]}
+                      >
+                        {org.dorm_label}
+                      </Text>
+                    </View>
+                  )}
+                  {!!org?.club_label?.trim() && (
+                    <View
+                      style={[
+                        tw`rounded-2xl px-3 py-2`,
+                        {
+                          backgroundColor: palette.divider,
+                          borderColor: palette.border,
+                          borderWidth: 1,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          tw`text-[10px] uppercase tracking-wide`,
+                          { color: palette.textSubtle },
+                        ]}
+                      >
+                        Club label
+                      </Text>
+                      <Text
+                        style={[
+                          tw`mt-1 text-xs`,
+                          { color: palette.text },
+                        ]}
+                      >
+                        {org.club_label}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
             </View>
           </Animated.View>
         </View>
@@ -1539,13 +1730,24 @@ const OrgProfileNative: React.FC = () => {
         </View>
       </Animated.ScrollView>
 
-      {/* Invite sheet */}
-      <InviteSheet
+      {/* Invite + Add modals */}
+      <InviteModal
         open={inviteOpen}
         initialRole={inviteRole}
         onClose={() => setInviteOpen(false)}
         onCreate={handleCreateMembershipInvite}
-        palette={palette}
+      />
+
+      <AddInstructorModal
+        open={addInstructorOpen}
+        onClose={() => setAddInstructorOpen(false)}
+        onCreate={handleCreateInstructor}
+      />
+
+      <AddLearnerModal
+        open={addLearnerOpen}
+        onClose={() => setAddLearnerOpen(false)}
+        onCreate={handleCreateLearner}
       />
     </SafeAreaView>
   );

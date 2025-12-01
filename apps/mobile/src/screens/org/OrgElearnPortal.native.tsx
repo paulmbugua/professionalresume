@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import tw from '../../../tailwind';
 import { useShopContext } from '@mytutorapp/shared/context';
+import { uploadAsset } from '@mytutorapp/shared/api';
 import {
   getMyOrgOrBootstrap,
   getOrgUsage,
@@ -26,19 +27,20 @@ import {
   sendOrgReportRow,
   initOrgSubscription,
   confirmOrgSubscription,
-  uploadAsset,
-} from '@mytutorapp/shared/api';
-import { getOrgLearnersProgress } from '@mytutorapp/shared/api/orgApi';
+  getOrgLearnersProgress,
+  getOrgAssignmentsForLearner,
+  submitOrgLegacyAssignment,
+  type OrgResp as Org,
+  type OrgAnalyticsRow,
+  type OrgLearnerProgressRow,
+  type OrgAssignmentRow,
+} from '@mytutorapp/shared/api/orgApi';
 import { useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { MainStackParamList } from '../../navigation/types';
 import type { OrgTier } from '@mytutorapp/shared/types';
-import type {
-  OrgResp as Org,
-  OrgAnalyticsRow,
-  OrgLearnerProgressRow,
-} from '@mytutorapp/shared/api/orgApi';
 import { useThemePref } from '../../theme/ThemeContext';
+import { useOrg } from '@mytutorapp/shared/hooks/useOrg';
 import * as DocumentPicker from 'expo-document-picker';
 
 type TabKey = 'branding' | 'assign' | 'analytics';
@@ -281,7 +283,7 @@ const PlanPurchaseModal: React.FC<{
             </View>
             <TouchableOpacity
               onPress={onClose}
-              style={tw`px-3 py-1 rounded-lg bg-[#e7edf4] dark:bg-white/10`}
+              style={tw`px-3 py-1 rounded-lg bg-[#e7edf4] dark:bg:white/10`}
             >
               <Text style={tw`text-[#0d141c] dark:text-white text-xs`}>Close</Text>
             </TouchableOpacity>
@@ -294,13 +296,13 @@ const PlanPurchaseModal: React.FC<{
               <View style={tw`flex-row rounded-lg overflow-hidden border border-[#cedbe8] dark:border-white/10`}>
                 <TouchableOpacity
                   onPress={() => setCycle('monthly')}
-                  style={tw`px-3 py-1.5 ${cycle === 'monthly' ? 'bg-[#e7edf4] dark:bg-white/10' : ''}`}
+                  style={tw`px-3 py-1.5 ${cycle === 'monthly' ? 'bg-[#e7edf4] dark:bg:white/10' : ''}`}
                 >
                   <Text style={tw`text-[#0d141c] dark:text-white text-xs`}>Monthly</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => setCycle('annual')}
-                  style={tw`px-3 py-1.5 ${cycle === 'annual' ? 'bg-[#e7edf4] dark:bg-white/10' : ''}`}
+                  style={tw`px-3 py-1.5 ${cycle === 'annual' ? 'bg-[#e7edf4] dark:bg:white/10' : ''}`}
                 >
                   <Text style={tw`text-[#0d141c] dark:text-white text-xs`}>Annual</Text>
                 </TouchableOpacity>
@@ -312,13 +314,13 @@ const PlanPurchaseModal: React.FC<{
               <View style={tw`flex-row rounded-lg overflow-hidden border border-[#cedbe8] dark:border-white/10`}>
                 <TouchableOpacity
                   onPress={() => setMethod('PayPal')}
-                  style={tw`px-3 py-1.5 ${method === 'PayPal' ? 'bg-[#e7edf4] dark:bg-white/10' : ''}`}
+                  style={tw`px-3 py-1.5 ${method === 'PayPal' ? 'bg-[#e7edf4] dark:bg:white/10' : ''}`}
                 >
                   <Text style={tw`text-[#0d141c] dark:text-white text-xs`}>PayPal</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => setMethod('M-Pesa')}
-                  style={tw`px-3 py-1.5 ${method === 'M-Pesa' ? 'bg-[#e7edf4] dark:bg-white/10' : ''}`}
+                  style={tw`px-3 py-1.5 ${method === 'M-Pesa' ? 'bg-[#e7edf4] dark:bg:white/10' : ''}`}
                 >
                   <Text style={tw`text-[#0d141c] dark:text-white text-xs`}>M-Pesa</Text>
                 </TouchableOpacity>
@@ -334,7 +336,7 @@ const PlanPurchaseModal: React.FC<{
           {/* body */}
           <View style={tw`mt-4`}>
             <View
-              style={tw`rounded-xl border border-[#cedbe8] dark:border-white/10 bg-[#f8fbff] dark:bg-white/5 p-3 mb-3`}
+              style={tw`rounded-xl border border-[#cedbe8] dark:border-white/10 bg-[#f8fbff] dark:bg:white/5 p-3 mb-3`}
             >
               <View style={tw`flex-row justify-between`}>
                 <Text style={tw`text-[#0d141c] dark:text-white font-semibold`}>{tier.toUpperCase()} plan</Text>
@@ -353,7 +355,7 @@ const PlanPurchaseModal: React.FC<{
 
             {method === 'M-Pesa' ? (
               <View
-                style={tw`rounded-xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-white/5 p-3`}
+                style={tw`rounded-xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg:white/5 p-3`}
               >
                 <Text style={tw`text-[#0d141c] dark:text-white font-semibold mb-2`}>M-Pesa (KES)</Text>
 
@@ -363,7 +365,7 @@ const PlanPurchaseModal: React.FC<{
                   onChangeText={setPhone}
                   placeholder="2547XXXXXXXX"
                   placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                  style={tw`bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 rounded px-3 py-2 text-[#0d141c] dark:text-white text-sm`}
+                  style={tw`bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text-white text-sm`}
                 />
 
                 <View style={tw`flex-row mt-3`}>
@@ -400,7 +402,7 @@ const PlanPurchaseModal: React.FC<{
                     onChangeText={setReference}
                     placeholder="Receipt / reference number"
                     placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                    style={tw`bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 rounded px-3 py-2 text-[#0d141c] dark:text-white text-sm`}
+                    style={tw`bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text-white text-sm`}
                   />
                   <TouchableOpacity
                     onPress={() => handleMpesa({ withReference: true })}
@@ -417,7 +419,7 @@ const PlanPurchaseModal: React.FC<{
               </View>
             ) : (
               <View
-                style={tw`rounded-xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-white/5 p-3`}
+                style={tw`rounded-xl border border-[#cedbe8] dark:border:white/10 bg-white dark:bg:white/5 p-3`}
               >
                 <Text style={tw`text-[#0d141c] dark:text-white font-semibold mb-1`}>PayPal (USD)</Text>
                 <Text style={tw`text-[#49739c] dark:text-white/70 text-xs mb-2`}>
@@ -451,8 +453,19 @@ const PlanPurchaseModal: React.FC<{
 const OrgElearnPortalNative: React.FC = () => {
   const { backendUrl, token, orgToken } = useShopContext() as any;
   const authToken: string | undefined = orgToken || token;
-  const [tab, setTab] = useState<TabKey>('branding');
+  const { role } = (useOrg?.() ?? {}) as { org?: Org | null; role?: string | null };
+  const isInstructor = role === 'instructor';
+
   const route = useRoute<RouteProp<MainStackParamList, 'OrgElearnPortal'>>();
+  const paramsAny = (route.params || {}) as any;
+  const viewParam = paramsAny.view;
+  const isLearnerView = viewParam === 'learner';
+  const learnerStudentId = paramsAny.studentId ?? paramsAny.student_id ?? '';
+  const learnerClassFromRoute = paramsAny.class ?? paramsAny.class_label ?? '';
+  const learnerSubjectFromRoute =
+    paramsAny.subject ?? paramsAny.subjectKey ?? paramsAny.subject_key ?? '';
+
+  const [tab, setTab] = useState<TabKey>(isLearnerView || isInstructor ? 'assign' : 'branding');
   const [org, setOrg] = useState<Org | null>(null);
   const tier: OrgTier = (org?.tier as OrgTier) || 'starter';
   const tierMeta = ORG_TIERS[tier];
@@ -463,11 +476,15 @@ const OrgElearnPortalNative: React.FC = () => {
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
   const { resolvedScheme } = useThemePref();
 
+  const canBrandingRole = !isInstructor && !isLearnerView;
+  const canUpgradePlan = !isInstructor && !isLearnerView;
+
   // branding form
   const [form, setForm] = useState<any>({
     name: '',
     logo_url: '',
     signature_url: '',
+    instructor_signature_url: '',
     certificate_title: 'Certificate of Completion',
     default_pass_mark: 70,
     quiz_time_limit_s: 900,
@@ -475,6 +492,11 @@ const OrgElearnPortalNative: React.FC = () => {
     email_domain: '',
     webhook_url: '',
     webhook_enabled: true,
+    address_line1: '',
+    address_line2: '',
+    phone_number: '',
+    contact_email: '',
+    website_url: '',
   });
 
   // collapsible state
@@ -485,6 +507,7 @@ const OrgElearnPortalNative: React.FC = () => {
   // upload busy
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingSignature, setUploadingSignature] = useState(false);
+  const [uploadingInstructorSignature, setUploadingInstructorSignature] = useState(false);
 
   // assign
   const [courseId, setCourseId] = useState('');
@@ -501,10 +524,21 @@ const OrgElearnPortalNative: React.FC = () => {
 
   const [showCongrats, setShowCongrats] = useState(false);
 
-  // learner progress (overall)
+  // learner progress (overall) – owner/instructor only
   const [lpRows, setLpRows] = useState<OrgLearnerProgressRow[]>([]);
   const [lpCursor, setLpCursor] = useState<string | null>(null);
   const [lpLoading, setLpLoading] = useState(false);
+
+  // learner assignment view (legacy / file-based)
+  const [learnerAssignments, setLearnerAssignments] = useState<OrgAssignmentRow[]>([]);
+  const [learnerAssignmentsLoading, setLearnerAssignmentsLoading] = useState(false);
+
+  // submit legacy assignment (learner)
+  const [submitOpen, setSubmitOpen] = useState(false);
+  const [submitAssignment, setSubmitAssignment] = useState<OrgAssignmentRow | null>(null);
+  const [submitText, setSubmitText] = useState('');
+  const [submitFileAsset, setSubmitFileAsset] = useState<any | null>(null);
+  const [submitUploading, setSubmitUploading] = useState(false);
 
   const {
     canBranding,
@@ -533,15 +567,25 @@ const OrgElearnPortalNative: React.FC = () => {
     })();
   }, [backendUrl, authToken]);
 
+  // hydrate from route params (tab + courseId)
   useEffect(() => {
-    const initialTab = route.params?.tab as TabKey | undefined;
-    if (initialTab) setTab(initialTab);
-    const cid = route.params?.courseId;
+    const p = (route.params || {}) as any;
+    const explicitTab = p.tab as TabKey | undefined;
+    if (explicitTab) setTab(explicitTab);
+    const cid = p.courseId;
     if (cid) setCourseId(cid);
   }, [route.params]);
 
-  /* usage seats */
+  // force away from branding tab for roles that can't brand
   useEffect(() => {
+    if (!canBrandingRole && tab === 'branding') {
+      setTab('assign');
+    }
+  }, [canBrandingRole, tab]);
+
+  /* usage seats – non-learner only */
+  useEffect(() => {
+    if (isLearnerView) return;
     (async () => {
       if (!authToken || !org?.id) return;
       try {
@@ -551,74 +595,92 @@ const OrgElearnPortalNative: React.FC = () => {
         setSeatsUsed(Number(org?.seats_used ?? 0));
       }
     })();
-  }, [org?.id, org?.seats_used, backendUrl, authToken]);
+  }, [org?.id, org?.seats_used, backendUrl, authToken, isLearnerView]);
 
-  /* upload helper */
+  /* upload helper (logo/signature/instructor signature) */
   const handleUpload = useCallback(
-  async (target: 'logo_url' | 'signature_url') => {
-    if (!authToken) {
-      Alert.alert('Sign in required', 'Please sign in before uploading images.');
-      return;
-    }
-
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ['image/*'],
-        copyToCacheDirectory: true,
-      });
-
-      if (result.canceled || !result.assets || result.assets.length === 0) {
+    async (target: 'logo_url' | 'signature_url' | 'instructor_signature_url') => {
+      if (!authToken) {
+        Alert.alert('Sign in required', 'Please sign in before uploading images.');
         return;
       }
 
-      const asset = result.assets[0];
-      if (!asset) {
-        return;
+      try {
+        const result = await DocumentPicker.getDocumentAsync({
+          type: ['image/*'],
+          copyToCacheDirectory: true,
+        });
+
+        if (result.canceled || !result.assets || result.assets.length === 0) {
+          return;
+        }
+
+        const asset = result.assets[0];
+        if (!asset) {
+          return;
+        }
+
+        const file: any = {
+          uri: asset.uri,
+          name: asset.name || `brand-${target}-${Date.now()}.jpg`,
+          type: asset.mimeType || 'image/jpeg',
+        };
+
+        const setBusy =
+          target === 'logo_url'
+            ? setUploadingLogo
+            : target === 'signature_url'
+            ? setUploadingSignature
+            : setUploadingInstructorSignature;
+
+        setBusy(true);
+
+        const res: any = await uploadAsset(backendUrl, authToken, file, 'image');
+
+        const url =
+          typeof res === 'string'
+            ? res
+            : res?.url || res?.secure_url || res?.data?.url || '';
+
+        if (!url) {
+          throw new Error('Upload completed but no URL was returned by the server.');
+        }
+
+        setForm((f: any) => ({ ...f, [target]: url }));
+        Alert.alert(
+          'Uploaded',
+          target === 'logo_url'
+            ? 'Logo updated.'
+            : target === 'signature_url'
+            ? 'Signature updated.'
+            : 'Instructor signature updated.'
+        );
+      } catch (e: any) {
+        if (e?.message?.includes('canceled')) return;
+        Alert.alert('Upload failed', e?.message || 'Please try again.');
+      } finally {
+        setUploadingLogo(false);
+        setUploadingSignature(false);
+        setUploadingInstructorSignature(false);
       }
+    },
+    [authToken, backendUrl]
+  );
 
-      const file: any = {
-        uri: asset.uri,
-        name: asset.name || `brand-${target}-${Date.now()}.jpg`,
-        type: asset.mimeType || 'image/jpeg',
-      };
-
-      const setBusy =
-        target === 'logo_url' ? setUploadingLogo : setUploadingSignature;
-
-      setBusy(true);
-
-      const res: any = await uploadAsset(backendUrl, authToken, file, 'image');
-
-      const url =
-        typeof res === 'string'
-          ? res
-          : res?.url || res?.secure_url || res?.data?.url || '';
-
-      if (!url) {
-        throw new Error('Upload completed but no URL was returned by the server.');
-      }
-
-      setForm((f: any) => ({ ...f, [target]: url }));
-      Alert.alert(
-        'Uploaded',
-        target === 'logo_url' ? 'Logo updated.' : 'Signature updated.'
-      );
-    } catch (e: any) {
-      if (e?.message?.includes('canceled')) return;
-      Alert.alert('Upload failed', e?.message || 'Please try again.');
-    } finally {
-      setUploadingLogo(false);
-      setUploadingSignature(false);
-    }
-  },
-  [authToken, backendUrl]
-);
   /* save branding */
   const saveBranding = async () => {
     if (!org?.id || !authToken) {
       Alert.alert(
         'Missing organization',
         'Please create your Institution account first (For Institutions → Login/Sign up).'
+      );
+      return;
+    }
+
+    if (!canBrandingRole) {
+      Alert.alert(
+        'Not allowed',
+        'Branding settings can only be changed by your institution owner or admin.'
       );
       return;
     }
@@ -664,7 +726,7 @@ const OrgElearnPortalNative: React.FC = () => {
     }
   };
 
-  /* assignment */
+  /* assignment create (AI course-based) – admin/instructor only */
   const createAssignment = async () => {
     if (!org?.id || !authToken || !courseId) return;
     try {
@@ -684,8 +746,9 @@ const OrgElearnPortalNative: React.FC = () => {
     }
   };
 
-  /* analytics */
+  /* analytics – owner/instructor only */
   const loadAnalytics = useCallback(async () => {
+    if (isLearnerView) return;
     if (!org?.id || !authToken) return;
     setLoadingAnalytics(true);
     try {
@@ -697,15 +760,16 @@ const OrgElearnPortalNative: React.FC = () => {
     } finally {
       setLoadingAnalytics(false);
     }
-  }, [org?.id, backendUrl, authToken, period, canMultiPeriodAnalytics]);
+  }, [org?.id, backendUrl, authToken, period, canMultiPeriodAnalytics, isLearnerView]);
 
   useEffect(() => {
     loadAnalytics();
   }, [loadAnalytics]);
 
-  /* learner progress */
+  /* learner progress – owner/instructor only */
   const loadLearnerProgress = useCallback(
     async (reset: boolean) => {
+      if (isLearnerView) return;
       if (!org?.id || !authToken) return;
       setLpLoading(true);
       try {
@@ -719,12 +783,126 @@ const OrgElearnPortalNative: React.FC = () => {
         setLpLoading(false);
       }
     },
-    [backendUrl, authToken, org?.id, lpCursor]
+    [backendUrl, authToken, org?.id, lpCursor, isLearnerView]
   );
 
   useEffect(() => {
+    if (isLearnerView) return;
     if (tab === 'analytics') loadLearnerProgress(true);
-  }, [tab, org?.id, authToken, loadLearnerProgress]);
+  }, [tab, org?.id, authToken, isLearnerView, loadLearnerProgress]);
+
+  /* learner: load legacy/file-based assignments visible to them */
+  const loadLearnerAssignments = useCallback(async () => {
+    if (!isLearnerView) return;
+    if (!authToken || !org?.id) return;
+    setLearnerAssignmentsLoading(true);
+    try {
+      const resp = await getOrgAssignmentsForLearner(backendUrl, authToken, org.id, {
+        studentId: learnerStudentId || undefined,
+        classLabel: learnerClassFromRoute || undefined,
+        subjectKey: learnerSubjectFromRoute || undefined,
+      });
+      const rows = Array.isArray((resp as any)?.data) ? (resp as any).data : [];
+      setLearnerAssignments(rows as OrgAssignmentRow[]);
+    } catch (err) {
+      console.warn('[OrgElearnPortalNative] load learner assignments failed', err);
+      setLearnerAssignments([]);
+    } finally {
+      setLearnerAssignmentsLoading(false);
+    }
+  }, [
+    isLearnerView,
+    backendUrl,
+    authToken,
+    org?.id,
+    learnerStudentId,
+    learnerClassFromRoute,
+    learnerSubjectFromRoute,
+  ]);
+
+  useEffect(() => {
+    loadLearnerAssignments();
+  }, [loadLearnerAssignments]);
+
+  /* learner: pick file for submission */
+  const handlePickSubmitFile = useCallback(async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          'application/pdf',
+          'application/msword',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'image/*',
+        ],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) return;
+      setSubmitFileAsset(result.assets[0]);
+    } catch (e: any) {
+      if (e?.message?.includes('canceled')) return;
+      Alert.alert('File selection failed', e?.message || 'Please try again.');
+    }
+  }, []);
+
+  /* learner: submit legacy work */
+  const handleSubmitLegacyWork = useCallback(async () => {
+    if (!submitAssignment || !authToken || !org?.id) {
+      setSubmitOpen(false);
+      return;
+    }
+
+    if (!submitText.trim() && !submitFileAsset) {
+      Alert.alert('Missing work', 'Type an answer or attach a file before submitting.');
+      return;
+    }
+
+    setSubmitUploading(true);
+    try {
+      let attachmentUrl: string | null = null;
+
+      if (submitFileAsset) {
+        const file: any = {
+          uri: submitFileAsset.uri,
+          name: submitFileAsset.name || 'assignment-upload',
+          type: submitFileAsset.mimeType || 'application/octet-stream',
+        };
+
+        const res: any = await uploadAsset(backendUrl, authToken, file, 'doc');
+        attachmentUrl =
+          typeof res === 'string'
+            ? res
+            : res?.url || res?.secure_url || res?.data?.url || null;
+      }
+
+      await submitOrgLegacyAssignment(backendUrl, authToken, org.id, submitAssignment.id, {
+        answer_text: submitText.trim() || null,
+        attachment_url: attachmentUrl,
+      });
+
+      Alert.alert('Submitted', 'Your work has been submitted ✅');
+      setSubmitOpen(false);
+      setSubmitAssignment(null);
+      setSubmitText('');
+      setSubmitFileAsset(null);
+
+      await loadLearnerAssignments();
+    } catch (e: any) {
+      const msg =
+        e?.response?.data?.message || e?.message || 'Failed to submit work.';
+      Alert.alert('Submit failed', msg);
+    } finally {
+      setSubmitUploading(false);
+    }
+  }, [
+    submitAssignment,
+    submitText,
+    submitFileAsset,
+    backendUrl,
+    authToken,
+    org?.id,
+    loadLearnerAssignments,
+  ]);
 
   /* computed */
   const seatPct = Math.min(100, Math.round(((seatsUsed || 0) / seatsMax) * 100));
@@ -741,317 +919,588 @@ const OrgElearnPortalNative: React.FC = () => {
       ? (org as any).instructors
       : [];
 
+  const visibleTabs: TabKey[] = canBrandingRole ? ['branding', 'assign', 'analytics'] : ['assign', 'analytics'];
+
+  // learner: filter to legacy/file-based assignments only
+  const legacyAssignments = useMemo(
+    () =>
+      learnerAssignments.filter((a: any) => {
+        const kind = String(a.source_kind || '').toLowerCase();
+        const isLegacyKind = kind === 'legacy';
+
+        const attachmentUrl =
+          a.attachment_url ||
+          a.attachmentUrl ||
+          a.download_url ||
+          a.downloadUrl ||
+          a.resource_url ||
+          a.resourceUrl ||
+          null;
+
+        return isLegacyKind || (!!attachmentUrl && !a.course_id);
+      }),
+    [learnerAssignments]
+  );
+
+  const { submittedAssignments, pendingAssignments } = useMemo(() => {
+    const submitted: OrgAssignmentRow[] = [];
+    const pending: OrgAssignmentRow[] = [];
+
+    legacyAssignments.forEach((a: any) => {
+      const submissionCount =
+        a.submission_count ?? a.submissions_count ?? a.answers_count ?? 0;
+      const hasFlag = a.has_submission ?? a.hasSubmitted ?? false;
+      const submissionTs =
+        a.latest_submission_at ||
+        a.submitted_at ||
+        a.last_submitted_at ||
+        a.my_submission_created_at ||
+        null;
+
+      const hasSubmitted =
+        Boolean(hasFlag) ||
+        Number(submissionCount) > 0 ||
+        Boolean(submissionTs);
+
+      if (hasSubmitted) submitted.push(a);
+      else pending.push(a);
+    });
+
+    return { submittedAssignments: submitted, pendingAssignments: pending };
+  }, [legacyAssignments]);
+
+  const renderLearnerAssignmentRow = (a: OrgAssignmentRow, submitted: boolean) => {
+    const key = String((a as any).id ?? (a as any).invite_code ?? Math.random());
+    const dueLabel = (a as any).due_at
+      ? new Date((a as any).due_at).toLocaleString()
+      : 'No due date';
+    const createdLabel = (a as any).created_at
+      ? new Date((a as any).created_at).toLocaleString()
+      : null;
+
+    const attachmentUrl: string | null =
+      (a as any).attachment_url ||
+      (a as any).attachmentUrl ||
+      (a as any).download_url ||
+      (a as any).downloadUrl ||
+      (a as any).resource_url ||
+      (a as any).resourceUrl ||
+      null;
+
+    return (
+      <View
+        key={key}
+        style={tw`mt-2 p-3 rounded-xl bg-[#f8fbff] dark:bg-[#111b28] border border-[#cedbe8] dark:border:white/10`}
+      >
+        <Text style={tw`text-[#0d141c] dark:text-white font-semibold`}>
+          {a.title || 'Untitled assignment'}
+        </Text>
+        <Text style={tw`mt-1 text-[11px] text-[#49739c] dark:text-white/80`}>
+          Due: {dueLabel}
+        </Text>
+        {createdLabel && (
+          <Text style={tw`mt-1 text-[11px] text-[#9CA3AF] dark:text-white/60`}>
+            Assigned: {createdLabel}
+          </Text>
+        )}
+
+        {attachmentUrl && (
+          <TouchableOpacity
+            onPress={() => Linking.openURL(attachmentUrl)}
+            style={tw`mt-2 px-3 py-1.5 rounded-lg bg-[#e7edf4] dark:bg:white/10 self-start`}
+          >
+            <Text style={tw`text-[#0d141c] dark:text-white text-xs`}>Open attachment</Text>
+          </TouchableOpacity>
+        )}
+
+        <View style={tw`flex-row mt-3`}>
+          <TouchableOpacity
+            onPress={() => {
+              setSubmitAssignment(a);
+              setSubmitText('');
+              setSubmitFileAsset(null);
+              setSubmitOpen(true);
+            }}
+            style={tw`px-3 py-1.5 rounded-lg bg-indigo-600`}
+          >
+            <Text style={tw`text-white text-xs`}>
+              {submitted ? 'Submit again' : 'Submit work'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
   return (
     <View style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016] px-3 pt-5 pb-8`}>
       <ScrollView contentContainerStyle={tw`pb-24`}>
-        {/* header */}
-        <View style={tw`mb-4`}>
-          <Text style={tw`text-[#0d141c] dark:text-white text-2xl font-bold`}>Institution E-Learning</Text>
-          <Text style={tw`text-[#49739c] dark:text-white/70 text-xs`}>
-            Branding • Assignments • Analytics
-          </Text>
-        </View>
-
-        {/* tabs */}
-        <View style={tw`flex-row mb-3`}>
-          {(['branding', 'assign', 'analytics'] as TabKey[]).map((t) => {
-            const active = tab === t;
-            return (
-              <TouchableOpacity
-                key={t}
-                onPress={() => setTab(t)}
-                style={tw`mr-2 px-3 py-1.5 rounded-xl ${
-                  active ? 'bg-indigo-600' : 'bg-[#e7edf4] dark:bg-white/10'
-                }`}
-              >
-                <Text
-                  style={tw`${active ? 'text-white' : 'text-[#0d141c] dark:text-white'} text-sm capitalize`}
-                >
-                  {t}
+        {isLearnerView ? (
+          <>
+            {/* LEARNER VIEW */}
+            <View style={tw`mb-4`}>
+              <Text style={tw`text-[#0d141c] dark:text-white text-2xl font-bold`}>
+                Assignments shared with you
+              </Text>
+              <Text style={tw`text-[#49739c] dark:text-white/70 text-xs mt-1`}>
+                These file-based assignments were shared by your teachers. Download the attachment,
+                follow the instructions, and submit your work.
+              </Text>
+              {!!learnerClassFromRoute && (
+                <Text style={tw`text-[#49739c] dark:text-white/70 text-[11px] mt-1`}>
+                  You&apos;re currently viewing work for{' '}
+                  <Text style={tw`font-semibold`}>{learnerClassFromRoute}</Text>
+                  {learnerSubjectFromRoute ? (
+                    <>
+                      {' '}
+                      in <Text style={tw`font-semibold`}>{learnerSubjectFromRoute}</Text>
+                    </>
+                  ) : null}
+                  .
                 </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* plan summary */}
-        <View
-          style={tw`rounded-2xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-3 mb-10`}
-        >
-          <View style={tw`flex-row flex-wrap items-center justify-between`}>
-            <View style={tw`flex-row flex-wrap items-center`}>
-              <Pill>
-                Plan: <Text style={tw`font-semibold`}>{tier.toUpperCase()}</Text>
-              </Pill>
-              <View style={tw`w-2`} />
-              <Pill>
-                Seats: {seatsUsed}/{seatsMax}
-              </Pill>
-              {hasPrioritySupport && (
-                <>
-                  <View style={tw`w-2`} />
-                  <Pill>Priority support</Pill>
-                </>
               )}
             </View>
 
-            <View style={tw`flex-row items-center mt-2`}>
-              <View style={tw`w-32 h-2 rounded bg-[#e7edf4] dark:bg-white/10 overflow-hidden mr-2`}>
-                <View
-                  style={[
-                    tw`${nearLimit ? 'bg-red-500' : 'bg-emerald-500'}`,
-                    { height: '100%', width: `${seatPct}%` },
-                  ]}
-                />
+            <View
+              style={tw`rounded-2xl border border-[#cedbe8] dark:border:white/10 bg-white dark:bg-[#0f1821] p-4`}
+            >
+              <View style={tw`flex-row justify-between items-center mb-2`}>
+                <View style={tw`flex-1 pr-2`}>
+                  <Text style={tw`text-[#0d141c] dark:text-white text-base font-semibold`}>
+                    Your assignments
+                  </Text>
+                  <Text style={tw`text-[#6b7280] dark:text-white/70 text-[11px] mt-1`}>
+                    You can only see assignments that your institution has shared with you. New work
+                    appears here automatically when a teacher targets your class/subject.
+                  </Text>
+                </View>
+                {learnerAssignmentsLoading && (
+                  <Text style={tw`text-[11px] text-[#6b7280] dark:text-white/70`}>Loading…</Text>
+                )}
               </View>
-              {nearLimit && (
-                <Text style={tw`text-red-600 dark:text-red-300 text-xs`}>Near seat limit</Text>
+
+              {/* Submitted */}
+              <View style={tw`mt-2`}>
+                <Text style={tw`text-xs font-semibold text-[#0d141c] dark:text-white`}>
+                  Submitted assignments
+                </Text>
+                {submittedAssignments.length === 0 && !learnerAssignmentsLoading ? (
+                  <Text style={tw`mt-1 text-[11px] text-[#6b7280] dark:text-white/70`}>
+                    You haven&apos;t submitted any legacy (file-based) assignments yet.
+                  </Text>
+                ) : (
+                  submittedAssignments.map((a) => renderLearnerAssignmentRow(a, true))
+                )}
+              </View>
+
+              {/* Pending */}
+              <View style={tw`mt-4`}>
+                <Text style={tw`text-xs font-semibold text-[#0d141c] dark:text-white`}>
+                  Assignments to work on
+                </Text>
+                {pendingAssignments.length === 0 && !learnerAssignmentsLoading ? (
+                  <Text style={tw`mt-1 text-[11px] text-[#6b7280] dark:text-white/70`}>
+                    You don&apos;t have any pending legacy (file-based) assignments for this class or
+                    subject yet.
+                  </Text>
+                ) : (
+                  pendingAssignments.map((a) => renderLearnerAssignmentRow(a, false))
+                )}
+              </View>
+
+              {!!learnerStudentId && (
+                <Text style={tw`mt-4 text-[11px] text-[#6b7280] dark:text-white/70`}>
+                  Learner ID in this portal:{' '}
+                  <Text style={tw`font-mono`}>{learnerStudentId}</Text>. If this doesn&apos;t match
+                  your login card, ask your teacher to confirm.
+                </Text>
               )}
             </View>
-          </View>
+          </>
+        ) : (
+          <>
+            {/* OWNER / INSTRUCTOR VIEW */}
+            {/* header */}
+            <View style={tw`mb-4`}>
+              <Text style={tw`text-[#0d141c] dark:text-white text-2xl font-bold`}>
+                Institution E-Learning
+              </Text>
+              <Text style={tw`text-[#49739c] dark:text-white/70 text-xs mt-1`}>
+                {isInstructor ? 'Assignments • Analytics' : 'Branding • Assignments • Analytics'}
+              </Text>
+            </View>
 
-          <View style={tw`flex-row flex-wrap mt-2`}>
-            {(['starter', 'pro', 'enterprise'] as OrgTier[])
-              .filter((t) => t !== tier)
-              .map((next) => (
-                <TouchableOpacity
-                  key={next}
-                  onPress={() => {
-                    if (next === 'pro') setShowProModal(true);
-                    else if (next === 'enterprise') setShowEnterpriseModal(true);
-                    else if (org?.id && authToken) {
-                      upgradeOrgTier(backendUrl, authToken, org.id, next)
-                        .then((j) => {
-                          setOrg((prev: Org | null) => ({ ...((prev ?? {}) as Org), ...j }));
-                          Alert.alert('Plan updated', `Changed plan to ${next.toUpperCase()}.`);
-                        })
-                        .catch(() =>
-                          Alert.alert('Failed', 'Plan change failed. Please try again.')
-                        );
-                    }
-                  }}
-                  style={tw`mr-2 mt-2 px-2 py-1 rounded-lg bg-indigo-600`}
-                >
-                  <Text style={tw`text-white text-xs`}>Upgrade → {next.toUpperCase()}</Text>
-                </TouchableOpacity>
-              ))}
-          </View>
-
-          <View style={tw`flex-row flex-wrap mt-2`}>
-            {ORG_TIERS[tier].features.map((f) => (
-              <View
-                key={f}
-                style={tw`mr-1 mt-1 px-2 py-0.5 rounded-full bg-[#e7edf4] dark:bg-white/10`}
-              >
-                <Text style={tw`text-[#0d141c] dark:text-white/90 text-[11px]`}>{f}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        {/* BRANDING / ASSIGN tabs */}
-        {(tab === 'branding' || tab === 'assign') && (
-          <View>
-            {/* BRANDING */}
-            {tab === 'branding' && (
-              <View
-                style={tw`rounded-2xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-4 mb-6`}
-              >
-                <Text style={tw`text-[#0d141c] dark:text-white text-lg font-semibold mb-3`}>
-                  Branding
-                </Text>
-
-                {/* org name */}
-                <Text style={tw`text-[#49739c] dark:text-white/80 text-xs`}>Organization name</Text>
-                <TextInput
-                  value={form.name}
-                  onChangeText={(v) => setForm((f: any) => ({ ...f, name: v }))}
-                  placeholder="My School / Org"
-                  placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                  style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 rounded px-3 py-2 text-[#0d141c] dark:text-white`}
-                />
-
-                {/* LOGO & SIGNATURE SECTION */}
-                <View
-                  style={tw`mt-4 rounded-2xl border border-[#cedbe8] dark:border-white/10 bg-[#f8fbff] dark:bg-white/5`}
-                >
+            {/* tabs */}
+            <View style={tw`flex-row mb-3`}>
+              {visibleTabs.map((t) => {
+                const active = tab === t;
+                return (
                   <TouchableOpacity
-                    onPress={() => setShowLogoSection((v) => !v)}
-                    style={tw`flex-row items-center justify-between px-3 py-2`}
+                    key={t}
+                    onPress={() => setTab(t)}
+                    style={tw`mr-2 px-3 py-1.5 rounded-xl ${
+                      active ? 'bg-indigo-600' : 'bg-[#e7edf4] dark:bg:white/10'
+                    }`}
                   >
-                    <View>
-                      <Text style={tw`text-[#0d141c] dark:text-white text-sm font-semibold`}>
-                        Logo & Signature
-                      </Text>
-                      <Text style={tw`text-[#49739c] dark:text-white/70 text-[11px]`}>
-                        Upload logo and principal signature for certificates.
-                      </Text>
-                    </View>
-                    <Text style={tw`text-[#49739c] dark:text-white/70 text-lg`}>
-                      {showLogoSection ? '−' : '+'}
+                    <Text
+                      style={tw`${active ? 'text-white' : 'text-[#0d141c] dark:text-white'} text-sm capitalize`}
+                    >
+                      {t}
                     </Text>
                   </TouchableOpacity>
+                );
+              })}
+            </View>
 
-                  {showLogoSection && (
-                    <View style={tw`px-3 pb-3`}>
-                      {/* logo */}
-                      <Text style={tw`mt-2 text-[#49739c] dark:text-white/80 text-xs`}>Logo image</Text>
-                      <View style={tw`flex-row items-center mt-1`}>
-                        <TouchableOpacity
-                          onPress={() => handleUpload('logo_url')}
-                          disabled={uploadingLogo}
-                          style={tw`px-3 py-2 rounded-xl bg-indigo-600 mr-2 ${
-                            uploadingLogo ? 'opacity-60' : ''
-                          }`}
-                        >
-                          {uploadingLogo ? (
-                            <ActivityIndicator color="#fff" />
-                          ) : (
-                            <Text style={tw`text-white text-xs`}>Upload logo</Text>
-                          )}
-                        </TouchableOpacity>
-                        {form.logo_url ? (
-                          <Text
-                            numberOfLines={1}
-                            style={tw`flex-1 text-[11px] text-[#49739c] dark:text-white/70`}
-                          >
-                            {form.logo_url}
-                          </Text>
-                        ) : (
-                          <Text
-                            style={tw`flex-1 text-[11px] text-[#9CA3AF] dark:text-white/50`}
-                          >
-                            No logo uploaded yet
-                          </Text>
-                        )}
-                      </View>
-                      <Text
-                        style={tw`mt-2 text-[#49739c] dark:text-white/80 text-[11px]`}
-                      >
-                        Or paste logo URL
-                      </Text>
-                      <TextInput
-                        value={form.logo_url}
-                        onChangeText={(v) => setForm((f: any) => ({ ...f, logo_url: v }))}
-                        placeholder="https://…/logo.png"
-                        placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                        style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 rounded px-3 py-2 text-[#0d141c] dark:text-white text-xs`}
-                      />
-
-                      {/* signature */}
-                      <View style={tw`h-3`} />
-                      <Text style={tw`text-[#49739c] dark:text-white/80 text-xs`}>
-                        Principal / Director signature image
-                      </Text>
-                      <View style={tw`flex-row items-center mt-1`}>
-                        <TouchableOpacity
-                          onPress={() => handleUpload('signature_url')}
-                          disabled={uploadingSignature}
-                          style={tw`px-3 py-2 rounded-xl bg-indigo-600 mr-2 ${
-                            uploadingSignature ? 'opacity-60' : ''
-                          }`}
-                        >
-                          {uploadingSignature ? (
-                            <ActivityIndicator color="#fff" />
-                          ) : (
-                            <Text style={tw`text-white text-xs`}>Upload signature</Text>
-                          )}
-                        </TouchableOpacity>
-                        {form.signature_url ? (
-                          <Text
-                            numberOfLines={1}
-                            style={tw`flex-1 text-[11px] text-[#49739c] dark:text-white/70`}
-                          >
-                            {form.signature_url}
-                          </Text>
-                        ) : (
-                          <Text
-                            style={tw`flex-1 text-[11px] text-[#9CA3AF] dark:text-white/50`}
-                          >
-                            No signature uploaded yet
-                          </Text>
-                        )}
-                      </View>
-                      <Text
-                        style={tw`mt-2 text-[#49739c] dark:text-white/80 text-[11px]`}
-                      >
-                        Or paste signature URL
-                      </Text>
-                      <TextInput
-                        value={form.signature_url}
-                        onChangeText={(v) =>
-                          setForm((f: any) => ({ ...f, signature_url: v }))
-                        }
-                        placeholder="https://…/signature.png"
-                        placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                        style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 rounded px-3 py-2 text-[#0d141c] dark:text-white text-xs`}
-                      />
-                    </View>
+            {/* plan summary */}
+            <View
+              style={tw`rounded-2xl border border-[#cedbe8] dark:border:white/10 bg-white dark:bg-[#0f1821] p-3 mb-10`}
+            >
+              <View style={tw`flex-row flex-wrap items-center justify-between`}>
+                <View style={tw`flex-row flex-wrap items-center`}>
+                  <Pill>
+                    Plan: <Text style={tw`font-semibold`}>{tier.toUpperCase()}</Text>
+                  </Pill>
+                  <View style={tw`w-2`} />
+                  <Pill>
+                    Seats: {seatsUsed}/{seatsMax}
+                  </Pill>
+                  {hasPrioritySupport && (
+                    <>
+                      <View style={tw`w-2`} />
+                      <Pill>Priority support</Pill>
+                    </>
+                  )}
+                  {isInstructor && (
+                    <>
+                      <View style={tw`w-2`} />
+                      <Pill>Instructor view</Pill>
+                    </>
                   )}
                 </View>
 
-                {/* SSO & ACCESS SECTION */}
-                <View
-                  style={tw`mt-4 rounded-2xl border border-[#cedbe8] dark:border-white/10 bg-[#f8fbff] dark:bg-white/5`}
-                >
-                  <TouchableOpacity
-                    onPress={() => setShowSsoSection((v) => !v)}
-                    style={tw`flex-row items-center justify-between px-3 py-2`}
-                  >
-                    <View>
-                      <Text style={tw`text-[#0d141c] dark:text-white text-sm font-semibold`}>
-                        SSO & Access
-                      </Text>
-                      <Text style={tw`text-[#49739c] dark:text-white/70 text-[11px]`}>
-                        Restrict enrollments to your email domains and receive webhooks.
-                      </Text>
-                    </View>
-                    <Text style={tw`text-[#49739c] dark:text-white/70 text-lg`}>
-                      {showSsoSection ? '−' : '+'}
-                    </Text>
-                  </TouchableOpacity>
-
-                  {showSsoSection && (
-                    <View style={tw`px-3 pb-3`}>
-                      {/* Domains */}
-                      <Text style={tw`mt-2 text-[#49739c] dark:text-white/80 text-xs`}>
-                        Allowed email domains (comma separated)
-                      </Text>
-                      <TextInput
-                        editable={canSSO}
-                        value={form.email_domain ?? ''}
-                        onChangeText={(v) =>
-                          setForm((f: any) => ({ ...f, email_domain: v }))
-                        }
-                        placeholder="example.edu, school.ac.ke"
-                        placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                        style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 rounded px-3 py-2 text-[#0d141c] dark:text-white ${
-                          !canSSO ? 'opacity-60' : ''
-                        }`}
+                {!isInstructor && (
+                  <View style={tw`flex-row items-center mt-2`}>
+                    <View style={tw`w-32 h-2 rounded bg-[#e7edf4] dark:bg:white/10 overflow-hidden mr-2`}>
+                      <View
+                        style={[
+                          tw`${nearLimit ? 'bg-red-500' : 'bg-emerald-500'}`,
+                          { height: '100%', width: `${seatPct}%` },
+                        ]}
                       />
-                      {!canSSO && (
-                        <Text
-                          style={tw`mt-1 text-[11px] text-[#ea580c] dark:text-amber-300/90`}
-                        >
-                          Domain restrict / SSO is available on PRO and ENTERPRISE plans.
-                        </Text>
-                      )}
+                    </View>
+                    {nearLimit && (
+                      <Text style={tw`text-red-600 dark:text-red-300 text-xs`}>Near seat limit</Text>
+                    )}
+                  </View>
+                )}
+              </View>
 
-                      {/* Webhook toggle + URL */}
-                      <View style={tw`flex-row items-center mt-4 justify-between`}>
+              {!isInstructor && (
+                <View style={tw`flex-row flex-wrap mt-2`}>
+                  {(['starter', 'pro', 'enterprise'] as OrgTier[])
+                    .filter((t) => t !== tier)
+                    .map((next) => (
+                      <TouchableOpacity
+                        key={next}
+                        onPress={() => {
+                          if (!canUpgradePlan) return;
+                          if (next === 'pro') setShowProModal(true);
+                          else if (next === 'enterprise') setShowEnterpriseModal(true);
+                          else if (org?.id && authToken) {
+                            upgradeOrgTier(backendUrl, authToken, org.id, next)
+                              .then((j) => {
+                                setOrg((prev: Org | null) => ({ ...((prev ?? {}) as Org), ...j }));
+                                Alert.alert('Plan updated', `Changed plan to ${next.toUpperCase()}.`);
+                              })
+                              .catch(() =>
+                                Alert.alert('Failed', 'Plan change failed. Please try again.')
+                              );
+                          }
+                        }}
+                        style={tw`mr-2 mt-2 px-2 py-1 rounded-lg bg-indigo-600`}
+                      >
+                        <Text style={tw`text-white text-xs`}>Upgrade → {next.toUpperCase()}</Text>
+                      </TouchableOpacity>
+                    ))}
+                </View>
+              )}
+
+              <View style={tw`flex-row flex-wrap mt-2`}>
+                {ORG_TIERS[tier].features.map((f) => (
+                  <View
+                    key={f}
+                    style={tw`mr-1 mt-1 px-2 py-0.5 rounded-full bg-[#e7edf4] dark:bg:white/10`}
+                  >
+                    <Text style={tw`text-[#0d141c] dark:text:white/90 text-[11px]`}>{f}</Text>
+                  </View>
+                ))}
+              </View>
+
+              {isInstructor && (
+                <Text style={tw`mt-2 text-[11px] text-[#49739c] dark:text:white/70`}>
+                  Your institution owner/admin manages branding and subscriptions. As an instructor you
+                  can create assignments and view analytics here.
+                </Text>
+              )}
+            </View>
+
+            {/* BRANDING / ASSIGN tabs */}
+            {(tab === 'branding' || tab === 'assign') && (
+              <View>
+                {/* BRANDING */}
+                {tab === 'branding' && canBrandingRole && (
+                  <View
+                    style={tw`rounded-2xl border border-[#cedbe8] dark:border:white/10 bg-white dark:bg-[#0f1821] p-4 mb-6`}
+                  >
+                    <Text style={tw`text-[#0d141c] dark:text:white text-lg font-semibold mb-3`}>
+                      Branding
+                    </Text>
+
+                    {/* org name */}
+                    <Text style={tw`text-[#49739c] dark:text:white/80 text-xs`}>Organization name</Text>
+                    <TextInput
+                      value={form.name}
+                      onChangeText={(v) => setForm((f: any) => ({ ...f, name: v }))}
+                      placeholder="My School / Org"
+                      placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                      style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white`}
+                    />
+
+                    {/* LOGO & SIGNATURE SECTION */}
+                    <View
+                      style={tw`mt-4 rounded-2xl border border-[#cedbe8] dark:border:white/10 bg-[#f8fbff] dark:bg:white/5`}
+                    >
+                      <TouchableOpacity
+                        onPress={() => setShowLogoSection((v) => !v)}
+                        style={tw`flex-row items-center justify-between px-3 py-2`}
+                      >
                         <View>
-                          <Text
-                            style={tw`text-[#49739c] dark:text-white/80 text-xs`}
-                          >
-                            Webhook for completions
+                          <Text style={tw`text-[#0d141c] dark:text:white text-sm font-semibold`}>
+                            Logo & Signatures
                           </Text>
-                          <Text
-                            style={tw`text-[#6b7280] dark:text-white/60 text-[11px]`}
-                          >
-                            Receive events when learners complete quizzes or certificates.
+                          <Text style={tw`text-[#49739c] dark:text:white/70 text-[11px]`}>
+                            Upload logo and signatures for certificates and reports.
                           </Text>
                         </View>
-                        <Switch
+                        <Text style={tw`text-[#49739c] dark:text:white/70 text-lg`}>
+                          {showLogoSection ? '−' : '+'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      {showLogoSection && (
+                        <View style={tw`px-3 pb-3`}>
+                          {/* logo */}
+                          <Text style={tw`mt-2 text-[#49739c] dark:text:white/80 text-xs`}>
+                            Logo image
+                          </Text>
+                          <View style={tw`flex-row items-center mt-1`}>
+                            <TouchableOpacity
+                              onPress={() => handleUpload('logo_url')}
+                              disabled={uploadingLogo}
+                              style={tw`px-3 py-2 rounded-xl bg-indigo-600 mr-2 ${
+                                uploadingLogo ? 'opacity-60' : ''
+                              }`}
+                            >
+                              {uploadingLogo ? (
+                                <ActivityIndicator color="#fff" />
+                              ) : (
+                                <Text style={tw`text-white text-xs`}>Upload logo</Text>
+                              )}
+                            </TouchableOpacity>
+                            {form.logo_url ? (
+                              <Text
+                                numberOfLines={1}
+                                style={tw`flex-1 text-[11px] text-[#49739c] dark:text:white/70`}
+                              >
+                                {form.logo_url}
+                              </Text>
+                            ) : (
+                              <Text
+                                style={tw`flex-1 text-[11px] text-[#9CA3AF] dark:text:white/50`}
+                              >
+                                No logo uploaded yet
+                              </Text>
+                            )}
+                          </View>
+                          <Text
+                            style={tw`mt-2 text-[#49739c] dark:text:white/80 text-[11px]`}
+                          >
+                            Or paste logo URL
+                          </Text>
+                          <TextInput
+                            value={form.logo_url}
+                            onChangeText={(v) => setForm((f: any) => ({ ...f, logo_url: v }))}
+                            placeholder="https://…/logo.png"
+                            placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                            style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white text-xs`}
+                          />
+
+                          {/* principal / director signature */}
+                          <View style={tw`h-3`} />
+                          <Text style={tw`text-[#49739c] dark:text:white/80 text-xs`}>
+                            Principal / Director signature image
+                          </Text>
+                          <View style={tw`flex-row items-center mt-1`}>
+                            <TouchableOpacity
+                              onPress={() => handleUpload('signature_url')}
+                              disabled={uploadingSignature}
+                              style={tw`px-3 py-2 rounded-xl bg-indigo-600 mr-2 ${
+                                uploadingSignature ? 'opacity-60' : ''
+                              }`}
+                            >
+                              {uploadingSignature ? (
+                                <ActivityIndicator color="#fff" />
+                              ) : (
+                                <Text style={tw`text-white text-xs`}>Upload signature</Text>
+                              )}
+                            </TouchableOpacity>
+                            {form.signature_url ? (
+                              <Text
+                                numberOfLines={1}
+                                style={tw`flex-1 text-[11px] text-[#49739c] dark:text:white/70`}
+                              >
+                                {form.signature_url}
+                              </Text>
+                            ) : (
+                              <Text
+                                style={tw`flex-1 text-[11px] text-[#9CA3AF] dark:text:white/50`}
+                              >
+                                No signature uploaded yet
+                              </Text>
+                            )}
+                          </View>
+                          <Text
+                            style={tw`mt-2 text-[#49739c] dark:text:white/80 text-[11px]`}
+                          >
+                            Or paste signature URL
+                          </Text>
+                          <TextInput
+                            value={form.signature_url}
+                            onChangeText={(v) =>
+                              setForm((f: any) => ({ ...f, signature_url: v }))
+                            }
+                            placeholder="https://…/signature.png"
+                            placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                            style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white text-xs`}
+                          />
+
+                          {/* instructor signature */}
+                          <View style={tw`h-3`} />
+                          <Text style={tw`text-[#49739c] dark:text:white/80 text-xs`}>
+                            Instructor signature image (optional)
+                          </Text>
+                          <View style={tw`flex-row items-center mt-1`}>
+                            <TouchableOpacity
+                              onPress={() => handleUpload('instructor_signature_url')}
+                              disabled={uploadingInstructorSignature}
+                              style={tw`px-3 py-2 rounded-xl bg-indigo-600 mr-2 ${
+                                uploadingInstructorSignature ? 'opacity-60' : ''
+                              }`}
+                            >
+                              {uploadingInstructorSignature ? (
+                                <ActivityIndicator color="#fff" />
+                              ) : (
+                                <Text style={tw`text-white text-xs`}>
+                                  Upload instructor signature
+                                </Text>
+                              )}
+                            </TouchableOpacity>
+                            {form.instructor_signature_url ? (
+                              <Text
+                                numberOfLines={1}
+                                style={tw`flex-1 text-[11px] text-[#49739c] dark:text:white/70`}
+                              >
+                                {form.instructor_signature_url}
+                              </Text>
+                            ) : (
+                              <Text
+                                style={tw`flex-1 text-[11px] text-[#9CA3AF] dark:text:white/50`}
+                              >
+                                No instructor signature uploaded yet
+                              </Text>
+                            )}
+                          </View>
+                          <Text
+                            style={tw`mt-2 text-[#49739c] dark:text:white/80 text-[11px]`}
+                          >
+                            Or paste instructor signature URL
+                          </Text>
+                          <TextInput
+                            value={form.instructor_signature_url}
+                            onChangeText={(v) =>
+                              setForm((f: any) => ({ ...f, instructor_signature_url: v }))
+                            }
+                            placeholder="https://…/instructor-signature.png"
+                            placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                            style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white text-xs`}
+                          />
+                        </View>
+                      )}
+                    </View>
+
+                    {/* SSO & ACCESS SECTION */}
+                    <View
+                      style={tw`mt-4 rounded-2xl border border-[#cedbe8] dark:border:white/10 bg-[#f8fbff] dark:bg:white/5`}
+                    >
+                      <TouchableOpacity
+                        onPress={() => setShowSsoSection((v) => !v)}
+                        style={tw`flex-row items-center justify-between px-3 py-2`}
+                      >
+                        <View>
+                          <Text style={tw`text-[#0d141c] dark:text:white text-sm font-semibold`}>
+                            SSO & Access
+                          </Text>
+                          <Text style={tw`text-[#49739c] dark:text:white/70 text-[11px]`}>
+                            Restrict enrollments to your email domains and receive webhooks.
+                          </Text>
+                        </View>
+                        <Text style={tw`text-[#49739c] dark:text:white/70 text-lg`}>
+                          {showSsoSection ? '−' : '+'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      {showSsoSection && (
+                        <View style={tw`px-3 pb-3`}>
+                          {/* Domains */}
+                          <Text style={tw`mt-2 text-[#49739c] dark:text:white/80 text-xs`}>
+                            Allowed email domains (comma separated)
+                          </Text>
+                          <TextInput
+                            editable={canSSO}
+                            value={form.email_domain ?? ''}
+                            onChangeText={(v) =>
+                              setForm((f: any) => ({ ...f, email_domain: v }))
+                            }
+                            placeholder="example.edu, school.ac.ke"
+                            placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                            style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white ${
+                              !canSSO ? 'opacity-60' : ''
+                            }`}
+                          />
+                          {!canSSO && (
+                            <Text
+                              style={tw`mt-1 text-[11px] text-[#ea580c] dark:text-amber-300/90`}
+                            >
+                              Domain restrict / SSO is available on PRO and ENTERPRISE plans.
+                            </Text>
+                          )}
+
+                          {/* Webhook toggle + URL */}
+                          <View style={tw`flex-row items-center mt-4 justify-between`}>
+                            <View>
+                              <Text
+                                style={tw`text-[#49739c] dark:text:white/80 text-xs`}
+                              >
+                                Webhook for completions
+                              </Text>
+                              <Text
+                                style={tw`text-[#6b7280] dark:text:white/60 text-[11px]`}
+                              >
+                                Receive events when learners complete quizzes or certificates.
+                              </Text>
+                            </View>
+                            <Switch
                               value={!!form.webhook_enabled}
                               onValueChange={(v: boolean) => {
                                 if (!canWebhooks) return;
@@ -1064,579 +1513,724 @@ const OrgElearnPortalNative: React.FC = () => {
                               }}
                               thumbColor={resolvedScheme === 'dark' ? '#f9fafb' : '#111827'}
                             />
+                          </View>
 
-                      </View>
-
-                      <Text
-                        style={tw`mt-2 text-[#49739c] dark:text-white/80 text-xs`}
-                      >
-                        Webhook URL (HTTPS)
-                      </Text>
-                      <TextInput
-                        editable={canWebhooks}
-                        value={form.webhook_url ?? ''}
-                        onChangeText={(v) =>
-                          setForm((f: any) => ({ ...f, webhook_url: v }))
-                        }
-                        placeholder="https://example.com/webhooks/elearn"
-                        placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                        style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 rounded px-3 py-2 text-[#0d141c] dark:text-white ${
-                          !canWebhooks ? 'opacity-60' : ''
-                        }`}
-                      />
-                      {!canWebhooks && (
-                        <Text
-                          style={tw`mt-1 text-[11px] text-[#ea580c] dark:text-amber-300/90`}
-                        >
-                          Webhooks are available on ENTERPRISE plans. You can still use CSV export
-                          to integrate with your systems.
-                        </Text>
-                      )}
-                    </View>
-                  )}
-                </View>
-
-                {/* INSTRUCTORS & ADMINS SECTION */}
-                <View
-                  style={tw`mt-4 rounded-2xl border border-[#cedbe8] dark:border-white/10 bg-[#f8fbff] dark:bg-white/5`}
-                >
-                  <TouchableOpacity
-                    onPress={() => setShowInstructorsSection((v) => !v)}
-                    style={tw`flex-row items-center justify-between px-3 py-2`}
-                  >
-                    <View>
-                      <Text style={tw`text-[#0d141c] dark:text-white text-sm font-semibold`}>
-                        Instructors & admins
-                      </Text>
-                      <Text style={tw`text-[#49739c] dark:text-white/70 text-[11px]`}>
-                        View who can assign courses and manage reports.
-                      </Text>
-                    </View>
-                    <Text style={tw`text-[#49739c] dark:text-white/70 text-lg`}>
-                      {showInstructorsSection ? '−' : '+'}
-                    </Text>
-                  </TouchableOpacity>
-
-                  {showInstructorsSection && (
-                    <View style={tw`px-3 pb-3`}>
-                      {instructors.length === 0 ? (
-                        <Text
-                          style={tw`mt-2 text-[#49739c] dark:text-white/80 text-xs`}
-                        >
-                          No additional instructors configured yet. Use the web portal to invite
-                          teachers and assign admin roles.
-                        </Text>
-                      ) : (
-                        <>
-                          {instructors.map((u) => (
-                            <View
-                              key={u.user_id}
-                              style={tw`mt-2 p-2 rounded-xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}
-                            >
-                              <Text
-                                style={tw`text-[#0d141c] dark:text-white text-sm font-semibold`}
-                              >
-                                {u.name || u.email || `User #${u.user_id}`}
-                              </Text>
-                              {u.email && (
-                                <Text
-                                  style={tw`text-[#49739c] dark:text-white/60 text-[11px]`}
-                                >
-                                  {u.email}
-                                </Text>
-                              )}
-                              <Text
-                                style={tw`mt-1 text-[#49739c] dark:text-white/80 text-xs`}
-                              >
-                                Role:{' '}
-                                {u.role ? u.role.toUpperCase() : 'INSTRUCTOR'}
-                              </Text>
-                            </View>
-                          ))}
                           <Text
-                            style={tw`mt-3 text-[11px] text-[#6b7280] dark:text-white/60`}
+                            style={tw`mt-2 text-[#49739c] dark:text:white/80 text-xs`}
                           >
-                            To change roles or invite new staff, go to the web dashboard → Institution
-                            → E-Learning → Staff.
+                            Webhook URL (HTTPS)
                           </Text>
-                        </>
+                          <TextInput
+                            editable={canWebhooks}
+                            value={form.webhook_url ?? ''}
+                            onChangeText={(v) =>
+                              setForm((f: any) => ({ ...f, webhook_url: v }))
+                            }
+                            placeholder="https://example.com/webhooks/elearn"
+                            placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                            style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white ${
+                              !canWebhooks ? 'opacity-60' : ''
+                            }`}
+                          />
+                          {!canWebhooks && (
+                            <Text
+                              style={tw`mt-1 text-[11px] text-[#ea580c] dark:text-amber-300/90`}
+                            >
+                              Webhooks are available on ENTERPRISE plans. You can still use CSV
+                              export to integrate with your systems.
+                            </Text>
+                          )}
+                        </View>
                       )}
                     </View>
-                  )}
-                </View>
 
-                {/* Certificate + quiz defaults */}
-                <View style={tw`h-3`} />
-                <Text style={tw`text-[#49739c] dark:text-white/80 text-xs`}>
-                  Certificate title
-                </Text>
-                <TextInput
-                  value={form.certificate_title}
-                  onChangeText={(v) =>
-                    setForm((f: any) => ({ ...f, certificate_title: v }))
-                  }
-                  placeholder="Certificate of Completion"
-                  placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                  style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 rounded px-3 py-2 text-[#0d141c] dark:text-white`}
-                />
-
-                <View style={tw`h-3`} />
-                <Text style={tw`text-[#49739c] dark:text-white/80 text-xs`}>
-                  Default pass mark (%)
-                </Text>
-                <TextInput
-                  keyboardType="numeric"
-                  value={String(form.default_pass_mark ?? '')}
-                  onChangeText={(v) =>
-                    setForm((f: any) => ({
-                      ...f,
-                      default_pass_mark: Number(v) || 0,
-                    }))
-                  }
-                  placeholder="70"
-                  placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                  style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 rounded px-3 py-2 text-[#0d141c] dark:text-white`}
-                />
-
-                <View style={tw`h-3`} />
-                <Text style={tw`text-[#49739c] dark:text-white/80 text-xs`}>
-                  Quiz time limit (seconds)
-                </Text>
-                <TextInput
-                  keyboardType="numeric"
-                  value={String(form.quiz_time_limit_s ?? '')}
-                  onChangeText={(v) =>
-                    setForm((f: any) => ({
-                      ...f,
-                      quiz_time_limit_s: Number(v) || 0,
-                    }))
-                  }
-                  placeholder="900"
-                  placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                  style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 rounded px-3 py-2 text-[#0d141c] dark:text-white`}
-                />
-
-                {/* actions */}
-                <View style={tw`flex-row mt-4`}>
-                  <TouchableOpacity
-                    onPress={saveBranding}
-                    style={tw`px-4 py-2 rounded-xl bg-emerald-600`}
-                  >
-                    <Text style={tw`text-white font-semibold`}>Save branding</Text>
-                  </TouchableOpacity>
-                  {canEmailReports && (
-                    <TouchableOpacity
-                      onPress={async () => {
-                        if (!org?.id || !authToken) return;
-                        try {
-                          const resp = await sendOrgReportTest(
-                            backendUrl,
-                            authToken,
-                            org.id,
-                            (org as any)?.owner_email || undefined
-                          );
-                          Alert.alert(
-                            (resp as any)?.ok ? 'Sent' : 'Failed',
-                            (resp as any)?.ok
-                              ? 'Test report sent to admin email.'
-                              : 'Failed to send report.'
-                          );
-                        } catch {
-                          Alert.alert('Error', 'Failed to send report.');
-                        }
-                      }}
-                      style={tw`ml-2 px-4 py-2 rounded-xl bg-indigo-600`}
+                    {/* INSTRUCTORS & ADMINS SECTION */}
+                    <View
+                      style={tw`mt-4 rounded-2xl border border-[#cedbe8] dark:border:white/10 bg-[#f8fbff] dark:bg:white/5`}
                     >
-                      <Text style={tw`text-white font-semibold`}>Send test report</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-            )}
-
-            {/* ASSIGN tab */}
-            {tab === 'assign' && canAssignments && (
-              <View
-                style={tw`rounded-2xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-4`}
-              >
-                <Text style={tw`text-[#0d141c] dark:text-white text-lg font-semibold mb-3`}>
-                  Assignments
-                </Text>
-
-                <Text style={tw`text-[#49739c] dark:text-white/80 text-xs`}>Course ID</Text>
-                <TextInput
-                  value={courseId}
-                  onChangeText={setCourseId}
-                  placeholder="COURSE_ID"
-                  placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                  style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 rounded px-3 py-2 text-[#0d141c] dark:text-white`}
-                />
-
-                <View style={tw`h-3`} />
-                <Text style={tw`text-[#49739c] dark:text-white/80 text-xs`}>
-                  Title override (optional)
-                </Text>
-                <TextInput
-                  value={titleOverride}
-                  onChangeText={setTitleOverride}
-                  placeholder="Custom title"
-                  placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                  style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 rounded px-3 py-2 text-[#0d141c] dark:text-white`}
-                />
-
-                {canCustomPassTimers && (
-                  <>
-                    <View style={tw`h-3`} />
-                    <Text style={tw`text-[#49739c] dark:text-white/80 text-xs`}>
-                      Pass mark (%)
-                    </Text>
-                    <TextInput
-                      keyboardType="numeric"
-                      value={String(passMark ?? '')}
-                      onChangeText={(v) =>
-                        setPassMark(v === '' ? '' : Number(v) || 0)
-                      }
-                      placeholder="e.g. 70"
-                      placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                      style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 rounded px-3 py-2 text-[#0d141c] dark:text-white`}
-                    />
-                    <View style={tw`h-3`} />
-                    <Text style={tw`text-[#49739c] dark:text-white/80 text-xs`}>
-                      Timer (seconds)
-                    </Text>
-                    <TextInput
-                      keyboardType="numeric"
-                      value={String(timer ?? '')}
-                      onChangeText={(v) =>
-                        setTimer(v === '' ? '' : Number(v) || 0)
-                      }
-                      placeholder="e.g. 1800"
-                      placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                      style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 rounded px-3 py-2 text-[#0d141c] dark:text-white`}
-                    />
-                  </>
-                )}
-
-                <View style={tw`h-3`} />
-                <Text style={tw`text-[#49739c] dark:text-white/80 text-xs`}>
-                  Due at (ISO 8601 or empty)
-                </Text>
-                <TextInput
-                  value={dueAt}
-                  onChangeText={setDueAt}
-                  placeholder="2025-09-30T17:00:00Z"
-                  placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                  style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 rounded px-3 py-2 text-[#0d141c] dark:text-white`}
-                />
-
-                <View style={tw`flex-row mt-4`}>
-                  <TouchableOpacity
-                    onPress={createAssignment}
-                    style={tw`px-4 py-2 rounded-xl bg-emerald-600`}
-                  >
-                    <Text style={tw`text-white font-semibold`}>Create assignment</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {!!inviteLink && (
-                  <View style={tw`mt-4`}>
-                    <Text
-                      style={tw`text-[#49739c] dark:text-white/80 text-xs mb-1`}
-                    >
-                      Invite link
-                    </Text>
-                    <Text
-                      selectable
-                      style={tw`text-[#0d141c] dark:text-white text-xs`}
-                    >
-                      {inviteLink}
-                    </Text>
-                    <TouchableOpacity
-                      onPress={copyLink}
-                      style={tw`mt-2 px-3 py-2 rounded bg-indigo-600 self-start`}
-                    >
-                      <Text style={tw`text-white text-xs`}>Share / Copy</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-            )}
-          </View>
-        )}
-
-        {/* ANALYTICS */}
-        {tab === 'analytics' && (
-          <View
-            style={tw`rounded-2xl border border-[#cedbe8] dark:border-white/10 bg-white dark:bg-[#0f1821] p-4`}
-          >
-            <View style={tw`flex-row justify-between items-center mb-3`}>
-              <Text style={tw`text-[#0d141c] dark:text-white text-lg font-semibold`}>
-                Analytics
-              </Text>
-              <View style={tw`flex-row`}>
-                <TouchableOpacity
-                  onPress={() => setPeriod('month')}
-                  style={tw`px-3 py-1.5 rounded-lg mr-2 ${
-                    period === 'month'
-                      ? 'bg-indigo-600'
-                      : 'bg-[#e7edf4] dark:bg-white/10'
-                  }`}
-                >
-                  <Text
-                    style={tw`${
-                      period === 'month'
-                        ? 'text-white'
-                        : 'text-[#0d141c] dark:text-white'
-                    } text-xs`}
-                  >
-                    Monthly
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  disabled={!canMultiPeriodAnalytics}
-                  onPress={() => setPeriod('term')}
-                  style={tw`px-3 py-1.5 rounded-lg mr-2 ${
-                    period === 'term'
-                      ? 'bg-indigo-600'
-                      : 'bg-[#e7edf4] dark:bg-white/10'
-                  } ${!canMultiPeriodAnalytics ? 'opacity-50' : ''}`}
-                >
-                  <Text
-                    style={tw`${
-                      period === 'term'
-                        ? 'text-white'
-                        : 'text-[#0d141c] dark:text-white'
-                    } text-xs`}
-                  >
-                    Termly
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  disabled={!canMultiPeriodAnalytics}
-                  onPress={() => setPeriod('year')}
-                  style={tw`px-3 py-1.5 rounded-lg ${
-                    period === 'year'
-                      ? 'bg-indigo-600'
-                      : 'bg-[#e7edf4] dark:bg-white/10'
-                  } ${!canMultiPeriodAnalytics ? 'opacity-50' : ''}`}
-                >
-                  <Text
-                    style={tw`${
-                      period === 'year'
-                        ? 'text-white'
-                        : 'text-[#0d141c] dark:text-white'
-                    } text-xs`}
-                  >
-                    Yearly
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={tw`flex-row mb-3`}>
-              <TouchableOpacity
-                onPress={loadAnalytics}
-                style={tw`px-3 py-2 rounded-lg bg-indigo-600 mr-2`}
-              >
-                <Text style={tw`text-white text-xs`}>Refresh</Text>
-              </TouchableOpacity>
-              {canCSV && (
-                <TouchableOpacity
-                  onPress={async () => {
-                    try {
-                      const rows: (string | number)[][] = [
-                        ['Bucket', 'Attempts', 'Passes', 'Avg Score'],
-                      ];
-                      analytics.forEach((r) => {
-                        const bucketISO = new Date(r.bucket).toISOString();
-                        const attempts = Number(r.attempts ?? 0);
-                        const passes = Number(r.passes ?? 0);
-                        const avg = `${Math.round(r.avg_score ?? 0)}%`;
-                        rows.push([bucketISO, attempts, passes, avg]);
-                      });
-                      const csv = rows
-                        .map((r) =>
-                          r
-                            .map((v) =>
-                              `"${String(v).replace(/"/g, '""')}"`
-                            )
-                            .join(',')
-                        )
-                        .join('\n');
-                      await Share.share({ message: csv });
-                    } catch {
-                      Alert.alert('Export failed', 'Could not export CSV.');
-                    }
-                  }}
-                  style={tw`px-3 py-2 rounded-lg bg-[#e7edf4] dark:bg-white/10`}
-                >
-                  <Text style={tw`text-[#0d141c] dark:text-white text-xs`}>
-                    Export CSV
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {loadingAnalytics ? (
-              <View style={tw`py-6 items-center`}>
-                <ActivityIndicator
-                  color={resolvedScheme === 'dark' ? '#ffffff' : '#0d141c'}
-                />
-              </View>
-            ) : analytics.length === 0 ? (
-              <Text style={tw`text-[#49739c] dark:text-white/80 text-sm`}>
-                No analytics yet.
-              </Text>
-            ) : (
-              <View>
-                {analytics.map((row, idx) => (
-                  <View
-                    key={`${row.bucket}-${idx}`}
-                    style={tw`mb-2 p-3 rounded-lg bg-[#f8fbff] dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}
-                  >
-                    <Text
-                      style={tw`text-[#0d141c] dark:text-white font-semibold`}
-                    >
-                      {new Date(row.bucket).toLocaleString()}
-                    </Text>
-                    <Text
-                      style={tw`text-[#49739c] dark:text-white/80 text-xs mt-1`}
-                    >
-                      Attempts: {row.attempts} • Passes: {row.passes} • Avg:{' '}
-                      {Math.round(row.avg_score ?? 0)}%
-                    </Text>
-
-                    {canEmailReports && (
                       <TouchableOpacity
-                        onPress={() =>
-                          sendOrgReportRow(
-                            backendUrl,
-                            authToken!,
-                            org!.id,
-                            new Date(row.bucket).toISOString(),
-                            period
-                          )
-                            .then((ok) => {
-                              if ((ok as any)?.ok)
-                                Alert.alert('Queued', 'Report queued.');
-                              else
-                                Alert.alert(
-                                  'Failed',
-                                  'Failed to queue report.'
-                                );
-                            })
-                            .catch(() =>
-                              Alert.alert(
-                                'Failed',
-                                'Failed to queue report.'
-                              )
-                            )
-                        }
-                        style={tw`mt-2 px-3 py-1.5 rounded bg-[#e7edf4] dark:bg-white/10 self-start`}
+                        onPress={() => setShowInstructorsSection((v) => !v)}
+                        style={tw`flex-row items-center justify-between px-3 py-2`}
                       >
-                        <Text style={tw`text-[#0d141c] dark:text-white text-xs`}>
-                          Send report for this period
+                        <View>
+                          <Text style={tw`text-[#0d141c] dark:text:white text-sm font-semibold`}>
+                            Instructors & admins
+                          </Text>
+                          <Text style={tw`text-[#49739c] dark:text:white/70 text-[11px]`}>
+                            View who can assign courses and manage reports.
+                          </Text>
+                        </View>
+                        <Text style={tw`text-[#49739c] dark:text:white/70 text-lg`}>
+                          {showInstructorsSection ? '−' : '+'}
                         </Text>
                       </TouchableOpacity>
+
+                      {showInstructorsSection && (
+                        <View style={tw`px-3 pb-3`}>
+                          {instructors.length === 0 ? (
+                            <Text
+                              style={tw`mt-2 text-[#49739c] dark:text:white/80 text-xs`}
+                            >
+                              No additional instructors configured yet. Use the web portal to invite
+                              teachers and assign admin roles.
+                            </Text>
+                          ) : (
+                            <>
+                              {instructors.map((u) => (
+                                <View
+                                  key={u.user_id}
+                                  style={tw`mt-2 p-2 rounded-xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10`}
+                                >
+                                  <Text
+                                    style={tw`text-[#0d141c] dark:text:white text-sm font-semibold`}
+                                  >
+                                    {u.name || u.email || `User #${u.user_id}`}
+                                  </Text>
+                                  {u.email && (
+                                    <Text
+                                      style={tw`text-[#49739c] dark:text:white/60 text-[11px]`}
+                                    >
+                                      {u.email}
+                                    </Text>
+                                  )}
+                                  <Text
+                                    style={tw`mt-1 text-[#49739c] dark:text:white/80 text-xs`}
+                                  >
+                                    Role:{' '}
+                                    {u.role ? u.role.toUpperCase() : 'INSTRUCTOR'}
+                                  </Text>
+                                </View>
+                              ))}
+                              <Text
+                                style={tw`mt-3 text-[11px] text-[#6b7280] dark:text:white/60`}
+                              >
+                                To change roles or invite new staff, go to the web dashboard → Institution
+                                → E-Learning → Staff.
+                              </Text>
+                            </>
+                          )}
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Certificate + quiz defaults */}
+                    <View style={tw`h-3`} />
+                    <Text style={tw`text-[#49739c] dark:text:white/80 text-xs`}>
+                      Certificate title
+                    </Text>
+                    <TextInput
+                      value={form.certificate_title}
+                      onChangeText={(v) =>
+                        setForm((f: any) => ({ ...f, certificate_title: v }))
+                      }
+                      placeholder="Certificate of Completion"
+                      placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                      style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white`}
+                    />
+
+                    <View style={tw`h-3`} />
+                    <Text style={tw`text-[#49739c] dark:text:white/80 text-xs`}>
+                      Default pass mark (%)
+                    </Text>
+                    <TextInput
+                      keyboardType="numeric"
+                      value={String(form.default_pass_mark ?? '')}
+                      onChangeText={(v) =>
+                        setForm((f: any) => ({
+                          ...f,
+                          default_pass_mark: Number(v) || 0,
+                        }))
+                      }
+                      placeholder="70"
+                      placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                      style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white`}
+                    />
+
+                    <View style={tw`h-3`} />
+                    <Text style={tw`text-[#49739c] dark:text:white/80 text-xs`}>
+                      Quiz time limit (seconds)
+                    </Text>
+                    <TextInput
+                      keyboardType="numeric"
+                      value={String(form.quiz_time_limit_s ?? '')}
+                      onChangeText={(v) =>
+                        setForm((f: any) => ({
+                          ...f,
+                          quiz_time_limit_s: Number(v) || 0,
+                        }))
+                      }
+                      placeholder="900"
+                      placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                      style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white`}
+                    />
+
+                    {/* Contact details */}
+                    <View style={tw`h-3`} />
+                    <Text style={tw`text-[#49739c] dark:text:white/80 text-xs`}>
+                      Address line 1
+                    </Text>
+                    <TextInput
+                      value={form.address_line1 ?? ''}
+                      onChangeText={(v) =>
+                        setForm((f: any) => ({ ...f, address_line1: v }))
+                      }
+                      placeholder="P.O. Box 123, Town"
+                      placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                      style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white`}
+                    />
+
+                    <View style={tw`h-3`} />
+                    <Text style={tw`text-[#49739c] dark:text:white/80 text-xs`}>
+                      Address line 2 (optional)
+                    </Text>
+                    <TextInput
+                      value={form.address_line2 ?? ''}
+                      onChangeText={(v) =>
+                        setForm((f: any) => ({ ...f, address_line2: v }))
+                      }
+                      placeholder="Street, City"
+                      placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                      style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white`}
+                    />
+
+                    <View style={tw`h-3`} />
+                    <Text style={tw`text-[#49739c] dark:text:white/80 text-xs`}>
+                      Phone number
+                    </Text>
+                    <TextInput
+                      value={form.phone_number ?? ''}
+                      onChangeText={(v) =>
+                        setForm((f: any) => ({ ...f, phone_number: v }))
+                      }
+                      placeholder="+254 7xx xxx xxx"
+                      placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                      style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white`}
+                    />
+
+                    <View style={tw`h-3`} />
+                    <Text style={tw`text-[#49739c] dark:text:white/80 text-xs`}>
+                      Contact email
+                    </Text>
+                    <TextInput
+                      value={form.contact_email ?? ''}
+                      onChangeText={(v) =>
+                        setForm((f: any) => ({ ...f, contact_email: v }))
+                      }
+                      placeholder="info@school.ac.ke"
+                      placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                      style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white`}
+                    />
+
+                    <View style={tw`h-3`} />
+                    <Text style={tw`text-[#49739c] dark:text:white/80 text-xs`}>
+                      Website URL
+                    </Text>
+                    <TextInput
+                      value={form.website_url ?? ''}
+                      onChangeText={(v) =>
+                        setForm((f: any) => ({ ...f, website_url: v }))
+                      }
+                      placeholder="https://school.ac.ke"
+                      placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                      style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white`}
+                    />
+
+                    {/* actions */}
+                    <View style={tw`flex-row mt-4`}>
+                      <TouchableOpacity
+                        onPress={saveBranding}
+                        style={tw`px-4 py-2 rounded-xl bg-emerald-600`}
+                      >
+                        <Text style={tw`text-white font-semibold`}>Save branding</Text>
+                      </TouchableOpacity>
+                      {canEmailReports && (
+                        <TouchableOpacity
+                          onPress={async () => {
+                            if (!org?.id || !authToken) return;
+                            try {
+                              const resp = await sendOrgReportTest(
+                                backendUrl,
+                                authToken,
+                                org.id,
+                                (org as any)?.owner_email || undefined
+                              );
+                              Alert.alert(
+                                (resp as any)?.ok ? 'Sent' : 'Failed',
+                                (resp as any)?.ok
+                                  ? 'Test report sent to admin email.'
+                                  : 'Failed to send report.'
+                              );
+                            } catch {
+                              Alert.alert('Error', 'Failed to send report.');
+                            }
+                          }}
+                          style={tw`ml-2 px-4 py-2 rounded-xl bg-indigo-600`}
+                        >
+                          <Text style={tw`text-white font-semibold`}>Send test report</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                )}
+
+                {/* ASSIGN tab */}
+                {tab === 'assign' && canAssignments && (
+                  <View
+                    style={tw`rounded-2xl border border-[#cedbe8] dark:border:white/10 bg-white dark:bg-[#0f1821] p-4`}
+                  >
+                    <Text style={tw`text-[#0d141c] dark:text:white text-lg font-semibold mb-3`}>
+                      Assignments
+                    </Text>
+
+                    <Text style={tw`text-[#49739c] dark:text:white/80 text-xs`}>Course ID</Text>
+                    <TextInput
+                      value={courseId}
+                      onChangeText={setCourseId}
+                      placeholder="COURSE_ID"
+                      placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                      style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white`}
+                    />
+
+                    <View style={tw`h-3`} />
+                    <Text style={tw`text-[#49739c] dark:text:white/80 text-xs`}>
+                      Title override (optional)
+                    </Text>
+                    <TextInput
+                      value={titleOverride}
+                      onChangeText={setTitleOverride}
+                      placeholder="Custom title"
+                      placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                      style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white`}
+                    />
+
+                    {canCustomPassTimers && (
+                      <>
+                        <View style={tw`h-3`} />
+                        <Text style={tw`text-[#49739c] dark:text:white/80 text-xs`}>
+                          Pass mark (%)
+                        </Text>
+                        <TextInput
+                          keyboardType="numeric"
+                          value={String(passMark ?? '')}
+                          onChangeText={(v) =>
+                            setPassMark(v === '' ? '' : Number(v) || 0)
+                          }
+                          placeholder="e.g. 70"
+                          placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                          style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white`}
+                        />
+                        <View style={tw`h-3`} />
+                        <Text style={tw`text-[#49739c] dark:text:white/80 text-xs`}>
+                          Timer (seconds)
+                        </Text>
+                        <TextInput
+                          keyboardType="numeric"
+                          value={String(timer ?? '')}
+                          onChangeText={(v) =>
+                            setTimer(v === '' ? '' : Number(v) || 0)
+                          }
+                          placeholder="e.g. 1800"
+                          placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                          style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white`}
+                        />
+                      </>
+                    )}
+
+                    <View style={tw`h-3`} />
+                    <Text style={tw`text-[#49739c] dark:text:white/80 text-xs`}>
+                      Due at (ISO 8601 or empty)
+                    </Text>
+                    <TextInput
+                      value={dueAt}
+                      onChangeText={setDueAt}
+                      placeholder="2025-09-30T17:00:00Z"
+                      placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                      style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white`}
+                    />
+
+                    <View style={tw`flex-row mt-4`}>
+                      <TouchableOpacity
+                        onPress={createAssignment}
+                        style={tw`px-4 py-2 rounded-xl bg-emerald-600`}
+                      >
+                        <Text style={tw`text-white font-semibold`}>Create assignment</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {!!inviteLink && (
+                      <View style={tw`mt-4`}>
+                        <Text
+                          style={tw`text-[#49739c] dark:text:white/80 text-xs mb-1`}
+                        >
+                          Invite link
+                        </Text>
+                        <Text
+                          selectable
+                          style={tw`text-[#0d141c] dark:text:white text-xs`}
+                        >
+                          {inviteLink}
+                        </Text>
+                        <TouchableOpacity
+                          onPress={copyLink}
+                          style={tw`mt-2 px-3 py-2 rounded bg-indigo-600 self-start`}
+                        >
+                          <Text style={tw`text-white text-xs`}>Share / Copy</Text>
+                        </TouchableOpacity>
+                      </View>
                     )}
                   </View>
-                ))}
+                )}
               </View>
             )}
 
-            {/* learner progress */}
-            <View style={tw`mt-4`}>
-              <View style={tw`flex-row items-center justify-between mb-2`}>
-                <Text
-                  style={tw`text-[#0d141c] dark:text-white text-base font-semibold`}
-                >
-                  Learner Progress (overall)
-                </Text>
-                <View style={tw`flex-row items-center`}>
-                  {lpLoading && (
-                    <Text
-                      style={tw`text-[#49739c] dark:text-white/70 text-xs mr-2`}
-                    >
-                      Loading…
-                    </Text>
-                  )}
-                  <TouchableOpacity
-                    onPress={() => loadLearnerProgress(true)}
-                    style={tw`px-3 py-1.5 rounded bg-[#e7edf4] dark:bg-white/10`}
-                  >
-                    <Text
-                      style={tw`text-[#0d141c] dark:text-white text-xs`}
-                    >
-                      Refresh
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {!lpRows.length && !lpLoading ? (
-                <Text
-                  style={tw`text-[#49739c] dark:text-white/70 text-sm`}
-                >
-                  No learner data yet.
-                </Text>
-              ) : (
-                <View>
-                  {lpRows.map((r) => (
-                    <View
-                      key={String(r.user_id)}
-                      style={tw`mb-2 p-3 rounded-lg bg-[#f8fbff] dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}
-                    >
-                      <Text
-                        style={tw`text-[#0d141c] dark:text-white font-semibold`}
-                      >
-                        {r.name || r.email || `User #${r.user_id}`}
-                      </Text>
-                      {r.email && (
-                        <Text
-                          style={tw`text-[#49739c] dark:text-white/60 text-[11px]`}
-                        >
-                          {r.email}
-                        </Text>
-                      )}
-                      <Text
-                        style={tw`text-[#49739c] dark:text-white/80 text-xs mt-1`}
-                      >
-                        Attempts: {r.attempts} • Passes: {r.passes} • Avg:{' '}
-                        {r.avg_score != null ? Math.round(r.avg_score) : 0}%
-                      </Text>
-                      <Text
-                        style={tw`text-[#49739c] dark:text-white/80 text-xs mt-1`}
-                      >
-                        Completed: {r.completed_assignments} • Progress:{' '}
-                        {r.progress_pct}%
-                      </Text>
-                      <Text
-                        style={tw`text-[#49739c] dark:text-white/60 text-[11px] mt-1`}
-                      >
-                        Last Submit:{' '}
-                        {r.last_submit_at
-                          ? new Date(r.last_submit_at).toLocaleString()
-                          : '—'}
-                      </Text>
-                    </View>
-                  ))}
-                  {lpCursor && (
+            {/* ANALYTICS – owner/instructor only */}
+            {tab === 'analytics' && (
+              <View
+                style={tw`rounded-2xl border border-[#cedbe8] dark:border:white/10 bg-white dark:bg-[#0f1821] p-4`}
+              >
+                <View style={tw`flex-row justify-between items-center mb-3`}>
+                  <Text style={tw`text-[#0d141c] dark:text:white text-lg font-semibold`}>
+                    Analytics
+                  </Text>
+                  <View style={tw`flex-row`}>
                     <TouchableOpacity
-                      onPress={() => loadLearnerProgress(false)}
-                      disabled={lpLoading}
-                      style={tw`mt-1 px-3 py-1.5 rounded bg-indigo-600 self-start ${
-                        lpLoading ? 'opacity-60' : ''
+                      onPress={() => setPeriod('month')}
+                      style={tw`px-3 py-1.5 rounded-lg mr-2 ${
+                        period === 'month'
+                          ? 'bg-indigo-600'
+                          : 'bg-[#e7edf4] dark:bg:white/10'
                       }`}
                     >
-                      <Text style={tw`text-white text-xs`}>Load more</Text>
+                      <Text
+                        style={tw`${
+                          period === 'month'
+                            ? 'text-white'
+                            : 'text-[#0d141c] dark:text:white'
+                        } text-xs`}
+                      >
+                        Monthly
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      disabled={!canMultiPeriodAnalytics}
+                      onPress={() => setPeriod('term')}
+                      style={tw`px-3 py-1.5 rounded-lg mr-2 ${
+                        period === 'term'
+                          ? 'bg-indigo-600'
+                          : 'bg-[#e7edf4] dark:bg:white/10'
+                      } ${!canMultiPeriodAnalytics ? 'opacity-50' : ''}`}
+                    >
+                      <Text
+                        style={tw`${
+                          period === 'term'
+                            ? 'text-white'
+                            : 'text-[#0d141c] dark:text:white'
+                        } text-xs`}
+                      >
+                        Termly
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      disabled={!canMultiPeriodAnalytics}
+                      onPress={() => setPeriod('year')}
+                      style={tw`px-3 py-1.5 rounded-lg ${
+                        period === 'year'
+                          ? 'bg-indigo-600'
+                          : 'bg-[#e7edf4] dark:bg:white/10'
+                      } ${!canMultiPeriodAnalytics ? 'opacity-50' : ''}`}
+                    >
+                      <Text
+                        style={tw`${
+                          period === 'year'
+                            ? 'text-white'
+                            : 'text-[#0d141c] dark:text:white'
+                        } text-xs`}
+                      >
+                        Yearly
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View style={tw`flex-row mb-3`}>
+                  <TouchableOpacity
+                    onPress={loadAnalytics}
+                    style={tw`px-3 py-2 rounded-lg bg-indigo-600 mr-2`}
+                  >
+                    <Text style={tw`text-white text-xs`}>Refresh</Text>
+                  </TouchableOpacity>
+                  {canCSV && (
+                    <TouchableOpacity
+                      onPress={async () => {
+                        try {
+                          const rows: (string | number)[][] = [
+                            ['Bucket', 'Attempts', 'Passes', 'Avg Score'],
+                          ];
+                          analytics.forEach((r) => {
+                            const bucketISO = new Date(r.bucket).toISOString();
+                            const attempts = Number(r.attempts ?? 0);
+                            const passes = Number(r.passes ?? 0);
+                            const avg = `${Math.round(r.avg_score ?? 0)}%`;
+                            rows.push([bucketISO, attempts, passes, avg]);
+                          });
+                          const csv = rows
+                            .map((r) =>
+                              r
+                                .map((v) =>
+                                  `"${String(v).replace(/"/g, '""')}"`
+                                )
+                                .join(',')
+                            )
+                            .join('\n');
+                          await Share.share({ message: csv });
+                        } catch {
+                          Alert.alert('Export failed', 'Could not export CSV.');
+                        }
+                      }}
+                      style={tw`px-3 py-2 rounded-lg bg-[#e7edf4] dark:bg:white/10`}
+                    >
+                      <Text style={tw`text-[#0d141c] dark:text:white text-xs`}>
+                        Export CSV
+                      </Text>
                     </TouchableOpacity>
                   )}
                 </View>
-              )}
-            </View>
-          </View>
+
+                {loadingAnalytics ? (
+                  <View style={tw`py-6 items-center`}>
+                    <ActivityIndicator
+                      color={resolvedScheme === 'dark' ? '#ffffff' : '#0d141c'}
+                    />
+                  </View>
+                ) : analytics.length === 0 ? (
+                  <Text style={tw`text-[#49739c] dark:text:white/80 text-sm`}>
+                    No analytics yet.
+                  </Text>
+                ) : (
+                  <View>
+                    {analytics.map((row, idx) => (
+                      <View
+                        key={`${row.bucket}-${idx}`}
+                        style={tw`mb-2 p-3 rounded-lg bg-[#f8fbff] dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10`}
+                      >
+                        <Text
+                          style={tw`text-[#0d141c] dark:text:white font-semibold`}
+                        >
+                          {new Date(row.bucket).toLocaleString()}
+                        </Text>
+                        <Text
+                          style={tw`text-[#49739c] dark:text:white/80 text-xs mt-1`}
+                        >
+                          Attempts: {row.attempts} • Passes: {row.passes} • Avg:{' '}
+                          {Math.round(row.avg_score ?? 0)}%
+                        </Text>
+
+                        {canEmailReports && (
+                          <TouchableOpacity
+                            onPress={() =>
+                              sendOrgReportRow(
+                                backendUrl,
+                                authToken!,
+                                org!.id,
+                                new Date(row.bucket).toISOString(),
+                                period
+                              )
+                                .then((ok) => {
+                                  if ((ok as any)?.ok)
+                                    Alert.alert('Queued', 'Report queued.');
+                                  else
+                                    Alert.alert(
+                                      'Failed',
+                                      'Failed to queue report.'
+                                    );
+                                })
+                                .catch(() =>
+                                  Alert.alert(
+                                    'Failed',
+                                    'Failed to queue report.'
+                                  )
+                                )
+                            }
+                            style={tw`mt-2 px-3 py-1.5 rounded bg-[#e7edf4] dark:bg:white/10 self-start`}
+                          >
+                            <Text style={tw`text-[#0d141c] dark:text:white text-xs`}>
+                              Send report for this period
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* learner progress */}
+                <View style={tw`mt-4`}>
+                  <View style={tw`flex-row items-center justify-between mb-2`}>
+                    <Text
+                      style={tw`text-[#0d141c] dark:text:white text-base font-semibold`}
+                    >
+                      Learner Progress (overall)
+                    </Text>
+                    <View style={tw`flex-row items-center`}>
+                      {lpLoading && (
+                        <Text
+                          style={tw`text-[#49739c] dark:text:white/70 text-xs mr-2`}
+                        >
+                          Loading…
+                        </Text>
+                      )}
+                      <TouchableOpacity
+                        onPress={() => loadLearnerProgress(true)}
+                        style={tw`px-3 py-1.5 rounded bg-[#e7edf4] dark:bg:white/10`}
+                      >
+                        <Text
+                          style={tw`text-[#0d141c] dark:text:white text-xs`}
+                        >
+                          Refresh
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {!lpRows.length && !lpLoading ? (
+                    <Text
+                      style={tw`text-[#49739c] dark:text:white/70 text-sm`}
+                    >
+                      No learner data yet.
+                    </Text>
+                  ) : (
+                    <View>
+                      {lpRows.map((r) => (
+                        <View
+                          key={String(r.user_id)}
+                          style={tw`mb-2 p-3 rounded-lg bg-[#f8fbff] dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10`}
+                        >
+                          <Text
+                            style={tw`text-[#0d141c] dark:text:white font-semibold`}
+                          >
+                            {r.name || r.email || `User #${r.user_id}`}
+                          </Text>
+                          {r.email && (
+                            <Text
+                              style={tw`text-[#49739c] dark:text:white/60 text-[11px]`}
+                            >
+                              {r.email}
+                            </Text>
+                          )}
+                          <Text
+                            style={tw`text-[#49739c] dark:text:white/80 text-xs mt-1`}
+                          >
+                            Attempts: {r.attempts} • Passes: {r.passes} • Avg:{' '}
+                            {r.avg_score != null ? Math.round(r.avg_score) : 0}%
+                          </Text>
+                          <Text
+                            style={tw`text-[#49739c] dark:text:white/80 text-xs mt-1`}
+                          >
+                            Completed: {r.completed_assignments} • Progress:{' '}
+                            {r.progress_pct}%
+                          </Text>
+                          <Text
+                            style={tw`text-[#49739c] dark:text:white/60 text-[11px] mt-1`}
+                          >
+                            Last Submit:{' '}
+                            {r.last_submit_at
+                              ? new Date(r.last_submit_at).toLocaleString()
+                              : '—'}
+                          </Text>
+                        </View>
+                      ))}
+                      {lpCursor && (
+                        <TouchableOpacity
+                          onPress={() => loadLearnerProgress(false)}
+                          disabled={lpLoading}
+                          style={tw`mt-1 px-3 py-1.5 rounded bg-indigo-600 self-start ${
+                            lpLoading ? 'opacity-60' : ''
+                          }`}
+                        >
+                          <Text style={tw`text-white text-xs`}>Load more</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  )}
+                </View>
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
+
+      {/* learner submit modal */}
+      <Modal
+        visible={submitOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSubmitOpen(false)}
+      >
+        <View style={tw`flex-1 bg-black/50 justify-center items-center p-4`}>
+          <View
+            style={tw`w-full max-w-md rounded-2xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 p-4`}
+          >
+            <Text style={tw`text-[#0d141c] dark:text:white text-lg font-semibold`}>
+              Submit assignment
+            </Text>
+            <Text style={tw`text-[#49739c] dark:text:white/80 text-xs mt-1`}>
+              {submitAssignment?.title || 'Untitled assignment'}
+            </Text>
+
+            <Text style={tw`mt-3 text-[#49739c] dark:text:white/80 text-xs`}>
+              Your answer (optional)
+            </Text>
+            <TextInput
+              multiline
+              textAlignVertical="top"
+              value={submitText}
+              onChangeText={setSubmitText}
+              placeholder="Type your working or short answers here…"
+              placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+              style={tw`mt-1 h-28 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded-xl px-3 py-2 text-[#0d141c] dark:text:white text-sm`}
+            />
+
+            <Text style={tw`mt-3 text-[#49739c] dark:text:white/80 text-xs`}>
+              Attach file (optional)
+            </Text>
+            <TouchableOpacity
+              onPress={handlePickSubmitFile}
+              style={tw`mt-1 px-3 py-2 rounded-xl bg-[#e7edf4] dark:bg:white/10`}
+              disabled={submitUploading}
+            >
+              <Text style={tw`text-[#0d141c] dark:text:white text-xs`}>
+                {submitFileAsset ? 'Change attachment' : 'Choose file'}
+              </Text>
+            </TouchableOpacity>
+            {submitFileAsset && (
+              <Text style={tw`mt-1 text-[11px] text-[#6b7280] dark:text:white/70`}>
+                Selected: {submitFileAsset.name || submitFileAsset.uri}
+              </Text>
+            )}
+
+            <View style={tw`flex-row justify-end mt-4`}>
+              <TouchableOpacity
+                onPress={() => setSubmitOpen(false)}
+                disabled={submitUploading}
+                style={tw`px-4 py-2 rounded-xl bg-[#e7edf4] dark:bg:white/10 mr-2`}
+              >
+                <Text style={tw`text-[#0d141c] dark:text:white text-sm`}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleSubmitLegacyWork}
+                disabled={submitUploading}
+                style={tw`px-4 py-2 rounded-xl bg-emerald-600 ${
+                  submitUploading ? 'opacity-60' : ''
+                }`}
+              >
+                <Text style={tw`text-white text-sm`}>
+                  {submitUploading ? 'Submitting…' : 'Submit work'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* congrats modal */}
       <Modal
@@ -1647,7 +2241,7 @@ const OrgElearnPortalNative: React.FC = () => {
       >
         <View style={tw`flex-1 bg-black/50 justify-center items-center p-4`}>
           <View
-            style={tw`w-full max-w-md rounded-2xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 p-5`}
+            style={tw`w-full max-w-md rounded-2xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 p-5`}
           >
             <View style={tw`flex-row items-start`}>
               <View
@@ -1657,12 +2251,12 @@ const OrgElearnPortalNative: React.FC = () => {
               </View>
               <View style={tw`flex-1`}>
                 <Text
-                  style={tw`text-[#0d141c] dark:text-white text-lg font-semibold`}
+                  style={tw`text-[#0d141c] dark:text:white text-lg font-semibold`}
                 >
                   Brand saved!
                 </Text>
                 <Text
-                  style={tw`text-[#49739c] dark:text-white/80 text-sm mt-1`}
+                  style={tw`text-[#49739c] dark:text:white/80 text-sm mt-1`}
                 >
                   Your institution profile is ready. Want to set up an assignment now?
                 </Text>
@@ -1681,9 +2275,9 @@ const OrgElearnPortalNative: React.FC = () => {
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => setShowCongrats(false)}
-                style={tw`mb-2 px-4 py-2 rounded-xl bg-[#e7edf4] dark:bg-white/10`}
+                style={tw`mb-2 px-4 py-2 rounded-xl bg-[#e7edf4] dark:bg:white/10`}
               >
-                <Text style={tw`text-[#0d141c] dark:text-white`}>Not now</Text>
+                <Text style={tw`text-[#0d141c] dark:text:white`}>Not now</Text>
               </TouchableOpacity>
             </View>
           </View>
