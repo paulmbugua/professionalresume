@@ -136,7 +136,9 @@ export function useOrgExams({ backendUrl, token, orgId }: UseOrgExamsProps) {
     [backendUrl, token, orgId]
   );
 
-  const downloadStudentCardPdf = useCallback(
+ // in useOrgExams
+
+const downloadStudentCardPdf = useCallback(
   async (
     sessionId: string,
     studentId: number,
@@ -144,11 +146,13 @@ export function useOrgExams({ backendUrl, token, orgId }: UseOrgExamsProps) {
   ): Promise<string | null> => {
     if (!ensure()) return null;
 
-    const url = `${backendUrl}/api/orgs/${orgId}/exams/student/${studentId}/card.pdf?sessionId=${encodeURIComponent(
-      sessionId,
-    )}`;
+    const params = new URLSearchParams();
+    params.set('sessionId', sessionId);
+    if (token) params.set('token', token);   // ⬅️ pass JWT via query
 
-    // Web-only: actually perform the download via <a> click
+    const url = `${backendUrl}/api/orgs/${orgId}/exams/student/${studentId}/card.pdf?${params.toString()}`;
+
+    // Web-only: actually perform the download
     if (typeof document !== 'undefined' && typeof window !== 'undefined') {
       try {
         const res = await fetch(url, {
@@ -181,14 +185,13 @@ export function useOrgExams({ backendUrl, token, orgId }: UseOrgExamsProps) {
       }
     }
 
-    // Native (and web) callers can use this URL with Linking / window.open
+    // Native (& web callers if they want) can open this URL directly
     return url;
   },
   [backendUrl, token, orgId],
 );
 
-
-  const downloadClassReportPdf = useCallback(
+const downloadClassReportPdf = useCallback(
   async (
     sessionId: string,
     classLabel: string,
@@ -202,11 +205,11 @@ export function useOrgExams({ backendUrl, token, orgId }: UseOrgExamsProps) {
 
     const params = new URLSearchParams();
     if (classLabel) params.set('classLabel', classLabel);
-    params.set('format', 'booklet'); // hint for backend to use the fancy layout
+    params.set('format', 'booklet');          // 📘
+    if (token) params.set('token', token);     // ⬅️ JWT
 
     const url = `${backendUrl}/api/orgs/${orgId}/exams/sessions/${sessionId}/class-report.pdf?${params.toString()}`;
 
-    // Web-only: fetch + force download
     if (typeof document !== 'undefined' && typeof window !== 'undefined') {
       try {
         const resp = await fetch(url, {
@@ -247,6 +250,7 @@ export function useOrgExams({ backendUrl, token, orgId }: UseOrgExamsProps) {
   },
   [backendUrl, orgId, token],
 );
+
 
 
     return {

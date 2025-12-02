@@ -12,6 +12,7 @@ import {
   Share,
   Linking,
   Switch,
+  Platform,
 } from 'react-native';
 import tw from '../../../tailwind';
 import { useShopContext } from '@mytutorapp/shared/context';
@@ -30,13 +31,15 @@ import {
   getOrgLearnersProgress,
   getOrgAssignmentsForLearner,
   submitOrgLegacyAssignment,
+  createOrgLegacyAssignment,
   type OrgResp as Org,
   type OrgAnalyticsRow,
   type OrgLearnerProgressRow,
   type OrgAssignmentRow,
 } from '@mytutorapp/shared/api/orgApi';
-import { useRoute } from '@react-navigation/native';
+import { useRoute, useNavigation } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import type { MainStackParamList } from '../../navigation/types';
 import type { OrgTier } from '@mytutorapp/shared/types';
 import { useThemePref } from '../../theme/ThemeContext';
@@ -457,6 +460,7 @@ const OrgElearnPortalNative: React.FC = () => {
   const isInstructor = role === 'instructor';
 
   const route = useRoute<RouteProp<MainStackParamList, 'OrgElearnPortal'>>();
+  const navigation = useNavigation<any>();
   const paramsAny = (route.params || {}) as any;
   const viewParam = paramsAny.view;
   const isLearnerView = viewParam === 'learner';
@@ -516,6 +520,29 @@ const OrgElearnPortalNative: React.FC = () => {
   const [timer, setTimer] = useState<number | ''>('');
   const [dueAt, setDueAt] = useState<string>('');
   const [inviteLink, setInviteLink] = useState<string>('');
+
+    // assignment scope (class / subject) for classic + AI hints
+  const [assignClassLabel, setAssignClassLabel] = useState('');
+  const [assignSubjectKey, setAssignSubjectKey] = useState('');
+
+  
+  // deadline pickers
+  const [legacyDueDate, setLegacyDueDate] = useState<Date | null>(null);
+  const [legacyDuePickerOpen, setLegacyDuePickerOpen] = useState(false);
+
+  const [aiDueDate, setAiDueDate] = useState<Date | null>(null);
+  const [aiDuePickerOpen, setAiDuePickerOpen] = useState(false);
+
+
+  // classic (legacy/file-based) assignment state
+  const [legacyTitle, setLegacyTitle] = useState('');
+  const [legacyInstructions, setLegacyInstructions] = useState('');
+  const [legacyDueAt, setLegacyDueAt] = useState('');
+  const [legacyAttachmentUrl, setLegacyAttachmentUrl] = useState<string | null>(null);
+  const [legacyAttachmentLabel, setLegacyAttachmentLabel] = useState<string | null>(null);
+  const [legacyUploadingAttachment, setLegacyUploadingAttachment] = useState(false);
+  const [creatingLegacyAssignment, setCreatingLegacyAssignment] = useState(false);
+
 
   // analytics
   const [period, setPeriod] = useState<Period>('month');
@@ -726,6 +753,121 @@ const OrgElearnPortalNative: React.FC = () => {
     }
   };
 
+    /* instructor: pick attachment for classic assignment */
+  const handlePickLegacyAttachment = useCallback(async () => {
+    if (!authToken) {
+      Alert.alert('Sign in required', 'Please sign in before attaching files.');
+      return;
+    }
+
+    try {
+      setLegacyUploadingAttachment(true);
+
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          'application/pdf',
+          'application/msword',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'application/vnd.ms-powerpoint',
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          'image/*',
+        ],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        setLegacyUploadingAttachment(false);
+        return;
+      }
+
+      const asset = result.assets[0];
+      if (!asset) {
+        setLegacyUploadingAttachment(false);
+        return;
+      }
+
+      const file: any = {
+        uri: asset.uri,
+        name: asset.name || `assignment-${Date.now()}`,
+        type: asset.mimeType || 'application/octet-stream',
+      };
+
+      const res: any = await uploadAsset(backendUrl, authToken, file, 'doc');
+
+      const url =
+        typeof res === 'string'
+          ? res
+          : res?.url || res?.secure_url || res?.data?.url || null;
+
+      if (!url) {
+        throw new Error('Upload completed but no URL was returned.');
+      }
+
+      setLegacyAttachmentUrl(url);
+      setLegacyAttachmentLabel(asset.name || asset.uri);
+      Alert.alert('File attached', 'Learners will be able to download this file.');
+    } catch (e: any) {
+      if (e?.message?.includes('canceled')) return;
+      Alert.alert('Upload failed', e?.message || 'Please try again.');
+    } finally {
+      setLegacyUploadingAttachment(false);
+    }
+  }, [authToken, backendUrl]);
+
+  /* instructor: create classic (file-based) assignment */
+  const createLegacyAssignment = useCallback(async () => {
+    if (!org?.id || !authToken) {
+      Alert.alert('Missing organization', 'Please sign in to your institution first.');
+      return;
+    }
+    if (!legacyTitle.trim()) {
+      Alert.alert('Title required', 'Give this assignment a title before sharing.');
+      return;
+    }
+
+    try {
+      setCreatingLegacyAssignment(true);
+
+      const payload: any = {
+        title: legacyTitle.trim(),
+        instructions: legacyInstructions.trim() || null,
+        due_at: legacyDueAt || null,
+        class_label: assignClassLabel || null,
+        subject_key: assignSubjectKey || null,
+        attachment_url: legacyAttachmentUrl || null,
+      };
+
+      await createOrgLegacyAssignment(backendUrl, authToken, org.id, payload);
+
+      Alert.alert(
+        'Assignment shared',
+        'Learners in the selected class/subject will see this assignment in their portal.'
+      );
+
+      // basic reset
+      setLegacyTitle('');
+      setLegacyInstructions('');
+      setLegacyDueAt('');
+      setLegacyAttachmentUrl(null);
+      setLegacyAttachmentLabel(null);
+    } catch (e: any) {
+      const msg = e?.response?.data?.message || e?.message || 'Failed to create assignment.';
+      Alert.alert('Failed', msg);
+    } finally {
+      setCreatingLegacyAssignment(false);
+    }
+  }, [
+    org?.id,
+    authToken,
+    backendUrl,
+    legacyTitle,
+    legacyInstructions,
+    legacyDueAt,
+    assignClassLabel,
+    assignSubjectKey,
+    legacyAttachmentUrl,
+  ]);
+
   /* assignment create (AI course-based) – admin/instructor only */
   const createAssignment = async () => {
     if (!org?.id || !authToken || !courseId) return;
@@ -845,6 +987,34 @@ const OrgElearnPortalNative: React.FC = () => {
     }
   }, []);
 
+    const handleLegacyDeadlinePress = () => {
+    if (!canAssignments) return;
+    setLegacyDuePickerOpen(true);
+  };
+
+  const handleAiDeadlinePress = () => {
+    if (!canAssignments) return;
+    setAiDuePickerOpen(true);
+  };
+
+  const handleLegacyDueChange = (_event: any, selected?: Date) => {
+    // Android always calls once when dismissed; iOS inline might call multiple times.
+    setLegacyDuePickerOpen(false);
+    if (selected) {
+      setLegacyDueDate(selected);
+      setLegacyDueAt(selected.toISOString());
+    }
+  };
+
+  const handleAiDueChange = (_event: any, selected?: Date) => {
+    setAiDuePickerOpen(false);
+    if (selected) {
+      setAiDueDate(selected);
+      setDueAt(selected.toISOString());
+    }
+  };
+
+
   /* learner: submit legacy work */
   const handleSubmitLegacyWork = useCallback(async () => {
     if (!submitAssignment || !authToken || !org?.id) {
@@ -918,6 +1088,68 @@ const OrgElearnPortalNative: React.FC = () => {
     (org as any)?.instructors && Array.isArray((org as any).instructors)
       ? (org as any).instructors
       : [];
+
+    // Instructor emails + grouping for BCC share
+  const instructorEmails = useMemo(
+    () =>
+      instructors
+        .map((u) => (u.email || '').trim())
+        .filter(Boolean),
+    [instructors]
+  );
+
+  const bccChunks = useMemo(() => {
+    if (!inviteLink) return [] as string[][];
+    if (!instructorEmails.length) return [];
+
+    const chunks: string[][] = [];
+    const mkMailto = (arr: string[]) => {
+      const subject = encodeURIComponent('Course invite');
+      const body = encodeURIComponent(inviteLink);
+      const bcc = encodeURIComponent(arr.join(','));
+      return `mailto:?subject=${subject}&bcc=${bcc}&body=${body}`;
+    };
+
+    let cur: string[] = [];
+    for (const e of instructorEmails) {
+      const test = mkMailto([...cur, e]);
+      if (test.length > 1800 || cur.length >= 50) {
+        if (cur.length) chunks.push(cur);
+        cur = [e];
+      } else {
+        cur.push(e);
+      }
+    }
+    if (cur.length) chunks.push(cur);
+    return chunks;
+  }, [instructorEmails, inviteLink]);
+
+  const emailInstructorsGroup = async (emails: string[]) => {
+    if (!inviteLink || !emails.length) return;
+    const subject = encodeURIComponent('Course invite');
+    const body = encodeURIComponent(inviteLink);
+    const bcc = encodeURIComponent(emails.join(','));
+    const url = `mailto:?subject=${subject}&bcc=${bcc}&body=${body}`;
+    try {
+      await Linking.openURL(url);
+    } catch {
+      // fallback: generic share
+      await Share.share({ message: inviteLink });
+    }
+  };
+
+  const shareViaWhatsApp = async () => {
+    if (!inviteLink) return;
+    const text = encodeURIComponent(
+      `Please share this course invite with your learners:\n\n${inviteLink}`
+    );
+    const waUrl = `https://wa.me/?text=${text}`;
+    try {
+      await Linking.openURL(waUrl);
+    } catch {
+      await Share.share({ message: inviteLink });
+    }
+  };
 
   const visibleTabs: TabKey[] = canBrandingRole ? ['branding', 'assign', 'analytics'] : ['assign', 'analytics'];
 
@@ -1773,8 +2005,8 @@ const OrgElearnPortalNative: React.FC = () => {
                   </View>
                 )}
 
-                {/* ASSIGN tab */}
-                {tab === 'assign' && canAssignments && (
+                               {/* ASSIGN tab */}
+                {tab === 'assign' && (
                   <View
                     style={tw`rounded-2xl border border-[#cedbe8] dark:border:white/10 bg-white dark:bg-[#0f1821] p-4`}
                   >
@@ -1782,104 +2014,409 @@ const OrgElearnPortalNative: React.FC = () => {
                       Assignments
                     </Text>
 
-                    <Text style={tw`text-[#49739c] dark:text:white/80 text-xs`}>Course ID</Text>
-                    <TextInput
-                      value={courseId}
-                      onChangeText={setCourseId}
-                      placeholder="COURSE_ID"
-                      placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                      style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white`}
-                    />
-
-                    <View style={tw`h-3`} />
-                    <Text style={tw`text-[#49739c] dark:text:white/80 text-xs`}>
-                      Title override (optional)
-                    </Text>
-                    <TextInput
-                      value={titleOverride}
-                      onChangeText={setTitleOverride}
-                      placeholder="Custom title"
-                      placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                      style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white`}
-                    />
-
-                    {canCustomPassTimers && (
-                      <>
-                        <View style={tw`h-3`} />
-                        <Text style={tw`text-[#49739c] dark:text:white/80 text-xs`}>
-                          Pass mark (%)
-                        </Text>
-                        <TextInput
-                          keyboardType="numeric"
-                          value={String(passMark ?? '')}
-                          onChangeText={(v) =>
-                            setPassMark(v === '' ? '' : Number(v) || 0)
-                          }
-                          placeholder="e.g. 70"
-                          placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                          style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white`}
-                        />
-                        <View style={tw`h-3`} />
-                        <Text style={tw`text-[#49739c] dark:text:white/80 text-xs`}>
-                          Timer (seconds)
-                        </Text>
-                        <TextInput
-                          keyboardType="numeric"
-                          value={String(timer ?? '')}
-                          onChangeText={(v) =>
-                            setTimer(v === '' ? '' : Number(v) || 0)
-                          }
-                          placeholder="e.g. 1800"
-                          placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                          style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white`}
-                        />
-                      </>
+                    {!canAssignments && (
+                      <Text style={tw`text-xs text-[#ea580c] dark:text-amber-300 mb-3`}>
+                        Assignments are not available on your current plan. Upgrade your institution
+                        plan on the web dashboard to enable this section.
+                      </Text>
                     )}
 
-                    <View style={tw`h-3`} />
-                    <Text style={tw`text-[#49739c] dark:text:white/80 text-xs`}>
-                      Due at (ISO 8601 or empty)
-                    </Text>
-                    <TextInput
-                      value={dueAt}
-                      onChangeText={setDueAt}
-                      placeholder="2025-09-30T17:00:00Z"
-                      placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                      style={tw`mt-1 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 rounded px-3 py-2 text-[#0d141c] dark:text:white`}
-                    />
-
-                    <View style={tw`flex-row mt-4`}>
-                      <TouchableOpacity
-                        onPress={createAssignment}
-                        style={tw`px-4 py-2 rounded-xl bg-emerald-600`}
+                    {/* Scope hint */}
+                    {(assignClassLabel || assignSubjectKey) && (
+                      <View
+                        style={tw`mb-3 rounded-xl bg-[#f8fbff] dark:bg:white/5 border border-[#cedbe8] dark:border:white/10 px-3 py-2`}
                       >
-                        <Text style={tw`text-white font-semibold`}>Create assignment</Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    {!!inviteLink && (
-                      <View style={tw`mt-4`}>
-                        <Text
-                          style={tw`text-[#49739c] dark:text:white/80 text-xs mb-1`}
-                        >
-                          Invite link
+                        <Text style={tw`text-[11px] text-[#49739c] dark:text:white/70`}>
+                          This work is scoped to{' '}
+                          {assignClassLabel ? (
+                            <Text style={tw`font-semibold`}>{assignClassLabel}</Text>
+                          ) : null}
+                          {assignClassLabel && assignSubjectKey ? ' · ' : ''}
+                          {assignSubjectKey ? (
+                            <Text style={tw`font-semibold`}>{assignSubjectKey}</Text>
+                          ) : null}
+                          . Learners in this class / subject will see it in their portal.
                         </Text>
-                        <Text
-                          selectable
-                          style={tw`text-[#0d141c] dark:text:white text-xs`}
-                        >
-                          {inviteLink}
-                        </Text>
-                        <TouchableOpacity
-                          onPress={copyLink}
-                          style={tw`mt-2 px-3 py-2 rounded bg-indigo-600 self-start`}
-                        >
-                          <Text style={tw`text-white text-xs`}>Share / Copy</Text>
-                        </TouchableOpacity>
                       </View>
                     )}
+
+                    {/* CLASSIC ASSIGNMENT CARD */}
+                    <View
+                      style={tw`rounded-2xl bg-[#f8fbff] dark:bg-[#111b28] border border-[#cedbe8] dark:border:white/10 p-3 mb-4`}
+                    >
+                      <Text
+                        style={tw`text-[11px] uppercase tracking-wide text-[#6b7280] dark:text:white/60`}
+                      >
+                        Classic assignment
+                      </Text>
+                      <Text style={tw`mt-1 text-sm font-semibold text-[#0d141c] dark:text:white`}>
+                        Attach a worksheet or project brief
+                      </Text>
+                      <Text style={tw`mt-1 text-[11px] text-[#49739c] dark:text:white/70`}>
+                        Perfect for essays, worksheets, experiments and offline tasks. Learners
+                        download your file, complete the work, then submit their own file or typed
+                        answer.
+                      </Text>
+
+                      {/* Class + Subject */}
+                      <View style={tw`mt-3`}>
+                        <Text style={tw`text-[11px] text-[#49739c] dark:text:white/70`}>
+                          Class / Grade
+                        </Text>
+                        <TextInput
+                          style={tw`mt-1 px-3 py-2 rounded bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 text-[#0d141c] dark:text:white text-xs`}
+                          placeholder="e.g. Grade 7 Blue"
+                          placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                          value={assignClassLabel}
+                          onChangeText={setAssignClassLabel}
+                          editable={canAssignments}
+                        />
+
+                        <View style={tw`h-3`} />
+                        <Text style={tw`text-[11px] text-[#49739c] dark:text:white/70`}>
+                          Subject
+                        </Text>
+                        <TextInput
+                          style={tw`mt-1 px-3 py-2 rounded bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 text-[#0d141c] dark:text:white text-xs`}
+                          placeholder="e.g. Mathematics, English, Physics"
+                          placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                          value={assignSubjectKey}
+                          onChangeText={setAssignSubjectKey}
+                          editable={canAssignments}
+                        />
+                      </View>
+
+                      {/* Title + deadline */}
+                      <View style={tw`mt-3`}>
+                        <Text style={tw`text-[11px] text-[#49739c] dark:text:white/70`}>
+                          Assignment title
+                        </Text>
+                        <TextInput
+                          style={tw`mt-1 px-3 py-2 rounded bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 text-[#0d141c] dark:text:white text-xs`}
+                          placeholder="Term 2 Algebra worksheet"
+                          placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                          value={legacyTitle}
+                          onChangeText={setLegacyTitle}
+                          editable={canAssignments}
+                        />
+
+                                                  <View style={tw`h-3`} />
+                          <Text style={tw`text-[11px] text-[#49739c] dark:text-white/70`}>
+                            Deadline (optional)
+                          </Text>
+                          <View style={tw`mt-1 flex-row items-center`}>
+                            <TouchableOpacity
+                              onPress={handleLegacyDeadlinePress}
+                              disabled={!canAssignments}
+                              style={tw`px-3 py-2 rounded bg-[#e7edf4] dark:bg-white/10 ${
+                                !canAssignments ? 'opacity-60' : ''
+                              }`}
+                            >
+                              <Text style={tw`text-xs text-[#0d141c] dark:text-white`}>
+                                {legacyDueAt ? 'Change deadline' : 'Pick date & time'}
+                              </Text>
+                            </TouchableOpacity>
+
+                            <Text
+                              style={tw`ml-2 flex-1 text-[11px] ${
+                                legacyDueAt
+                                  ? 'text-[#49739c] dark:text-white/70'
+                                  : 'text-[#9CA3AF] dark:text-white/50'
+                              }`}
+                              numberOfLines={2}
+                            >
+                              {legacyDueAt
+                                ? `${new Date(legacyDueAt).toLocaleString()} (${legacyDueAt})`
+                                : 'No deadline set'}
+                            </Text>
+                          </View>
+                          <Text style={tw`mt-1 text-[11px] text-[#6b7280] dark:text-white/60`}>
+                            Learners will still see the assignment after the deadline, but you can
+                            treat late submissions differently.
+                          </Text>
+
+                      </View>
+
+                      {/* Instructions */}
+                      <View style={tw`mt-3`}>
+                        <Text style={tw`text-[11px] text-[#49739c] dark:text:white/70`}>
+                          Instructions
+                        </Text>
+                        <TextInput
+                          multiline
+                          textAlignVertical="top"
+                          style={tw`mt-1 px-3 py-2 rounded bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 text-[#0d141c] dark:text:white text-xs h-24`}
+                          placeholder="Explain what learners should do, how to name their files, and how you will grade them…"
+                          placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                          value={legacyInstructions}
+                          onChangeText={setLegacyInstructions}
+                          editable={canAssignments}
+                        />
+                      </View>
+
+                      {/* Attachment */}
+                      <View style={tw`mt-3`}>
+                        <Text style={tw`text-[11px] text-[#49739c] dark:text:white/70`}>
+                          Attach assignment file (PDF, DOC, slides…)
+                        </Text>
+                        <View style={tw`mt-1 flex-row items-center`}>
+                          <TouchableOpacity
+                            onPress={handlePickLegacyAttachment}
+                            disabled={!canAssignments || legacyUploadingAttachment}
+                            style={tw`px-3 py-2 rounded bg-[#e7edf4] dark:bg:white/10`}
+                          >
+                            {legacyUploadingAttachment ? (
+                              <ActivityIndicator
+                                color={resolvedScheme === 'dark' ? '#ffffff' : '#0d141c'}
+                              />
+                            ) : (
+                              <Text style={tw`text-xs text-[#0d141c] dark:text:white`}>
+                                {legacyAttachmentLabel ? 'Change attachment' : 'Pick attachment'}
+                              </Text>
+                            )}
+                          </TouchableOpacity>
+
+                          <Text
+                            style={tw`ml-2 flex-1 text-[11px] ${
+                              legacyAttachmentLabel
+                                ? 'text-[#49739c] dark:text:white/70'
+                                : 'text-[#9CA3AF] dark:text-white/50'
+                            }`}
+                            numberOfLines={1}
+                          >
+                            {legacyAttachmentLabel || 'No file selected'}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={tw`mt-3 flex-row justify-end`}>
+                        <TouchableOpacity
+                          onPress={createLegacyAssignment}
+                          disabled={!canAssignments || creatingLegacyAssignment}
+                          style={tw`px-4 py-2 rounded-2xl bg-emerald-600 ${
+                            !canAssignments || creatingLegacyAssignment ? 'opacity-60' : ''
+                          }`}
+                        >
+                          {creatingLegacyAssignment ? (
+                            <Text style={tw`text-white text-sm`}>Sharing…</Text>
+                          ) : (
+                            <Text style={tw`text-white text-sm font-semibold`}>
+                              Share with class
+                            </Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    {/* AI / ROBOT TUTOR ASSIGNMENT CARD */}
+                    <View
+                      style={tw`rounded-2xl bg-[#f8fbff] dark:bg:white/5 border border-[#cedbe8] dark:border:white/10 p-3`}
+                    >
+                      <Text
+                        style={tw`text-[11px] uppercase tracking-wide text-[#6b7280] dark:text:white/60`}
+                      >
+                        Teach with AI
+                      </Text>
+                      <Text style={tw`mt-1 text-sm font-semibold text-[#0d141c] dark:text:white`}>
+                        Link a Robot Tutor course as an assignment
+                      </Text>
+                      <Text style={tw`mt-1 text-[11px] text-[#49739c] dark:text:white/70`}>
+                        Choose one of your AI-generated courses, set optional pass marks and timers,
+                        then share the invite link with specific groups.
+                      </Text>
+                      <View style={tw`mt-2 flex-row`}>
+                    <TouchableOpacity
+                      onPress={() => navigation.navigate('RobotTutor')} // adjust name if your route differs
+                      style={tw`px-3 py-1.5 rounded-xl bg-[#e7edf4] dark:bg:white/10`}
+                    >
+                      <Text style={tw`text-[11px] text-[#0d141c] dark:text:white`}>
+                        Open “Teach with AI”
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+
+                      <View style={tw`mt-3`}>
+                        <Text style={tw`text-[11px] text-[#49739c] dark:text:white/70`}>
+                          Course ID
+                        </Text>
+                        <TextInput
+                          value={courseId}
+                          onChangeText={setCourseId}
+                          placeholder="course uuid"
+                          placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                          style={tw`mt-1 px-3 py-2 rounded bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 text-[#0d141c] dark:text:white text-xs`}
+                          editable={canAssignments}
+                        />
+
+                        <View style={tw`h-3`} />
+                        <Text style={tw`text-[11px] text-[#49739c] dark:text:white/70`}>
+                          Title override (optional)
+                        </Text>
+                        <TextInput
+                          value={titleOverride}
+                          onChangeText={setTitleOverride}
+                          placeholder="Intro to Cybersecurity — Cohort A"
+                          placeholderTextColor={resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                          style={tw`mt-1 px-3 py-2 rounded bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 text-[#0d141c] dark:text:white text-xs`}
+                          editable={canAssignments}
+                        />
+
+                        {canCustomPassTimers && (
+                          <>
+                            <View style={tw`h-3`} />
+                            <Text style={tw`text-[11px] text-[#49739c] dark:text:white/70`}>
+                              Pass mark (%)
+                            </Text>
+                            <TextInput
+                              keyboardType="numeric"
+                              value={String(passMark ?? '')}
+                              onChangeText={(v) =>
+                                setPassMark(v === '' ? '' : Number(v) || 0)
+                              }
+                              placeholder="e.g. 70"
+                              placeholderTextColor={
+                                resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'
+                              }
+                              style={tw`mt-1 px-3 py-2 rounded bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 text-[#0d141c] dark:text:white text-xs`}
+                              editable={canAssignments}
+                            />
+
+                            <View style={tw`h-3`} />
+                            <Text style={tw`text-[11px] text-[#49739c] dark:text:white/70`}>
+                              Timer (seconds)
+                            </Text>
+                            <TextInput
+                              keyboardType="numeric"
+                              value={String(timer ?? '')}
+                              onChangeText={(v) =>
+                                setTimer(v === '' ? '' : Number(v) || 0)
+                              }
+                              placeholder="e.g. 1800"
+                              placeholderTextColor={
+                                resolvedScheme === 'dark' ? '#9CA3AF' : '#6B7280'
+                              }
+                              style={tw`mt-1 px-3 py-2 rounded bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border:white/10 text-[#0d141c] dark:text:white text-xs`}
+                              editable={canAssignments}
+                            />
+                          </>
+                        )}
+
+                        <View style={tw`h-3`} />
+                        <Text style={tw`text-[11px] text-[#49739c] dark:text-white/70`}>
+                          Due at (optional)
+                        </Text>
+                        <View style={tw`mt-1 flex-row items-center`}>
+                          <TouchableOpacity
+                            onPress={handleAiDeadlinePress}
+                            disabled={!canAssignments}
+                            style={tw`px-3 py-2 rounded bg-[#e7edf4] dark:bg:white/10 ${
+                              !canAssignments ? 'opacity-60' : ''
+                            }`}
+                          >
+                            <Text style={tw`text-xs text-[#0d141c] dark:text:white`}>
+                              {dueAt ? 'Change deadline' : 'Pick date & time'}
+                            </Text>
+                          </TouchableOpacity>
+
+                          <Text
+                            style={tw`ml-2 flex-1 text-[11px] ${
+                              dueAt ? 'text-[#49739c] dark:text:white/70' : 'text-[#9CA3AF] dark:text:white/50'
+                            }`}
+                            numberOfLines={2}
+                          >
+                            {dueAt
+                              ? `${new Date(dueAt).toLocaleString()} (${dueAt})`
+                              : 'No deadline set'}
+                          </Text>
+                        </View>
+
+                      </View>
+
+                      <View style={tw`flex-row mt-4`}>
+                        <TouchableOpacity
+                          onPress={createAssignment}
+                          disabled={!canAssignments}
+                          style={tw`px-4 py-2 rounded-xl bg-emerald-600 ${
+                            !canAssignments ? 'opacity-60' : ''
+                          }`}
+                        >
+                          <Text style={tw`text-white font-semibold text-sm`}>
+                            Create AI assignment
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {!!inviteLink && (
+                        <View style={tw`mt-4`}>
+                          <Text
+                            style={tw`text-[11px] text-[#49739c] dark:text:white/80 mb-1`}
+                          >
+                            Invite link
+                          </Text>
+                          <Text
+                            selectable
+                            style={tw`text-xs text-[#0d141c] dark:text:white`}
+                          >
+                            {inviteLink}
+                          </Text>
+
+                          {/* Share to instructors (email / WhatsApp) */}
+                          {instructorEmails.length > 0 && (
+                            <View style={tw`mt-2 flex-row flex-wrap`}>
+                              {bccChunks.map((grp, idx) => (
+                                <TouchableOpacity
+                                  key={`${idx}`}
+                                  onPress={() => emailInstructorsGroup(grp)}
+                                  style={tw`mr-2 mb-2 px-3 py-2 rounded bg-[#e7edf4] dark:bg:white/10`}
+                                >
+                                  <Text style={tw`text-xs text-[#0d141c] dark:text:white`}>
+                                    {bccChunks.length === 1
+                                      ? 'Email instructors'
+                                      : `Email instructors (grp ${idx + 1})`}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+
+                              <TouchableOpacity
+                                onPress={shareViaWhatsApp}
+                                style={tw`mr-2 mb-2 px-3 py-2 rounded bg-[#e7edf4] dark:bg:white/10`}
+                              >
+                                <Text style={tw`text-xs text-[#0d141c] dark:text:white`}>
+                                  WhatsApp instructors
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                          )}
+
+                          <TouchableOpacity
+                            onPress={copyLink}
+                            style={tw`mt-2 px-3 py-2 rounded bg-indigo-600 self-start`}
+                          >
+                            <Text style={tw`text-white text-xs`}>Copy invite link</Text>
+                          </TouchableOpacity>
+
+                          {!!(form.email_domain || org?.email_domain) && (
+                            <Text style={tw`mt-2 text-[11px] text-[#ea580c] dark:text-amber-300`}>
+                              This invite is restricted to{' '}
+                              <Text style={tw`font-semibold`}>
+                                {(form.email_domain || org?.email_domain || '').trim()}
+                              </Text>
+                              .
+                            </Text>
+                          )}
+                        </View>
+                      )}
+
+                      <Text style={tw`mt-2 text-[11px] text-[#49739c] dark:text:white/70`}>
+                        Use the AI invite link for timed quizzes and auto-marking. For open-ended
+                        projects or long-form work, use the classic assignment card above so learners
+                        can upload their files directly.
+                      </Text>
+                    </View>
                   </View>
                 )}
+
               </View>
             )}
 
@@ -2315,6 +2852,24 @@ const OrgElearnPortalNative: React.FC = () => {
           />
         </>
       )}
+            {/* native date/time pickers */}
+      {legacyDuePickerOpen && (
+        <DateTimePicker
+          value={legacyDueDate ?? new Date()}
+          mode="datetime"
+          display={Platform.OS === 'ios' ? 'inline' : 'default'}
+          onChange={handleLegacyDueChange}
+        />
+      )}
+      {aiDuePickerOpen && (
+        <DateTimePicker
+          value={aiDueDate ?? new Date()}
+          mode="datetime"
+          display={Platform.OS === 'ios' ? 'inline' : 'default'}
+          onChange={handleAiDueChange}
+        />
+      )}
+
     </View>
   );
 };

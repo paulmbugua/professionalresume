@@ -284,7 +284,7 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const orgAssign = useOrgAssignment();
   const assignmentId = orgAssign?.assignmentId ?? undefined;
   const isOrgFlow = Boolean(orgAssign?.assignmentId);
-
+const assignmentIdForAi = authToken ? assignmentId : undefined;
   // ── Timer owned by parent ────────────────────────────────
   const [localRemainingMs, setLocalRemainingMs] = useState<number | null>(null);
   useEffect(() => {
@@ -364,6 +364,8 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
   const [overrideLessons, setOverrideLessons] = useState(false);
   const [overrideQuiz, setOverrideQuiz] = useState(false);
 
+   const lastRunKeyRef = React.useRef<string | null>(null);
+
   // ── Deriveds (order matters) ─────────────────────────────
   const isLockedLearner = Boolean(orgAssign?.locked ?? (isOrgFlow && !canShareUi));
 
@@ -411,6 +413,10 @@ const RobotTeacher: React.FC<RobotTeacherProps> = ({
 
   return true;
 }, [selectedCourse, customTitle, activeRunId, isAiBusy]);
+
+ useEffect(() => {
+    lastRunKeyRef.current = null;
+  }, [selectedCourse?.id, customTitle]);
 
 useEffect(() => {
   dlog('state: canStartNow/busyUi update', {
@@ -612,22 +618,23 @@ useEffect(() => {
 
   // ── Start course (uses deriveds above) ───────────────────
  const onStart = useCallback(async () => {
-  // Block if basic preconditions fail (no course & no custom title, or AI is busy)
+  dlog('onStart: invoked', {
+    canStartNow,
+    busyUi,
+    isAiBusy,
+    activeRunId,
+    startMutex: startMutexRef.current,
+    selectedCourseId: selectedCourse?.id || null,
+    customTitle: customTitle.trim(),
+  });
+
   if (!canStartNow) {
+    dlog('onStart ignored: canStartNow=false', { step, hasJoined, lessonsLen: lessons.length, outlineLen: outline.length });
     return;
   }
 
-  // ✅ Custom topic path requires authentication
-  if (!selectedCourse && customTitle.trim() && !authToken) {
-    requireAuth(
-      'ai_custom_topic',
-      'Please sign in to generate a custom AI lesson.'
-    );
-    return;
-  }
-
-  // Prevent double-taps / race conditions
   if (startMutexRef.current) {
+    dlog('onStart ignored: startMutexRef already true');
     return;
   }
   startMutexRef.current = true;
@@ -640,7 +647,7 @@ useEffect(() => {
 
     const courseSize = sizeToCourseSize[sizePreset];
     const opts = {
-      assignmentId,
+      assignmentId: assignmentIdForAi,
       courseSize,
       level: classLevel,
       minutes: minutesEffective,
@@ -649,32 +656,57 @@ useEffect(() => {
       voiceName: effectiveVoice,
     };
 
-    if (!selectedCourse && customTitle.trim()) {
-      // Custom sandbox topic
-      await startCustomTopic(customTitle.trim(), opts);
+    const custom = customTitle.trim();
+
+    if (!selectedCourse && custom) {
+      // 🔐 Only gate the custom-topic (“Teach me”) path
+      if (!requireAuth('custom_topic', 'Sign in to create your own AI lesson topic')) {
+        // requireAuth already navigated → stop
+        setPreparing(false);
+        setActiveRunId(null);
+        return;
+      }
+
+      dlog('onStart: custom topic path', { opts });
+      await startCustomTopic(custom, opts);
+      dlog('onStart: startCustomTopic resolved');
     } else {
-      // Existing course from the list
+      dlog('onStart: existing course path', { selectedCourseId: selectedCourse?.id, opts });
       await startWithAI(opts);
+      dlog('onStart: startWithAI resolved');
     }
   } catch (e) {
     console.error('[RobotTeacher] onStart error', e);
+    dlog('onStart: error', { error: e });
   } finally {
     startMutexRef.current = false;
+    dlog('onStart: finished', {
+      activeRunId,
+      step,
+      outlineLen: outline.length,
+      lessonsLen: lessons.length,
+    });
   }
 }, [
   canStartNow,
-  selectedCourse,
-  customTitle,
-  authToken,
-  assignmentId,
   sizePreset,
   classLevel,
   minutesEffective,
   programTrack,
   safeLessons,
   effectiveVoice,
+  selectedCourse,
+  customTitle,
   startWithAI,
   startCustomTopic,
+  step,
+  hasJoined,
+  lessons.length,
+  outline.length,
+  busyUi,
+  isAiBusy,
+  activeRunId,
+  assignmentIdForAi,
   requireAuth,
 ]);
 
@@ -855,7 +887,7 @@ useEffect(() => {
                 sizeToCourseSize[sizePreset],
                 programTrack,
                 safeLessons,
-                assignmentIdFromChild ?? assignmentId,
+                assignmentIdFromChild ?? assignmentIdForAi,
                 quizType,
                 opts
               );

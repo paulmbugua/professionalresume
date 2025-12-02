@@ -12,7 +12,7 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
-   Linking, 
+  Linking,
 } from 'react-native';
 import {
   useNavigation,
@@ -334,7 +334,9 @@ const OrgExamResultsPortalNative: React.FC = () => {
   // ─────────────────────
   useEffect(() => {
     if (!authToken) {
-      console.log('[ExamPortalNative] no authToken, navigating to InstitutionLogin');
+      console.log(
+        '[ExamPortalNative] no authToken, navigating to InstitutionLogin',
+      );
       navigation.replace('InstitutionLogin' as never);
     }
   }, [authToken, navigation]);
@@ -874,7 +876,7 @@ const OrgExamResultsPortalNative: React.FC = () => {
       const resp = await emailStudentCard(
         selectedSessionId,
         studentId,
-        undefined,
+        undefined, // native: send to default guardian/student email
       );
       if (!resp.ok) {
         Alert.alert('Error', 'Failed to queue email.');
@@ -1058,7 +1060,7 @@ const OrgExamResultsPortalNative: React.FC = () => {
   const selectedTerm =
     cfg.terms.find((t) => t.id === selectedSession?.term_id) || null;
 
-const handleDownloadPdf = useCallback(async () => {
+ const handleDownloadPdf = useCallback(async () => {
   if (!selectedStudentId || !ensureSessionSelected()) return;
 
   const studentName = studentCardMeta?.studentName || 'student';
@@ -1084,12 +1086,11 @@ const handleDownloadPdf = useCallback(async () => {
   const fileName = `${base}.pdf`;
 
   try {
-    // ⬇️ Cast the result out of the “void” type
-    const url = (await downloadStudentCardPdf(
+    const url = await downloadStudentCardPdf(
       selectedSessionId,
       selectedStudentId,
       fileName,
-    )) as unknown as string | undefined;
+    ); // url: string | null
 
     if (!url) {
       Alert.alert(
@@ -1107,7 +1108,10 @@ const handleDownloadPdf = useCallback(async () => {
 
     await Linking.openURL(url);
   } catch (e: any) {
-    console.error('[OrgExamPortalNative] download student PDF error', e);
+    console.error(
+      '[OrgExamPortalNative] download student PDF error',
+      e,
+    );
     Alert.alert(
       'Download failed',
       e?.message || 'Failed to open report card PDF.',
@@ -1161,11 +1165,11 @@ const handleDownloadClassPdf = useCallback(async () => {
   const fileName = `${base}.pdf`;
 
   try {
-    const url = (await downloadClassReportPdf(
+    const url = await downloadClassReportPdf(
       selectedSessionId,
       trimmedClass,
       fileName,
-    )) as unknown as string | undefined;
+    ); // url: string | null
 
     if (!url) {
       Alert.alert(
@@ -1183,7 +1187,10 @@ const handleDownloadClassPdf = useCallback(async () => {
 
     await Linking.openURL(url);
   } catch (e: any) {
-    console.error('[OrgExamPortalNative] download class PDF error', e);
+    console.error(
+      '[OrgExamPortalNative] download class PDF error',
+      e,
+    );
     Alert.alert(
       'Download failed',
       e?.message || 'Failed to open class report PDF.',
@@ -1457,7 +1464,8 @@ const handleDownloadClassPdf = useCallback(async () => {
           console.error('AI remarks error', resp);
           Alert.alert(
             'AI error',
-            resp?.message || 'Failed to generate AI-powered remarks.',
+            resp?.message ||
+              'Failed to generate AI-powered remarks.',
           );
           return;
         }
@@ -1516,27 +1524,26 @@ const handleDownloadClassPdf = useCallback(async () => {
   );
 
   // ───────────────────────────────────────────────────────────
-// UI helpers
-// ───────────────────────────────────────────────────────────
-const termLabel = (t: OrgExamTerm) => `${t.year} – ${t.label}`;
-const sessionLabel = (s: OrgExamSession) => s.label;
+  // UI helpers
+  // ───────────────────────────────────────────────────────────
+  const termLabel = (t: OrgExamTerm) => `${t.year} – ${t.label}`;
+  const sessionLabel = (s: OrgExamSession) => s.label;
 
-const sessionsForSelectedTerm = cfg.sessions.filter(
-  (s) => !selectedTermId || s.term_id === selectedTermId,
-);
+  const sessionsForSelectedTerm = cfg.sessions.filter(
+    (s) => !selectedTermId || s.term_id === selectedTermId,
+  );
 
-// ✅ Style helper – return `any` array to keep TS happy with tailwind style
-const tabButtonStyles = (active: boolean, weight: number): any => [
-  tw`px-3 py-2 rounded-xl mx-0.5 flex-row items-center justify-center`,
-  {
-    flex: weight,
-    minWidth: 0,
-    backgroundColor: active ? palette.accent : palette.chipBg,
-    borderWidth: active ? 0 : 1,
-    borderColor: active ? 'transparent' : palette.accentSoft,
-  },
-];
-
+  // ✅ Style helper – return `any` array to keep TS happy with tailwind style
+  const tabButtonStyles = (active: boolean, weight: number): any => [
+    tw`px-3 py-2 rounded-xl mx-0.5 flex-row items-center justify-center`,
+    {
+      flex: weight,
+      minWidth: 0,
+      backgroundColor: active ? palette.accent : palette.chipBg,
+      borderWidth: active ? 0 : 1,
+      borderColor: active ? 'transparent' : palette.accentSoft,
+    },
+  ];
 
   const bottomPad = Math.max(24, insets.bottom + 24);
 
@@ -1596,67 +1603,75 @@ const tabButtonStyles = (active: boolean, weight: number): any => [
             {/* Under the title: tabs / view strip */}
             {!isLearnerView && (
               <View
-  style={[
-    tw`flex-row items-center rounded-2xl px-1.5 py-1`,
-    {
-      backgroundColor: palette.chipBg,
-      borderColor: palette.accentSoft,
-      borderWidth: 1,
-    },
-  ]}
->
-  <TouchableOpacity
-    onPress={() => setTab('setup')}
-    style={tabButtonStyles(tab === 'setup', 0.9)} // smaller pill
-  >
-    <Text
-      style={[
-        tw`text-xs font-bold`,
-        {
-          color: tab === 'setup' ? '#ffffff' : palette.textSoft,
-        },
-      ]}
-      numberOfLines={1}
-    >
-      Setup
-    </Text>
-  </TouchableOpacity>
+                style={[
+                  tw`flex-row items-center rounded-2xl px-1.5 py-1`,
+                  {
+                    backgroundColor: palette.chipBg,
+                    borderColor: palette.accentSoft,
+                    borderWidth: 1,
+                  },
+                ]}
+              >
+                <TouchableOpacity
+                  onPress={() => setTab('setup')}
+                  style={tabButtonStyles(tab === 'setup', 0.9)} // smaller pill
+                >
+                  <Text
+                    style={[
+                      tw`text-xs font-bold`,
+                      {
+                        color:
+                          tab === 'setup'
+                            ? '#ffffff'
+                            : palette.textSoft,
+                      },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    Setup
+                  </Text>
+                </TouchableOpacity>
 
-  <TouchableOpacity
-    onPress={() => setTab('marks')}
-    style={tabButtonStyles(tab === 'marks', 1.1)} // medium
-  >
-    <Text
-      style={[
-        tw`text-xs font-bold`,
-        {
-          color: tab === 'marks' ? '#ffffff' : palette.textSoft,
-        },
-      ]}
-      numberOfLines={1}
-    >
-      Marks entry
-    </Text>
-  </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setTab('marks')}
+                  style={tabButtonStyles(tab === 'marks', 1.1)} // medium
+                >
+                  <Text
+                    style={[
+                      tw`text-xs font-bold`,
+                      {
+                        color:
+                          tab === 'marks'
+                            ? '#ffffff'
+                            : palette.textSoft,
+                      },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    Marks entry
+                  </Text>
+                </TouchableOpacity>
 
-  <TouchableOpacity
-    onPress={() => setTab('reports')}
-    style={tabButtonStyles(tab === 'reports', 1.3)} // widest pill
-  >
-    <Text
-      style={[
-        tw`text-xs font-bold`,
-        {
-          color: tab === 'reports' ? '#ffffff' : palette.textSoft,
-        },
-      ]}
-      numberOfLines={1}
-    >
-      Reports & analytics
-    </Text>
-  </TouchableOpacity>
-</View>
-
+                <TouchableOpacity
+                  onPress={() => setTab('reports')}
+                  style={tabButtonStyles(tab === 'reports', 1.3)} // widest pill
+                >
+                  <Text
+                    style={[
+                      tw`text-xs font-bold`,
+                      {
+                        color:
+                          tab === 'reports'
+                            ? '#ffffff'
+                            : palette.textSoft,
+                      },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    Reports & analytics
+                  </Text>
+                </TouchableOpacity>
+              </View>
             )}
 
             {isLearnerView && (
@@ -1680,7 +1695,6 @@ const tabButtonStyles = (active: boolean, weight: number): any => [
               </View>
             )}
           </View>
-
 
           {/* Selection strip */}
           <View style={tw`mb-4`}>
@@ -2077,9 +2091,7 @@ const tabButtonStyles = (active: boolean, weight: number): any => [
                 learnerById={learnerById}
                 savingSheet={savingSheet}
                 onAddRowFromRoster={handleAddRowFromRoster}
-                onBulkAddClassForSubject={
-                  handleBulkAddClassForSubject
-                }
+                onBulkAddClassForSubject={handleBulkAddClassForSubject}
                 onSaveSheet={handleSaveSheet}
                 onOpenStudentCard={handleOpenStudentCard}
                 onEmailStudentCard={handleEmailStudentCard}

@@ -1,57 +1,74 @@
-import * as FileSystem from 'expo-file-system';
-
+// packages/shared/api/uploadAsset.native.ts
 export async function uploadAsset(
   backendUrl: string,
   token: string,
-  uriOrFile: string | { uri?: string },
-  type: 'image' | 'video'
+  uriOrFile: string | { uri?: string; name?: string; type?: string; mimeType?: string },
+  type: 'image' | 'video' | 'doc'
 ): Promise<string> {
   const base = backendUrl.replace(/\/$/, '');
   const endpoint = `${base}/api/profile/upload/${type}`;
 
-  const rnUri =
-    typeof uriOrFile === 'string'
-      ? uriOrFile
-      : (uriOrFile as any)?.uri || (uriOrFile as any);
+  let uri: string | undefined;
+  let name = `upload-${Date.now()}`;
+  let mimeType = 'application/octet-stream';
 
-  // 🔑 Robustly resolve the upload type enum
-  const uploadTypeEnum =
-    (FileSystem as any).FileSystemUploadType ??
-    (FileSystem as any).UploadType ??
-    null;
-
-  if (!uploadTypeEnum || uploadTypeEnum.MULTIPART == null) {
-    console.warn(
-      '[uploadAsset.native] FileSystemUploadType.MULTIPART missing – check expo-file-system version'
-    );
-    throw new Error(
-      'File uploads are not available (expo-file-system upload type missing).'
-    );
+  if (typeof uriOrFile === 'string') {
+    uri = uriOrFile;
+  } else if (uriOrFile && typeof uriOrFile === 'object') {
+    const anyFile = uriOrFile as any;
+    uri = anyFile.uri;
+    if (anyFile.name) name = anyFile.name;
+    if (anyFile.type || anyFile.mimeType) {
+      mimeType = anyFile.type || anyFile.mimeType;
+    }
   }
 
-  const result = await FileSystem.uploadAsync(endpoint, rnUri, {
-    httpMethod: 'POST',
-    uploadType: uploadTypeEnum.MULTIPART,
-    fieldName: 'file',
+  if (!uri) {
+    throw new Error('uploadAsset.native: missing file URI');
+  }
+
+  const form = new FormData();
+  form.append(
+    'file',
+    {
+      uri,
+      name,
+      type: mimeType,
+    } as any
+  );
+
+  const res = await fetch(endpoint, {
+    method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
+      // DO NOT set Content-Type here: RN will set proper multipart boundaries
     },
+    body: form,
   });
 
-  if (result.status !== 200 && result.status !== 201) {
-    throw new Error(`Upload failed (${result.status}) ${result.body || ''}`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Upload failed (${res.status}) ${text}`);
   }
 
   let parsed: any = {};
   try {
-    parsed = JSON.parse(result.body);
+    parsed = await res.json();
   } catch {
-    // ignore parse errors, handled below
+    // ignore
   }
 
-  if (!parsed?.url || typeof parsed.url !== 'string') {
+  const url: string | null =
+    parsed?.url ||
+    parsed?.secure_url ||
+    parsed?.data?.url ||
+    null;
+
+  if (!url || typeof url !== 'string') {
     throw new Error('Upload response missing url.');
   }
 
-  return parsed.url;
+  // All your callers already handle "string or object", so returning string is safe
+  return url;
 }
+

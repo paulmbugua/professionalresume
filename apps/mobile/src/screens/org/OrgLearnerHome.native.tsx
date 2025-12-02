@@ -1,10 +1,11 @@
 /* eslint-disable prettier/prettier */
 /* eslint-disable react-hooks/exhaustive-deps */
 
-import React, { useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
+  ScrollView,
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
@@ -13,36 +14,24 @@ import {
   useRoute,
   type RouteProp,
 } from '@react-navigation/native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, {
-  FadeIn,
-  FadeInDown,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from 'react-native-reanimated';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
-import { Ionicons } from '@expo/vector-icons';
 
 import tw from '../../../tailwind';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useOrg } from '@mytutorapp/shared/hooks/useOrg';
-
-import ThemeToggle from '../ThemeToggle.native';
 import { useThemePref } from '../../theme/ThemeContext';
 
 /* ------------------------------------------------------------------ */
-/* Types                                                              */
+/* Types – mirror web URL params using route params                   */
 /* ------------------------------------------------------------------ */
 
 type OrgLearnerHomeParams = {
-  assignmentId?: string | number;
-  courseId?: string | number;
-  qt?: 'mcq' | 'short';
-  qs?: string | number;
-
-  // Optional deep-link hints (from web-style returnTo or QR)
+  // learner hint from QR / login link
   studentId?: string | number;
+  student_id?: string | number;
+
+  // subject hints
   subject?: string;
   subjectKey?: string;
   subject_key?: string;
@@ -53,7 +42,7 @@ type ParamList = {
 };
 
 /* ------------------------------------------------------------------ */
-/* Theming helper (same style as OrgProfileNative)                    */
+/* Theming helper (same as your original palette)                     */
 /* ------------------------------------------------------------------ */
 
 function usePalette() {
@@ -61,7 +50,7 @@ function usePalette() {
   const isDark = resolvedScheme === 'dark';
   return {
     isDark,
-    bg: isDark ? '#020617' : '#f8fafc',
+    bg: isDark ? '#020617' : '#f8fafc', // slate-950 vs slate-50
     card: isDark ? '#0b1016' : '#ffffff',
     softCard: isDark ? '#050816' : '#ffffff',
     border: isDark ? 'rgba(148,163,184,0.28)' : '#cedbe8',
@@ -107,21 +96,6 @@ function usePalette() {
   };
 }
 
-/* Simple press scale feedback – reused for CTAs */
-const usePressScale = () => {
-  const s = useSharedValue(1);
-  const style = useAnimatedStyle(() => ({
-    transform: [{ scale: s.value }],
-  }));
-  const onIn = () => {
-    s.value = withSpring(0.97, { damping: 20, stiffness: 260 });
-  };
-  const onOut = () => {
-    s.value = withSpring(1, { damping: 16, stiffness: 200 });
-  };
-  return { style, onIn, onOut };
-};
-
 /* ------------------------------------------------------------------ */
 /* Screen                                                             */
 /* ------------------------------------------------------------------ */
@@ -132,87 +106,57 @@ const OrgLearnerHomeNative: React.FC = () => {
   const params = (route.params ?? {}) as OrgLearnerHomeParams;
 
   const palette = usePalette();
-  const insets = useSafeAreaInsets();
 
-  // Shop + Org context (mirror web learner home behaviour)
+  const { org, role, currentUser } = (useOrg?.() ?? {}) as any;
+
+  // Shop context – mirror web version
   const {
-    orgToken,
+    orgLogout,
+    userId: ctxUserId,
+    user: shopUser,
     orgLearner: ctxOrgLearner,
     orgUser: ctxOrgUser,
-    user: shopUser,
-    userId: ctxUserId,
-    orgLogout,
   } = useShopContext() as any;
 
-  const {
-    org,
-    role,
-    currentUser,
-    loading: orgLoading,
-  } = (useOrg?.() ?? {}) as any;
-
-  const autoRanRef = useRef(false);
-
-  const hasAssignment = !!params.assignmentId;
-
-  // 🔐 If no orgToken, push through org login flow (like existing native logic)
-  useEffect(() => {
-    if (!orgToken) {
-      navigation.replace('InstitutionLogin', { next: 'OrgLearnerHome' });
-    }
-  }, [orgToken, navigation]);
-
-  // 🤖 Auto-redirect to RobotTutor if we arrive with assignment params
-  useEffect(() => {
-    if (!orgToken) return;
-    if (orgLoading) return;
-    if (autoRanRef.current) return;
-    if (hasAssignment) {
-      autoRanRef.current = true;
-      navigation.replace('RobotTutor', {
-        assignmentId: String(params.assignmentId),
-        ...(params.courseId ? { courseId: String(params.courseId) } : {}),
-        flow: 'org',
-        lock: '1',
-        ...(params.qt ? { qt: params.qt } : {}),
-        ...(params.qs ? { qs: String(params.qs) } : {}),
-      });
-    }
-  }, [orgToken, orgLoading, hasAssignment, params, navigation]);
-
   /* ------------------------------------------------------------------ */
-  /* Learner identity + derived fields (copy of web logic)              */
+  /* URL-style params (studentId, subject, etc.)                        */
   /* ------------------------------------------------------------------ */
 
-  const rawStudentIdParam = useMemo(
-    () =>
-      params.studentId != null && String(params.studentId).trim() !== ''
-        ? String(params.studentId).trim()
-        : '',
-    [params.studentId],
-  );
+  const rawStudentIdParam = useMemo(() => {
+    const v =
+      params.studentId != null
+        ? String(params.studentId)
+        : params.student_id != null
+        ? String(params.student_id)
+        : '';
+    return v.trim();
+  }, [params.studentId, params.student_id]);
 
-  const subjectParam = useMemo(
-    () =>
-      (params.subject ||
-        params.subjectKey ||
-        params.subject_key ||
-        '') ?? '',
-    [params.subject, params.subjectKey, params.subject_key],
-  );
+  const subjectParam = useMemo(() => {
+    const v =
+      params.subject ??
+      params.subjectKey ??
+      params.subject_key ??
+      '';
+    return v ?? '';
+  }, [params.subject, params.subjectKey, params.subject_key]);
 
   const orgName: string =
-    org?.name || org?.org_name || 'Your Institution';
+    org?.name ||
+    org?.org_name ||
+    'Your Institution';
 
   const planLabel: string = org?.tier
     ? String(org.tier).toUpperCase()
     : 'STARTER';
 
-  const portalLabel: string = role
-    ? `${String(role).toUpperCase()} PORTAL`
-    : 'LEARNER PORTAL';
+  const portalLabel: string =
+    role ? `${String(role).toUpperCase()} PORTAL` : 'LEARNER PORTAL';
 
-  // Candidate learner profiles from Org + Shop context
+  /* ------------------------------------------------------------------ */
+  /* Learner identity – same precedence as web component                */
+  /* ------------------------------------------------------------------ */
+
   const learnerProfileFromOrg =
     (currentUser as any)?.org_learner_profile ||
     (currentUser as any)?.orgLearnerProfile ||
@@ -225,7 +169,7 @@ const OrgLearnerHomeNative: React.FC = () => {
     (shopUser as any)?.org_learner_profiles?.[0] ||
     null;
 
-  // ✅ Canonical learner object (same precedence as web)
+  // ✅ Canonical learner object
   const learner: any =
     learnerProfileFromOrg ||
     learnerProfileFromShop ||
@@ -235,17 +179,17 @@ const OrgLearnerHomeNative: React.FC = () => {
     currentUser ||
     null;
 
-  // Canonical learner user id (exam sheets use this as student_user_id)
+  // Canonical learner user id (exam sheets student_user_id)
   const learnerUserId: number | string | null =
     learner?.user_id ??
     learner?.student_user_id ??
-    learner?.userId ?? // from { success, userId, ... }
+    learner?.userId ??
     learner?.id ??
     ctxUserId ??
     (shopUser?.id ?? shopUser?.user_id ?? shopUser?.userId) ??
     null;
 
-  // ✅ Learner studentId used for exams + filters
+  // ✅ Canonical learner studentId
   const learnerStudentId: string =
     rawStudentIdParam && rawStudentIdParam.trim() !== ''
       ? rawStudentIdParam.trim()
@@ -253,11 +197,13 @@ const OrgLearnerHomeNative: React.FC = () => {
       ? String(learnerUserId)
       : '';
 
-  const isLoadingLearner = !learner && !rawStudentIdParam;
-  const isBootingOrg = !orgToken || orgLoading;
-  const isLoading = isBootingOrg || isLoadingLearner;
+  // Optional: treat "no learner" + no param as loading
+  const isLoading = !learner && !rawStudentIdParam;
 
-  // Derived display fields
+  /* ------------------------------------------------------------------ */
+  /* Derived display fields (same as web)                               */
+  /* ------------------------------------------------------------------ */
+
   const learnerName: string =
     learner?.name ||
     learner?.full_name ||
@@ -308,13 +254,30 @@ const OrgLearnerHomeNative: React.FC = () => {
 
   const learnerInitial = (learnerName || 'L').trim().charAt(0).toUpperCase();
 
-  // Exams learner view (legacy exam workspace + PDFs)
-  const examsParams = {
-    view: 'learner' as const,
-    ...(learnerStudentId ? { studentId: learnerStudentId } : {}),
-  };
+  /* ------------------------------------------------------------------ */
+  /* Logout – same behaviour as web (clear org + go to org login)       */
+  /* ------------------------------------------------------------------ */
 
-  // Course library – learner-aware filters
+  const handleLogout = useCallback(async () => {
+    if (orgLogout) {
+      await orgLogout();
+    }
+    navigation.replace('InstitutionLogin', { logoutOrg: true });
+  }, [orgLogout, navigation]);
+
+  /* ------------------------------------------------------------------ */
+  /* Navigation params (mirror web hrefs, but via native routes)        */
+  /* ------------------------------------------------------------------ */
+
+  // Exams learner view (use studentId when available)
+  const examsParams: any = {
+    view: 'learner',
+  };
+  if (learnerStudentId) {
+    examsParams.studentId = learnerStudentId;
+  }
+
+  // Courses – learner-aware filters
   const courseNavParams: any = {
     view: 'learner',
   };
@@ -322,7 +285,7 @@ const OrgLearnerHomeNative: React.FC = () => {
   if (learnerGrade) courseNavParams.class = learnerGrade;
   if (learnerSubject) courseNavParams.subject = learnerSubject;
 
-  // Assignments – learner restricted view (Teach with AI + legacy)
+  // Assignments – learner-only view (legacy/file assignments)
   const assignNavParams: any = {
     view: 'learner',
     tab: 'assign',
@@ -331,11 +294,14 @@ const OrgLearnerHomeNative: React.FC = () => {
   if (learnerGrade) assignNavParams.class = learnerGrade;
   if (learnerSubject) assignNavParams.subject = learnerSubject;
 
-  // Robot Tutor results & certificates (AI + legacy)
+  // Results & certificates (Robot Tutor + legacy overview)
   const resultsNavParams: any = {};
   if (learnerStudentId) resultsNavParams.studentId = learnerStudentId;
 
-  // Logs (dev parity with web)
+  /* ------------------------------------------------------------------ */
+  /* Logs – same as web component                                      */
+  /* ------------------------------------------------------------------ */
+
   useEffect(() => {
     console.log('[OrgLearnerHomeNative] learner ids', {
       rawStudentIdParam,
@@ -384,73 +350,54 @@ const OrgLearnerHomeNative: React.FC = () => {
   ]);
 
   /* ------------------------------------------------------------------ */
-  /* Actions                                                            */
-  /* ------------------------------------------------------------------ */
-
-  const handleLogout = useCallback(async () => {
-    if (orgLogout) {
-      await orgLogout();
-    }
-    navigation.replace('InstitutionLogin', { logoutOrg: true });
-  }, [orgLogout, navigation]);
-
-  const bottomPad = Math.max(24, insets.bottom + 24);
-
-  const logoutBtn = usePressScale();
-  const robotBtn = usePressScale();
-
-  /* ------------------------------------------------------------------ */
-  /* Loading shell                                                      */
+  /* Loading view – theme aware, text matches web copy                  */
   /* ------------------------------------------------------------------ */
 
   if (isLoading) {
     return (
       <SafeAreaView
-        style={[tw`flex-1`, { backgroundColor: palette.bg }]}
-        edges={['top', 'left', 'right', 'bottom']}
+        style={[
+          tw`flex-1 items-center justify-center`,
+          { backgroundColor: palette.bg },
+        ]}
       >
-        <View style={tw`px-4 pt-3 pb-1 flex-row justify-end`}>
-          <ThemeToggle />
-        </View>
-        <View style={tw`flex-1 items-center justify-center px-6`}>
-          <View style={palette.softSurface(tw`w-full max-w-xs`)}>
+        <View style={palette.softSurface(tw`w-full max-w-xs`)}>
+          <Text
+            style={[
+              tw`text-[11px] uppercase tracking-[1.6px] text-center`,
+              { color: palette.textSubtle },
+            ]}
+          >
+            LEARNER PORTAL
+          </Text>
+          <Text
+            style={[
+              tw`mt-2 text-lg font-semibold text-center`,
+              { color: palette.text },
+            ]}
+          >
+            Preparing your learner dashboard…
+          </Text>
+          <Text
+            style={[
+              tw`mt-2 text-xs text-center`,
+              { color: palette.textMuted },
+            ]}
+          >
+            Please wait a moment while we load your institution profile and
+            learner account.
+          </Text>
+
+          <View style={tw`mt-4 flex-row justify-center items-center`}>
+            <ActivityIndicator color={palette.text} />
             <Text
               style={[
-                tw`text-[10px] uppercase tracking-[1.6px]`,
+                tw`ml-2 text-[11px]`,
                 { color: palette.textSubtle },
               ]}
             >
-              {portalLabel}
+              Loading…
             </Text>
-            <Text
-              style={[
-                tw`mt-2 text-lg font-semibold`,
-                { color: palette.text },
-              ]}
-            >
-              Preparing your learner dashboard…
-            </Text>
-            <Text
-              style={[
-                tw`mt-2 text-xs`,
-                { color: palette.textMuted },
-              ]}
-            >
-              Please wait a moment while we load your institution profile and
-              learner account.
-            </Text>
-
-            <View style={tw`mt-4 flex-row items-center`}>
-              <ActivityIndicator />
-              <Text
-                style={[
-                  tw`ml-2 text-[11px]`,
-                  { color: palette.textSubtle },
-                ]}
-              >
-                Loading…
-              </Text>
-            </View>
           </View>
         </View>
       </SafeAreaView>
@@ -458,194 +405,212 @@ const OrgLearnerHomeNative: React.FC = () => {
   }
 
   /* ------------------------------------------------------------------ */
-  /* Main render                                                        */
+  /* Main render – sections mirror OrgLearnerHome.web.tsx               */
   /* ------------------------------------------------------------------ */
 
   return (
     <SafeAreaView
       style={[tw`flex-1`, { backgroundColor: palette.bg }]}
-      edges={['top', 'left', 'right', 'bottom']}
     >
-      <Animated.ScrollView
-        entering={FadeIn.duration(220)}
+      <ScrollView
+        contentContainerStyle={tw`px-4 py-6 pb-10`}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[tw`pb-0`, { paddingBottom: bottomPad }]}
       >
-        {/* Top bar (Theme toggle) */}
-        <View style={tw`px-4 pt-3 pb-1 flex-row justify-end`}>
-          <ThemeToggle />
+        {/* Header */}
+        <View style={palette.surface(tw`flex-row items-center justify-between gap-3`)}>
+          <View style={tw`flex-1 min-w-0`}>
+            <Text
+              style={[
+                tw`text-[11px] uppercase tracking-[1.6px]`,
+                { color: palette.textSubtle },
+              ]}
+              numberOfLines={1}
+            >
+              {portalLabel}
+            </Text>
+            <Text
+              style={[
+                tw`mt-0.5 text-xl font-bold`,
+                { color: palette.text },
+              ]}
+              numberOfLines={1}
+            >
+              {orgName}
+            </Text>
+            <Text
+              style={[
+                tw`mt-0.5 text-xs`,
+                { color: palette.textMuted },
+              ]}
+            >
+              {planLabel} plan
+            </Text>
+          </View>
+
+          <View style={tw`items-end`}>
+            <TouchableOpacity
+              onPress={handleLogout}
+              accessibilityRole="button"
+              accessibilityLabel="Sign out from this learner portal"
+              style={[
+                tw`px-3 py-1.5 rounded-full`,
+                {
+                  borderWidth: 1,
+                  borderColor: palette.border,
+                  backgroundColor: palette.softCard,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  tw`text-[11px] font-medium`,
+                  { color: palette.text },
+                ]}
+              >
+                Not you? <Text style={tw`font-semibold`}>Sign out</Text>
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
-        <View style={tw`px-4`}>
-          {/* Header */}
-          <Animated.View
-            entering={FadeInDown.duration(320)}
-            style={palette.surface()}
-          >
-            <View style={tw`flex-row items-center justify-between`}>
-              <View style={tw`flex-1 min-w-0`}>
+        {/* Learner identity */}
+        <View style={palette.surface(tw`mt-4`)}>
+          <View style={tw`flex-row items-center gap-3`}>
+            {/* Avatar */}
+            <View
+              style={[
+                tw`h-12 w-12 rounded-full items-center justify-center overflow-hidden`,
+                {
+                  backgroundColor: palette.divider,
+                },
+              ]}
+            >
+              {learnerPhoto ? (
+                <Image
+                  source={{ uri: learnerPhoto }}
+                  style={tw`h-full w-full`}
+                  contentFit="cover"
+                  transition={200}
+                />
+              ) : (
                 <Text
                   style={[
-                    tw`text-[10px] uppercase tracking-[1.6px]`,
-                    { color: palette.textSubtle },
+                    tw`text-lg font-bold`,
+                    { color: palette.text },
                   ]}
-                  numberOfLines={1}
                 >
-                  {portalLabel}
+                  {learnerInitial}
                 </Text>
+              )}
+            </View>
+
+            {/* Details */}
+            <View style={tw`flex-1 min-w-0`}>
+              <Text
+                style={[
+                  tw`text-[11px] uppercase tracking-[1.6px]`,
+                  { color: palette.textSubtle },
+                ]}
+              >
+                Signed in learner
+              </Text>
+
+              <View style={tw`mt-0.5 flex-row flex-wrap items-center gap-2`}>
                 <Text
                   style={[
-                    tw`mt-0.5 text-xl font-bold`,
+                    tw`text-base font-semibold`,
                     { color: palette.text },
                   ]}
                   numberOfLines={1}
                 >
-                  {orgName}
+                  {learnerName}
                 </Text>
-                <Text
-                  style={[
-                    tw`mt-0.5 text-[11px]`,
-                    { color: palette.textMuted },
-                  ]}
-                >
-                  {planLabel} plan
-                </Text>
-              </View>
 
-              {/* Compact logout */}
-              <Animated.View style={[logoutBtn.style, tw`ml-3`]}>
-                <TouchableOpacity
-                  onPress={handleLogout}
-                  onPressIn={logoutBtn.onIn}
-                  onPressOut={logoutBtn.onOut}
-                  accessibilityRole="button"
-                  accessibilityLabel="Sign out from this learner portal"
-                  style={[
-                    tw`px-3 py-1.5 rounded-full flex-row items-center justify-center`,
-                    { backgroundColor: palette.divider },
-                  ]}
-                >
-                  <Ionicons
-                    name="log-out-outline"
-                    size={14}
-                    color={palette.text}
-                  />
-                  <Text
+                {learnerGrade && (
+                  <View
                     style={[
-                      tw`ml-1 text-[11px] font-medium`,
-                      { color: palette.text },
+                      tw`px-2 py-0.5 rounded-full`,
+                      {
+                        backgroundColor: palette.chipBg('#22c55e'),
+                        borderWidth: 1,
+                        borderColor: palette.isDark
+                          ? 'rgba(74,222,128,0.3)'
+                          : '#22c55e',
+                      },
                     ]}
                   >
-                    Not you?{' '}
-                    <Text style={tw`font-semibold`}>Sign out</Text>
-                  </Text>
-                </TouchableOpacity>
-              </Animated.View>
-            </View>
-          </Animated.View>
+                    <Text
+                      style={[
+                        tw`text-[11px]`,
+                        {
+                          color: palette.isDark ? '#bbf7d0' : '#166534',
+                        },
+                      ]}
+                    >
+                      Grade / Class: {learnerGrade}
+                    </Text>
+                  </View>
+                )}
 
-          {/* Learner identity card */}
-          <Animated.View
-            entering={FadeInDown.delay(60).duration(340)}
-            style={[palette.surface(), tw`mt-4`]}
-          >
-            <View style={tw`flex-row items-center gap-3`}>
-              {/* Avatar */}
-              <View
-                style={[
-                  tw`h-12 w-12 rounded-full items-center justify-center overflow-hidden`,
-                  {
-                    backgroundColor: palette.divider,
-                  },
-                ]}
-              >
-                {learnerPhoto ? (
-                  <Image
-                    source={{ uri: learnerPhoto }}
-                    style={tw`h-full w-full`}
-                    contentFit="cover"
-                    transition={220}
-                  />
-                ) : (
-                  <Text
+                {learnerSubject && (
+                  <View
                     style={[
-                      tw`text-lg font-bold`,
-                      { color: palette.text },
+                      tw`px-2 py-0.5 rounded-full`,
+                      {
+                        backgroundColor: palette.chipBg('#0ea5e9'),
+                        borderWidth: 1,
+                        borderColor: palette.isDark
+                          ? 'rgba(56,189,248,0.3)'
+                          : '#0ea5e9',
+                      },
                     ]}
                   >
-                    {learnerInitial}
-                  </Text>
+                    <Text
+                      style={[
+                        tw`text-[11px]`,
+                        {
+                          color: palette.isDark ? '#bae6fd' : '#075985',
+                        },
+                      ]}
+                    >
+                      Subject focus: {learnerSubject}
+                    </Text>
+                  </View>
                 )}
               </View>
 
-              {/* Identity */}
-              <View style={tw`flex-1 min-w-0`}>
-                <Text
-                  style={[
-                    tw`text-[10px] uppercase tracking-[1.6px]`,
-                    { color: palette.textSubtle },
-                  ]}
-                >
-                  Signed in learner
-                </Text>
-
-                <View style={tw`mt-0.5 flex-row flex-wrap items-center gap-2`}>
+              <View style={tw`mt-2`}>
+                <View style={tw`flex-row flex-wrap gap-1 items-baseline`}>
                   <Text
                     style={[
-                      tw`text-base font-semibold`,
+                      tw`text-[11px]`,
+                      { color: palette.textSubtle },
+                    ]}
+                  >
+                    📧 Email:
+                  </Text>
+                  <Text
+                    style={[
+                      tw`text-[11px] font-mono`,
                       { color: palette.text },
                     ]}
-                    numberOfLines={1}
                   >
-                    {learnerName}
+                    {learnerEmail ||
+                      'No email on file yet – ask your teacher to update it.'}
                   </Text>
-
-                  {learnerGrade && (
-                    <View
-                      style={[
-                        tw`px-2 py-0.5 rounded-full`,
-                        { backgroundColor: '#22c55e1f' },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          tw`text-[10px] font-medium`,
-                          { color: '#bbf7d0' },
-                        ]}
-                      >
-                        Grade / Class: {learnerGrade}
-                      </Text>
-                    </View>
-                  )}
-
-                  {learnerSubject && (
-                    <View
-                      style={[
-                        tw`px-2 py-0.5 rounded-full`,
-                        { backgroundColor: '#0ea5e91f' },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          tw`text-[10px] font-medium`,
-                          { color: '#bae6fd' },
-                        ]}
-                      >
-                        Subject focus: {learnerSubject}
-                      </Text>
-                    </View>
-                  )}
                 </View>
 
-                <View style={tw`mt-2`}>
-                  <View style={tw`flex-row flex-wrap items-baseline gap-1`}>
+                {admissionCode && (
+                  <View
+                    style={tw`mt-1 flex-row flex-wrap gap-1 items-baseline`}
+                  >
                     <Text
                       style={[
                         tw`text-[11px]`,
                         { color: palette.textSubtle },
                       ]}
                     >
-                      📧 Email:
+                      🆔 Admission No:
                     </Text>
                     <Text
                       style={[
@@ -653,509 +618,446 @@ const OrgLearnerHomeNative: React.FC = () => {
                         { color: palette.text },
                       ]}
                     >
-                      {learnerEmail ||
-                        'No email on file yet – ask your teacher to update it.'}
+                      {admissionCode}
                     </Text>
                   </View>
+                )}
 
-                  {admissionCode && (
-                    <View
-                      style={tw`mt-1 flex-row flex-wrap items-baseline gap-1`}
-                    >
-                      <Text
-                        style={[
-                          tw`text-[11px]`,
-                          { color: palette.textSubtle },
-                        ]}
-                      >
-                        🆔 Admission No:
-                      </Text>
-                      <Text
-                        style={[
-                          tw`text-[11px] font-mono`,
-                          { color: palette.text },
-                        ]}
-                      >
-                        {admissionCode}
-                      </Text>
-                    </View>
-                  )}
-
-                  <Text
-                    style={[
-                      tw`mt-2 text-[10px]`,
-                      { color: palette.textSubtle },
-                    ]}
-                  >
-                    If this name or grade doesn&apos;t look correct, sign out
-                    and ask your teacher to confirm your login card.
-                  </Text>
-                </View>
+                <Text
+                  style={[
+                    tw`mt-1 text-[11px]`,
+                    { color: palette.textSubtle },
+                  ]}
+                >
+                  If this name or grade doesn&apos;t look correct, sign out and
+                  ask your teacher to confirm your login card.
+                </Text>
               </View>
             </View>
-          </Animated.View>
+          </View>
+        </View>
 
-          {/* Start learning / Robot Tutor */}
-          <Animated.View
-            entering={FadeInDown.delay(110).duration(340)}
-            style={[palette.softSurface(), tw`mt-4`]}
+        {/* Exam results & report cards */}
+        <View style={palette.surface(tw`mt-4`)}>
+          <View
+            style={tw`flex-col gap-3 md:flex-row md:items-center md:justify-between`}
           >
-            <View style={tw`flex-row items-center justify-between`}>
-              <View style={tw`flex-1 mr-3`}>
-                <Text
-                  style={[
-                    tw`text-base font-semibold`,
-                    { color: palette.text },
-                  ]}
-                >
-                  Start learning
-                </Text>
-                <Text
-                  style={[
-                    tw`mt-1 text-xs`,
-                    { color: palette.textMuted },
-                  ]}
-                >
-                  Jump into the Robot Tutor to study any topic or continue where
-                  you left off. If you joined via an invite, we’ll take you
-                  straight into your assignment.
-                </Text>
-              </View>
-
-              <Animated.View style={robotBtn.style}>
-                <TouchableOpacity
-                  onPress={() =>
-                    navigation.navigate('RobotTutor', {
-                      flow: 'org',
-                      lock: '1',
-                      ...(params.assignmentId
-                        ? { assignmentId: String(params.assignmentId) }
-                        : {}),
-                      ...(params.courseId
-                        ? { courseId: String(params.courseId) }
-                        : {}),
-                      ...(params.qt ? { qt: params.qt } : {}),
-                      ...(params.qs ? { qs: String(params.qs) } : {}),
-                    })
-                  }
-                  onPressIn={robotBtn.onIn}
-                  onPressOut={robotBtn.onOut}
-                  accessibilityRole="button"
-                  accessibilityLabel="Open Robot Tutor"
-                  style={tw`h-10 px-4 rounded-2xl bg-emerald-600 flex-row items-center justify-center`}
-                >
-                  <Ionicons name="sparkles-outline" size={16} color="#fff" />
-                  <Text
-                    style={tw`ml-2 text-[11px] font-semibold text-white`}
-                  >
-                    Open Robot Tutor
-                  </Text>
-                </TouchableOpacity>
-              </Animated.View>
-            </View>
-          </Animated.View>
-
-          {/* Exam results & report cards (legacy exams) */}
-          <Animated.View
-            entering={FadeInDown.delay(150).duration(340)}
-            style={[palette.surface(), tw`mt-4`]}
-          >
-            <View style={tw`flex-row items-center justify-between gap-3`}>
-              <View style={tw`flex-1`}>
-                <Text
-                  style={[
-                    tw`text-base font-semibold`,
-                    { color: palette.text },
-                  ]}
-                >
-                  Exam results &amp; report cards
-                </Text>
-                <Text
-                  style={[
-                    tw`mt-1 text-xs`,
-                    { color: palette.textMuted },
-                  ]}
-                >
-                  View your official institution exam marks and download report
-                  cards as PDF for each term or exam session.
-                </Text>
-              </View>
-
-            {/* learner view inside org exams workspace */}
-              <TouchableOpacity
-                onPress={() =>
-                  navigation.navigate('OrgElearnPortal', {
-                    tab: 'exams',
-                    ...examsParams,
-                    from: 'learner',
-                  })
-                }
-                accessibilityRole="button"
-                accessibilityLabel="Open my exam results"
-                style={tw`h-10 px-4 rounded-2xl bg-sky-600 flex-row items-center justify-center`}
+            <View style={tw`flex-1`}>
+              <Text
+                style={[
+                  tw`text-lg font-semibold`,
+                  { color: palette.text },
+                ]}
               >
-                <Text
-                  style={tw`text-sm font-semibold text-white`}
-                >
-                  📄 Open my results
-                </Text>
-              </TouchableOpacity>
+                Exam results &amp; report cards
+              </Text>
+              <Text
+                style={[
+                  tw`mt-1 text-xs`,
+                  { color: palette.textMuted },
+                ]}
+              >
+                View your official institution exam marks and download report
+                cards as PDF for each term or exam session.
+              </Text>
             </View>
 
-            <Text
-              style={[
-                tw`mt-2 text-[11px]`,
-                { color: palette.textSubtle },
-              ]}
-            >
-              Results are powered by your institution&apos;s DayBreak exams
-              workspace. You can save or print the downloaded report cards.
-            </Text>
-          </Animated.View>
-
-          {/* Learning tools grid */}
-          <Animated.View
-            entering={FadeInDown.delay(190).duration(340)}
-            style={[palette.surface(), tw`mt-4`]}
+            {/* 🔐 learner-only mode with studentId when available */}
+          <TouchableOpacity
+            onPress={() =>
+              navigation.navigate('OrgExamResultsPortal', {
+                view: 'learner',
+                ...(learnerStudentId ? { studentId: learnerStudentId } : {}),
+              })
+            }
+            accessibilityRole="button"
+            accessibilityLabel="Open my exam results"
+            style={[
+              tw`mt-2 px-4 py-2 rounded-2xl flex-row items-center justify-center`,
+              {
+                backgroundColor: '#0284c7', // sky-600
+              },
+            ]}
           >
             <Text
               style={[
-                tw`text-base font-semibold mb-2`,
-                { color: palette.text },
+                tw`text-sm font-semibold`,
+                { color: '#ffffff' },
               ]}
             >
-              Learning tools
+              📄 Open my results
             </Text>
+          </TouchableOpacity>
 
-            <View style={tw`gap-3`}>
-              {/* Assignments – learner restricted view */}
-              <TouchableOpacity
-                onPress={() =>
-                  navigation.navigate('OrgElearnPortal', {
-                    ...assignNavParams,
-                    from: 'learner',
-                  })
-                }
-                accessibilityRole="button"
-                accessibilityLabel="Open assignments"
-                style={[
-                  palette.smallSurface(),
-                  tw`flex-row items-start justify-between`,
-                ]}
-              >
-                <View style={tw`flex-1 mr-2`}>
-                  <View
-                    style={tw`flex-row items-center justify-between gap-2`}
-                  >
-                    <Text
-                      style={[
-                        tw`text-sm font-semibold`,
-                        { color: palette.text },
-                      ]}
-                    >
-                      Assignments (files &amp; AI)
-                    </Text>
-                    <Text
-                      style={[
-                        tw`text-[11px]`,
-                        { color: '#a5b4fc' },
-                      ]}
-                    >
-                      Open →
-                    </Text>
-                  </View>
-                  <Text
-                    style={[
-                      tw`mt-1 text-xs`,
-                      { color: palette.textMuted },
-                    ]}
-                  >
-                    See only assignments that your teachers have shared with
-                    you – including Teach with AI links and legacy file-based
-                    tasks.
-                  </Text>
-                </View>
-              </TouchableOpacity>
+          </View>
 
-              {/* Results & certificates (Robot Tutor + legacy overview) */}
-              <TouchableOpacity
-                onPress={() =>
-                  navigation.navigate('Results', resultsNavParams)
-                }
-                accessibilityRole="button"
-                accessibilityLabel="Open results and certificates"
-                style={[
-                  palette.smallSurface(),
-                  tw`flex-row items-start justify-between`,
-                ]}
-              >
-                <View style={tw`flex-1 mr-2`}>
-                  <View
-                    style={tw`flex-row items-center justify-between gap-2`}
-                  >
-                    <Text
-                      style={[
-                        tw`text-sm font-semibold`,
-                        { color: palette.text },
-                      ]}
-                    >
-                      Results &amp; certificates
-                    </Text>
-                    <Text
-                      style={[
-                        tw`text-[11px]`,
-                        { color: '#a5b4fc' },
-                      ]}
-                    >
-                      View →
-                    </Text>
-                  </View>
-                  <Text
-                    style={[
-                      tw`mt-1 text-xs`,
-                      { color: palette.textMuted },
-                    ]}
-                  >
-                    Check your quiz results from Robot Tutor and legacy exams.
-                    Certificates are currently available for Robot Tutor quizzes
-                    only.
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* Course library – learner aware */}
-              <TouchableOpacity
-                onPress={() =>
-                  navigation.navigate('Courses', courseNavParams)
-                }
-                accessibilityRole="button"
-                accessibilityLabel="Open course library"
-                style={[
-                  palette.smallSurface(),
-                  tw`flex-row items-start justify-between`,
-                ]}
-              >
-                <View style={tw`flex-1 mr-2`}>
-                  <View
-                    style={tw`flex-row items-center justify-between gap-2`}
-                  >
-                    <Text
-                      style={[
-                        tw`text-sm font-semibold`,
-                        { color: palette.text },
-                      ]}
-                    >
-                      Course library
-                    </Text>
-                    <Text
-                      style={[
-                        tw`text-[11px]`,
-                        { color: '#a5b4fc' },
-                      ]}
-                    >
-                      Browse →
-                    </Text>
-                  </View>
-                  <Text
-                    style={[
-                      tw`mt-1 text-xs`,
-                      { color: palette.textMuted },
-                    ]}
-                  >
-                    Explore courses, OER resources, and AI lessons connected to
-                    your account, class
-                    {learnerGrade ? ` (${learnerGrade})` : ''} and
-                    {learnerSubject
-                      ? ` subject (${learnerSubject}).`
-                      : ' subjects.'}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* Messages & help */}
-              <TouchableOpacity
-                onPress={() =>
-                  navigation.navigate('Messages', {
-                    studentId: learnerStudentId || undefined,
-                  })
-                }
-                accessibilityRole="button"
-                accessibilityLabel="Open messages and help"
-                style={[
-                  palette.smallSurface(),
-                  tw`flex-row items-start justify-between`,
-                ]}
-              >
-                <View style={tw`flex-1 mr-2`}>
-                  <View
-                    style={tw`flex-row items-center justify-between gap-2`}
-                  >
-                    <Text
-                      style={[
-                        tw`text-sm font-semibold`,
-                        { color: palette.text },
-                      ]}
-                    >
-                      Messages &amp; help
-                    </Text>
-                    <Text
-                      style={[
-                        tw`text-[11px]`,
-                        { color: '#a5b4fc' },
-                      ]}
-                    >
-                      Open →
-                    </Text>
-                  </View>
-                  <Text
-                    style={[
-                      tw`mt-1 text-xs`,
-                      { color: palette.textMuted },
-                    ]}
-                  >
-                    Reach your instructors or support and keep all school
-                    communication in one place.
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
-
-          {/* Helpful quick chips */}
-          <Animated.View
-            entering={FadeInDown.delay(230).duration(340)}
-            style={[palette.surface(), tw`mt-4 mb-6`]}
+          <Text
+            style={[
+              tw`mt-2 text-[11px]`,
+              { color: palette.textSubtle },
+            ]}
           >
-            <Text
+            Results are powered by your institution&apos;s DayBreak exams
+            workspace. You can save or print the downloaded report cards.
+          </Text>
+        </View>
+
+        {/* Learning tools */}
+        <View style={palette.surface(tw`mt-4`)}>
+          <Text
+            style={[
+              tw`text-base font-semibold mb-2`,
+              { color: palette.text },
+            ]}
+          >
+            Learning tools
+          </Text>
+
+          <View style={tw`gap-3`}>
+            {/* Assignments – legacy/file-based only */}
+            <TouchableOpacity
+              onPress={() =>
+                navigation.navigate('OrgElearnPortal', {
+                  ...assignNavParams,
+                  from: 'learner',
+                })
+              }
+              accessibilityRole="button"
+              accessibilityLabel="Open assignments"
               style={[
-                tw`text-base font-semibold mb-2`,
-                { color: palette.text },
+                tw`rounded-2xl px-3 py-3`,
+                {
+                  borderWidth: 1,
+                  borderColor: palette.border,
+                  backgroundColor: palette.softCard,
+                },
               ]}
             >
-              Helpful
-            </Text>
-
-            <View style={tw`flex-row flex-wrap gap-2`}>
-              <TouchableOpacity
-                onPress={() =>
-                  navigation.navigate('OrgElearnPortal', {
-                    ...assignNavParams,
-                    from: 'learner',
-                  })
-                }
-                style={[
-                  tw`px-3 py-1 rounded-full`,
-                  { backgroundColor: palette.divider },
-                ]}
-              >
+              <View style={tw`flex-row items-center justify-between gap-2`}>
                 <Text
                   style={[
-                    tw`text-xs`,
+                    tw`text-sm font-semibold`,
                     { color: palette.text },
                   ]}
                 >
-                  Assignments
+                  Assignments (files)
                 </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() =>
-                  navigation.navigate('OrgElearnPortal', {
-                    tab: 'exams',
-                    ...examsParams,
-                    from: 'learner',
-                  })
-                }
-                style={[
-                  tw`px-3 py-1 rounded-full`,
-                  { backgroundColor: palette.divider },
-                ]}
-              >
                 <Text
                   style={[
-                    tw`text-xs`,
+                    tw`text-[11px]`,
+                    { color: palette.isDark ? '#c7d2fe' : '#4f46e5' },
+                  ]}
+                >
+                  Open →
+                </Text>
+              </View>
+              <Text
+                style={[
+                  tw`mt-1 text-xs`,
+                  { color: palette.textMuted },
+                ]}
+              >
+                See only file-based assignments (PDFs, docs, images) that your
+                teachers have shared with you using the classic / legacy flow.
+              </Text>
+            </TouchableOpacity>
+
+            {/* Results & certificates */}
+            <TouchableOpacity
+              onPress={() => navigation.navigate('Results', resultsNavParams)}
+              accessibilityRole="button"
+              accessibilityLabel="Open results and certificates"
+              style={[
+                tw`rounded-2xl px-3 py-3`,
+                {
+                  borderWidth: 1,
+                  borderColor: palette.border,
+                  backgroundColor: palette.softCard,
+                },
+              ]}
+            >
+              <View style={tw`flex-row items-center justify-between gap-2`}>
+                <Text
+                  style={[
+                    tw`text-sm font-semibold`,
                     { color: palette.text },
                   ]}
                 >
-                  Exam results
+                  Results &amp; certificates
                 </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() =>
-                  navigation.navigate('Results', resultsNavParams)
-                }
-                style={[
-                  tw`px-3 py-1 rounded-full`,
-                  { backgroundColor: palette.divider },
-                ]}
-              >
                 <Text
                   style={[
-                    tw`text-xs`,
-                    { color: palette.text },
+                    tw`text-[11px]`,
+                    { color: palette.isDark ? '#c7d2fe' : '#4f46e5' },
                   ]}
                 >
-                  Certificates
+                  View →
                 </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() =>
-                  navigation.navigate('Courses', courseNavParams)
-                }
+              </View>
+              <Text
                 style={[
-                  tw`px-3 py-1 rounded-full`,
-                  { backgroundColor: palette.divider },
+                  tw`mt-1 text-xs`,
+                  { color: palette.textMuted },
                 ]}
               >
+                Check your quiz results from Robot Tutor and legacy exams.
+                Certificates are currently available for Robot Tutor quizzes
+                only.
+              </Text>
+            </TouchableOpacity>
+
+            {/* Course library – learner-aware */}
+            <TouchableOpacity
+              onPress={() =>
+                navigation.navigate('Courses', courseNavParams)
+              }
+              accessibilityRole="button"
+              accessibilityLabel="Open course library"
+              style={[
+                tw`rounded-2xl px-3 py-3`,
+                {
+                  borderWidth: 1,
+                  borderColor: palette.border,
+                  backgroundColor: palette.softCard,
+                },
+              ]}
+            >
+              <View style={tw`flex-row items-center justify-between gap-2`}>
                 <Text
                   style={[
-                    tw`text-xs`,
+                    tw`text-sm font-semibold`,
                     { color: palette.text },
                   ]}
                 >
                   Course library
                 </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => navigation.navigate('OrgProfile')}
-                style={[
-                  tw`px-3 py-1 rounded-full`,
-                  { backgroundColor: palette.divider },
-                ]}
-              >
                 <Text
                   style={[
-                    tw`text-xs`,
+                    tw`text-[11px]`,
+                    { color: palette.isDark ? '#c7d2fe' : '#4f46e5' },
+                  ]}
+                >
+                  Browse →
+                </Text>
+              </View>
+              <Text
+                style={[
+                  tw`mt-1 text-xs`,
+                  { color: palette.textMuted },
+                ]}
+              >
+                Explore courses, OER resources, and AI lessons connected to your
+                account, class
+                {learnerGrade ? ` (${learnerGrade})` : ''} and
+                {learnerSubject
+                  ? ` subject (${learnerSubject}).`
+                  : ' subjects.'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Messages & help */}
+            <TouchableOpacity
+              onPress={() =>
+                navigation.navigate('Messages', {
+                  studentId: learnerStudentId || undefined,
+                })
+              }
+              accessibilityRole="button"
+              accessibilityLabel="Open messages and help"
+              style={[
+                tw`rounded-2xl px-3 py-3`,
+                {
+                  borderWidth: 1,
+                  borderColor: palette.border,
+                  backgroundColor: palette.softCard,
+                },
+              ]}
+            >
+              <View style={tw`flex-row items-center justify-between gap-2`}>
+                <Text
+                  style={[
+                    tw`text-sm font-semibold`,
                     { color: palette.text },
                   ]}
                 >
-                  Institution profile
+                  Messages &amp; help
                 </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => navigation.navigate('Help')}
-                style={[
-                  tw`px-3 py-1 rounded-full`,
-                  { backgroundColor: palette.divider },
-                ]}
-              >
                 <Text
                   style={[
-                    tw`text-xs`,
-                    { color: palette.text },
+                    tw`text-[11px]`,
+                    { color: palette.isDark ? '#c7d2fe' : '#4f46e5' },
                   ]}
                 >
-                  Help
+                  Open →
                 </Text>
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
+              </View>
+              <Text
+                style={[
+                  tw`mt-1 text-xs`,
+                  { color: palette.textMuted },
+                ]}
+              >
+                Reach your instructors or support and keep all school
+                communication in one place.
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </Animated.ScrollView>
+
+        {/* Helpful chips */}
+        <View style={palette.surface(tw`mt-4 mb-4`)}>
+          <Text
+            style={[
+              tw`text-base font-semibold mb-2`,
+              { color: palette.text },
+            ]}
+          >
+            Helpful
+          </Text>
+          <View style={tw`flex-row flex-wrap gap-2`}>
+            <TouchableOpacity
+              onPress={() =>
+                navigation.navigate('OrgElearnPortal', {
+                  ...assignNavParams,
+                  from: 'learner',
+                })
+              }
+              style={[
+                tw`px-3 py-1 rounded-full`,
+                {
+                  backgroundColor: palette.softCard,
+                  borderWidth: 1,
+                  borderColor: palette.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  tw`text-xs`,
+                  { color: palette.text },
+                ]}
+              >
+                Assignments
+              </Text>
+            </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() =>
+                    navigation.navigate('OrgExamResultsPortal', {
+                      view: 'learner',
+                      ...(learnerStudentId ? { studentId: learnerStudentId } : {}),
+                    })
+                  }
+                  style={[
+                    tw`px-3 py-1 rounded-full`,
+                    {
+                      backgroundColor: palette.softCard,
+                      borderWidth: 1,
+                      borderColor: palette.border,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      tw`text-xs`,
+                      { color: palette.text },
+                    ]}
+                  >
+                    Exam results
+                  </Text>
+                </TouchableOpacity>
+
+
+            <TouchableOpacity
+              onPress={() =>
+                navigation.navigate('Results', resultsNavParams)
+              }
+              style={[
+                tw`px-3 py-1 rounded-full`,
+                {
+                  backgroundColor: palette.softCard,
+                  borderWidth: 1,
+                  borderColor: palette.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  tw`text-xs`,
+                  { color: palette.text },
+                ]}
+              >
+                Certificates
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() =>
+                navigation.navigate('Courses', courseNavParams)
+              }
+              style={[
+                tw`px-3 py-1 rounded-full`,
+                {
+                  backgroundColor: palette.softCard,
+                  borderWidth: 1,
+                  borderColor: palette.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  tw`text-xs`,
+                  { color: palette.text },
+                ]}
+              >
+                Course library
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => navigation.navigate('OrgProfile')}
+              style={[
+                tw`px-3 py-1 rounded-full`,
+                {
+                  backgroundColor: palette.softCard,
+                  borderWidth: 1,
+                  borderColor: palette.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  tw`text-xs`,
+                  { color: palette.text },
+                ]}
+              >
+                Institution profile
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => navigation.navigate('Help')}
+              style={[
+                tw`px-3 py-1 rounded-full`,
+                {
+                  backgroundColor: palette.softCard,
+                  borderWidth: 1,
+                  borderColor: palette.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  tw`text-xs`,
+                  { color: palette.text },
+                ]}
+              >
+                Help
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 };

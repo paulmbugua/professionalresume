@@ -28,6 +28,13 @@ const fmtHMS = (totalSeconds: number) => {
 const fmtHMSms = (ms: number) => fmtHMS(Math.floor(Math.max(0, ms) / 1000));
 
 type RequestStartArgs = { runId?: string } | void;
+ // Normalize 'quizType' from any raw value
+function normQt(v: unknown): 'mcq' | 'short' | undefined {
+  const s = String(v ?? '').trim().toLowerCase();
+  if (s === 'short') return 'short';
+  if (s === 'mcq') return 'mcq';
+  return undefined;
+}
 
 interface LessonAndQuizProps {
   compactPlayer: boolean;
@@ -246,6 +253,38 @@ const shownLockAlertRef = React.useRef(false);
     timer_s?: number;
     quizType?: 'mcq' | 'short';
   } | null>(null);
+
+  const enforcedQuizType: 'mcq' | 'short' = React.useMemo(() => {
+  const fromQuiz = typeof quiz?.quizType === 'string'
+    ? String(quiz.quizType).toLowerCase()
+    : undefined;
+  const fromOrg = orgMeta?.quizType;
+  const t = (fromQuiz || fromOrg || urlQuizTypeHint || 'mcq') as 'mcq' | 'short';
+  return t === 'short' ? 'short' : 'mcq';
+}, [quiz?.quizType, orgMeta?.quizType, urlQuizTypeHint]);
+
+// What we *ask* the generator to create if we haven't got orgMeta yet
+const desiredQuizType: 'mcq' | 'short' =
+  orgMeta?.quizType ?? urlQuizTypeHint ?? 'mcq';
+
+  // 👉 then your "hydrate workingAnswers" effect, allAnsweredLocal, etc.
+useEffect(() => {
+  const ids = (quiz?.questions || []).map((q: any) => q.id);
+  if (!ids.length) {
+    setWorkingAnswers({});
+    return;
+  }
+  setWorkingAnswers(() => {
+    const next: Record<string, number | string | undefined> = {};
+    const isMcq = enforcedQuizType === 'mcq';
+    for (const q of quiz.questions) {
+      const v = (answers && (answers as any)[q.id]) as number | string | undefined;
+      if (v === undefined) continue;
+      next[q.id] = isMcq ? Number(v) : String(v);
+    }
+    return next;
+  });
+}, [quiz?.questions?.map((q: any) => q.id).join('|'), answers, enforcedQuizType]);
 
   // local retry & working answers (supports number | string)
   const [retakeMode, setRetakeMode] = useState(false);
@@ -486,18 +525,7 @@ if (!ignore) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quiz?.questions?.map((q: any) => q.id).join('|')]);
 
-  // Enforced single quiz type for the whole quiz (no mixing)
-  // Enforced display type (what we *show* and shape questions as)
-const enforcedQuizType: 'mcq' | 'short' = React.useMemo(() => {
-  const fromQuiz = typeof quiz?.quizType === 'string' ? String(quiz.quizType).toLowerCase() : undefined;
-  const fromOrg = orgMeta?.quizType;
-  const t = (fromQuiz || fromOrg || urlQuizTypeHint || 'mcq') as 'mcq' | 'short';
-  return t === 'short' ? 'short' : 'mcq';
-}, [quiz?.quizType, orgMeta?.quizType, urlQuizTypeHint]);
-
-// What we *ask* the generator to create if we haven't got orgMeta yet
-const desiredQuizType: 'mcq' | 'short' = orgMeta?.quizType ?? urlQuizTypeHint ?? 'mcq';
-
+ 
   // Ensure uniform quiz shape
   useEffect(() => {
     if (!quiz) return;
@@ -571,13 +599,7 @@ const remainingMsTicker = Math.max(0, baseMs - elapsedMs);
   function toSup(s: string) { return s.replace(/[0-9+\-]/g, (m) => SUPS[m] || m); }
 
 
-  // Normalize 'quizType' from any raw value
-function normQt(v: unknown): 'mcq' | 'short' | undefined {
-  const s = String(v ?? '').trim().toLowerCase();
-  if (s === 'short') return 'short';
-  if (s === 'mcq') return 'mcq';
-  return undefined;
-}
+ 
   // Selection helpers
   function getActiveShortInput(): HTMLInputElement | HTMLTextAreaElement | null {
   if (typeof document === 'undefined') return lastShortInputRef.current;
@@ -768,13 +790,13 @@ function autoGrow(el: HTMLTextAreaElement) {
             themeOpen={themeOpen}
             onThemeOpenChange={onThemeOpenChange}
             showFloatingThemeButton={false}
-             onRequestStart={async (args?: RequestStartArgs) => {
-              // If the player tries to start but we’re already loaded, ignore
-              if (preparing || (displaySsml && displaySsml.trim()) || (lessonsArr?.length ?? 0) > 0) {
-                return;
-              }
+            onRequestStart={async (args?: RequestStartArgs) => {
+              // Only guard against re-entrancy; idempotence is handled in RobotTeacher.onStart
+              if (preparing) return;
               await onRequestStartGuarded(args);
             }}
+
+
 
             onPlayerLoadingChange={(b: boolean) => {
               // keep your existing preparing toggle
@@ -865,7 +887,7 @@ function autoGrow(el: HTMLTextAreaElement) {
   }}
   onTooManyBackgrounds={() => {
     if (shownLockAlertRef.current) return;
-    shownLockAlertRef.current = false;
+    shownLockAlertRef.current = true;
     if (canSubmit) {
       // fire-and-forget; errors are caught in the submit handler
       (async () => {

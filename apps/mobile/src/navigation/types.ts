@@ -61,7 +61,10 @@ export type MainStackParamList = {
     | undefined;
 
   OrgProfile: undefined;
-  OrgExamResultsPortal: undefined; // 👈 if you have a native exams screen
+  
+  OrgExamResultsPortal:
+    | { view?: 'learner' | 'admin'; studentId?: string | number | null }
+    | undefined;
 
   /* Discovery & tutor */
   FindTutor: { subject?: string } | undefined;

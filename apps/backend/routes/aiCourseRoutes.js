@@ -83,3 +83,4 @@ router.post('/cache/clear-course', clearCourseCache);
 router.post('/cache/clear-top-courses', clearTopCoursesCache);
 
 export default router;
+

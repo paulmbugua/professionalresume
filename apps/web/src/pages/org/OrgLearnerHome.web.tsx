@@ -71,6 +71,12 @@ const OrgLearnerHome: React.FC = () => {
     currentUser ||
     null;
 
+  const learnerUserBase: any =
+    shopUser ||
+    currentUser ||
+    ctxOrgUser ||
+    null;
+
   // Canonical learner user id (this is what exam sheets use as student_user_id)
   const learnerUserId: number | string | null =
     learner?.user_id ??
@@ -129,17 +135,24 @@ const OrgLearnerHome: React.FC = () => {
       : '/org/exams?view=learner';
 
   // ── Display fields: all derived from `learner` ────────────────────────────
-  const learnerName: string =
+   const learnerName: string =
+    learnerUserBase?.name ||
     learner?.name ||
     learner?.full_name ||
     learner?.fullName ||
-    learner?.email || // fallback to email if no name
+    learnerUserBase?.email ||
+    learner?.email ||
     'Learner';
 
-  const learnerEmail: string =
-    learner?.email ||
+
+    const learnerEmail: string =
+    learnerUserBase?.email ||              // primary: actual login email
+    learner?.email ||                      // in case learner is already user-shaped
+    learnerUserBase?.email_address ||
     learner?.email_address ||
-    learner?.guardian_email ||
+    learner?.guardian_email ||             // fallback to guardian email
+    '';
+
     '';
 
   const learnerGrade: string | null =

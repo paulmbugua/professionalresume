@@ -1,7 +1,13 @@
 /* eslint-disable prettier/prettier */
 // apps/mobile/src/screens/ManageProfileForm.native.tsx
 
-import React, { useEffect, useMemo, useCallback } from 'react';
+import React, {
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+  useState,
+} from 'react';
 import {
   ScrollView,
   View,
@@ -25,6 +31,8 @@ import useManageProfileForm from '@mytutorapp/shared/hooks/useManageProfileForm'
 import { COUNTRIES } from '@mytutorapp/shared/utils/countries';
 import type { ChangeEvent } from 'react';
 import type { MainStackParamList } from '../navigation/types';
+import { uploadAsset } from '@mytutorapp/shared/api/uploadAsset';
+import { useThemePref } from '../theme/ThemeContext';
 
 const SUBJECT_CATEGORIES = [
   'Mathematics',
@@ -42,7 +50,10 @@ const makeEvent = (value: string): ChangeEvent<any> =>
   ({ target: { value } } as ChangeEvent<any>);
 
 const hasUri = (obj: unknown): obj is { uri: string } =>
-  typeof obj === 'object' && obj !== null && 'uri' in (obj as any) && typeof (obj as any).uri === 'string';
+  typeof obj === 'object' &&
+  obj !== null &&
+  'uri' in (obj as any) &&
+  typeof (obj as any).uri === 'string';
 
 const resolveAssetUri = (raw: string, backendUrl: string): string => {
   if (!raw) return '';
@@ -59,15 +70,30 @@ const resolveAssetUri = (raw: string, backendUrl: string): string => {
 // token ranges = web
 const TOKEN_RANGES = {
   privateSession: { min: 5, max: 50 },
-  groupSession:   { min: 5, max: 50 },
-  lecture:        { min: 5, max: 100 },
-  workshop:       { min: 5, max: 100 },
+  groupSession: { min: 5, max: 50 },
+  lecture: { min: 5, max: 100 },
+  workshop: { min: 5, max: 100 },
 } as const;
 type TokenField = keyof typeof TOKEN_RANGES;
+
+// Sections we can scroll/highlight
+type SectionKey =
+  | 'personal'
+  | 'country'
+  | 'school'
+  | 'languages'
+  | 'category'
+  | 'pricing'
+  | 'payout';
+
+type ValidationResult =
+  | { ok: true }
+  | { ok: false; msg: string; focus: SectionKey };
 
 export default function ManageProfileFormNative() {
   const navigation = useNavigation<NavigationProp<MainStackParamList>>();
   const { backendUrl, token } = useShopContext();
+  const { resolvedScheme } = useThemePref();
 
   // map web-style paths from the hook to native screen names
   const mappedNavigate = useCallback(
@@ -136,6 +162,37 @@ export default function ManageProfileFormNative() {
   } = useManageProfileForm(mappedNavigate as any);
 
   /* ──────────────────────────────────────────────
+     Scroll to section on validation error
+  ─────────────────────────────────────────────── */
+
+  const scrollRef = useRef<ScrollView | null>(null);
+  const sectionOffsets = useRef<Partial<Record<SectionKey, number>>>({});
+  const [focusSection, setFocusSection] = useState<SectionKey | null>(null);
+
+  const registerSection =
+    (key: SectionKey) =>
+    (e: any): void => {
+      sectionOffsets.current[key] = e.nativeEvent.layout.y;
+    };
+
+  const scrollToSection = (key: SectionKey) => {
+    const y = sectionOffsets.current[key];
+    if (scrollRef.current && typeof y === 'number') {
+      scrollRef.current.scrollTo({
+        y: Math.max(0, y - 24),
+        animated: true,
+      });
+    }
+  };
+
+  // Auto-clear highlight after a short delay
+  useEffect(() => {
+    if (!focusSection) return;
+    const t = setTimeout(() => setFocusSection(null), 2500);
+    return () => clearTimeout(t);
+  }, [focusSection]);
+
+  /* ──────────────────────────────────────────────
      Native image upload (Option B – pre-upload)
   ─────────────────────────────────────────────── */
 
@@ -146,51 +203,18 @@ export default function ManageProfileFormNative() {
       throw new Error('Missing backend configuration.');
     }
 
-    const cleanBackend = backendUrl.replace(/\/+$/, '');
+    const fileLike = {
+      uri: asset.uri,
+      name:
+        (asset as any).fileName ||
+        `profile-${Date.now()}.${
+          (asset.mimeType || 'image/jpeg').split('/')[1] || 'jpg'
+        }`,
+      type: asset.mimeType || 'image/jpeg',
+    };
 
-    // TODO: adjust endpoint + payload to match your backend
-    const UPLOAD_ENDPOINT = `${cleanBackend}/api/upload-asset`;
-
-    const formData = new FormData();
-    formData.append(
-      'file',
-      {
-        uri: asset.uri,
-        name:
-          (asset as any).fileName ||
-          `profile-${Date.now()}.${(asset.mimeType || 'image/jpeg').split('/')[1] || 'jpg'}`,
-        type: asset.mimeType || 'image/jpeg',
-      } as any,
-    );
-    formData.append('kind', 'image');
-
-    const res = await fetch(UPLOAD_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        // Let RN set multipart boundaries
-        Authorization: `Bearer ${token}`,
-      },
-      body: formData,
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`Image upload failed (${res.status}). ${text || ''}`);
-    }
-
-    const data: any = await res.json().catch(() => ({}));
-
-    const url =
-      data.url ||
-      data.secureUrl ||
-      data.secure_url ||
-      data.location ||
-      data.fileUrl ||
-      data.file_url;
-
-    if (!url || typeof url !== 'string') {
-      throw new Error('Upload did not return a usable URL.');
-    }
+    // 👇 Cast fixes TS, runtime still uses uploadAsset.native.ts correctly
+    const url = await uploadAsset(backendUrl, token, fileLike as any, 'image');
 
     return url;
   };
@@ -256,52 +280,108 @@ export default function ManageProfileFormNative() {
     return '';
   }, [updatedData.video, backendUrl]);
 
-  // styles
-  const section = tw`bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4`;
-  const input   = tw`w-full p-3 rounded bg-gray-700 text-white mb-3`;
-  const pillOn  = tw`px-3 py-1 mr-2 mb-2 rounded-full border bg-pink-600 border-pink-500`;
-  const pillOff = tw`px-3 py-1 mr-2 mb-2 rounded-full border bg-gray-700 border-gray-600`;
-  const pickerWrap = tw`overflow-visible z-50 mb-4`;
-  const pickerStyle = tw`bg-gray-700 rounded`;
-  const placeholderColor = '#9CA3AF';
-  const selectedColor = '#fff';
+  /* ──────────────────────────────────────────────
+     Styles (theme-aware, similar to HomePageNative)
+  ─────────────────────────────────────────────── */
 
-  // validation (mirrors web + requires Country & School Grade)
-  const validateBeforeSubmit = (): { ok: true } | { ok: false; msg: string } => {
+  const sectionBase = tw`rounded-2xl p-4 mb-4 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`;
+  const sectionError = tw`border-pink-500 shadow-lg shadow-pink-500/20`;
+  const inputBase = tw`w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-900/60 text-[#0d141c] dark:text-white border border-slate-200 dark:border-white/10 mb-3`;
+  const pillOn = tw`px-3 py-1 mr-2 mb-2 rounded-full bg-pink-600`;
+  const pillOff = tw`px-3 py-1 mr-2 mb-2 rounded-full bg-slate-200 dark:bg-white/5`;
+  const pickerWrap = tw`overflow-visible mb-2`;
+  const pickerStyle = tw`rounded-xl bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-white/10`;
+  const labelText = tw`text-sm font-semibold text-[#0d141c] dark:text-white mb-2`;
+  const helperText = tw`text-xs text-slate-600 dark:text-slate-400 mb-2`;
+
+  const placeholderColor =
+    resolvedScheme === 'dark' ? '#64748B' : '#94A3B8';
+  const selectedColor =
+    resolvedScheme === 'dark' ? '#E5E7EB' : '#0F172A';
+
+  /* ──────────────────────────────────────────────
+     Validation (returns section to focus)
+  ─────────────────────────────────────────────── */
+
+  const validateBeforeSubmit = (): ValidationResult => {
     const minAge = role === 'tutor' ? 18 : 5;
 
-    if (!updatedData.name?.trim()) return { ok: false, msg: 'Please enter your name.' };
-    if (!updatedData.age || updatedData.age < minAge)
-      return { ok: false, msg: `Please enter a valid age (${minAge}+).` };
+    if (!updatedData.name?.trim()) {
+      return { ok: false, msg: 'Please enter your name.', focus: 'personal' };
+    }
+
+    if (!updatedData.age || updatedData.age < minAge) {
+      return {
+        ok: false,
+        msg: `Please enter a valid age (${minAge}+).`,
+        focus: 'personal',
+      };
+    }
 
     const hasLanguage = Object.values(updatedData.languages || {}).some(Boolean);
-    if (!hasLanguage) return { ok: false, msg: 'Select at least one language.' };
+    if (!hasLanguage) {
+      return {
+        ok: false,
+        msg: 'Select at least one language.',
+        focus: 'languages',
+      };
+    }
 
-    if (!updatedData.country) return { ok: false, msg: 'Please select your country.' };
-    if (!updatedData.schoolGrade?.trim())
-      return { ok: false, msg: 'Please enter your school grade / year / level.' };
+    if (!updatedData.country) {
+      return { ok: false, msg: 'Please select your country.', focus: 'country' };
+    }
+
+    if (!updatedData.schoolGrade?.trim()) {
+      return {
+        ok: false,
+        msg: 'Please enter your school grade / year / level.',
+        focus: 'school',
+      };
+    }
 
     if (role === 'tutor') {
-      if (!updatedData.category) return { ok: false, msg: 'Please select a category.' };
+      if (!updatedData.category) {
+        return {
+          ok: false,
+          msg: 'Please select a category.',
+          focus: 'category',
+        };
+      }
 
       for (const key of Object.keys(TOKEN_RANGES) as TokenField[]) {
         const val = updatedData.pricing[key];
         const { min, max } = TOKEN_RANGES[key];
         if (!Number.isFinite(val) || (val as number) < min || (val as number) > max) {
-          return { ok: false, msg: `Set a valid rate for ${key} (${min}–${max}).` };
+          return {
+            ok: false,
+            msg: `Set a valid rate for ${key} (${min}–${max}).`,
+            focus: 'pricing',
+          };
         }
       }
 
       if (updatedData.payoutMethod === 'wise') {
         if (!updatedData.wiseEmail?.trim()) {
-          return { ok: false, msg: 'Enter a valid Wise account email.' };
+          return {
+            ok: false,
+            msg: 'Enter a valid Wise account email.',
+            focus: 'payout',
+          };
         }
       } else if (updatedData.payoutMethod === 'mpesa') {
         if (!updatedData.mpesaPhoneNumber?.trim()) {
-          return { ok: false, msg: 'Enter a valid M-Pesa phone number.' };
+          return {
+            ok: false,
+            msg: 'Enter a valid M-Pesa phone number.',
+            focus: 'payout',
+          };
         }
       } else {
-        return { ok: false, msg: 'Choose Wise or M-Pesa as payout method.' };
+        return {
+          ok: false,
+          msg: 'Choose Wise or M-Pesa as payout method.',
+          focus: 'payout',
+        };
       }
     }
 
@@ -328,22 +408,46 @@ export default function ManageProfileFormNative() {
   }, [videoUri, previewPlayer]);
 
   return (
-    <SafeAreaView style={tw`flex-1 bg-gray-900`} edges={['top', 'left', 'right']}>
+    <SafeAreaView
+      style={tw`flex-1 bg-slate-50 dark:bg-[#0b1016]`}
+      edges={['top', 'left', 'right']}
+    >
       <ScrollView
+        ref={scrollRef}
         style={tw`flex-1`}
-        contentContainerStyle={[tw`p-4`, { paddingBottom: bottomPad }]}
+        contentContainerStyle={[tw`px-4 pb-6`, { paddingBottom: bottomPad }]}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={tw`text-gray-400 mb-2`}>Role: {role || 'Loading…'}</Text>
+        {/* Header */}
+        <View style={tw`mt-2 mb-3`}>
+          <Text style={tw`text-xs text-slate-600 dark:text-slate-400`}>
+            Role: {role || 'Loading…'}
+          </Text>
+          <Text
+            style={tw`mt-1 text-xl font-bold text-[#0d141c] dark:text-white`}
+          >
+            Manage your profile
+          </Text>
+          <Text style={helperText}>
+            Keep this up to date so we can match you with the right learners.
+          </Text>
+        </View>
 
         {/* Personal Info */}
-        <View style={section}>
+        <View
+          style={[
+            sectionBase,
+            focusSection === 'personal' && sectionError,
+          ]}
+          onLayout={registerSection('personal')}
+        >
+          <Text style={labelText}>Personal details</Text>
           <TextInput
             placeholder="Name"
             value={updatedData.name}
             onChangeText={(t) => handleInputChange('name', makeEvent(t))}
             placeholderTextColor={placeholderColor}
-            style={input}
+            style={inputBase}
           />
           <TextInput
             placeholder="Age"
@@ -351,20 +455,29 @@ export default function ManageProfileFormNative() {
             value={updatedData.age ? String(updatedData.age) : ''}
             onChangeText={(t) => handleInputChange('age', makeEvent(t))}
             placeholderTextColor={placeholderColor}
-            style={[input, tw`mb-0`]}
+            style={[inputBase, tw`mb-0`]}
           />
         </View>
 
         {/* Country */}
-        <View style={section}>
-          <Text style={tw`text-gray-300 font-semibold mb-2`}>Country</Text>
+        <View
+          style={[
+            sectionBase,
+            focusSection === 'country' && sectionError,
+          ]}
+          onLayout={registerSection('country')}
+        >
+          <Text style={labelText}>Country</Text>
           <View style={pickerWrap}>
             <Picker
               selectedValue={updatedData.country || ''}
               onValueChange={(v: string) => handleInputChange('country', v)}
-              style={[pickerStyle, { color: updatedData.country ? selectedColor : placeholderColor }]}
+              style={[
+                pickerStyle,
+                { color: updatedData.country ? selectedColor : placeholderColor },
+              ]}
               mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
-              dropdownIconColor="#fff"
+              dropdownIconColor={selectedColor}
             >
               <Picker.Item label="Select your country" value="" color={placeholderColor} />
               {COUNTRIES.map((c) => (
@@ -375,21 +488,38 @@ export default function ManageProfileFormNative() {
         </View>
 
         {/* School Grade / Year / Level */}
-        <View style={section}>
-          <Text style={tw`text-gray-300 font-semibold mb-2`}>School Grade / Year / Level</Text>
+        <View
+          style={[
+            sectionBase,
+            focusSection === 'school' && sectionError,
+          ]}
+          onLayout={registerSection('school')}
+        >
+          <Text style={labelText}>School Grade / Year / Level</Text>
           <TextInput
             placeholder="e.g., Grade 7, Form 2, Year 10, Freshman …"
             value={updatedData.schoolGrade || ''}
             onChangeText={(t) => handleInputChange('schoolGrade', makeEvent(t))}
             placeholderTextColor={placeholderColor}
-            style={input}
+            style={inputBase}
           />
         </View>
 
         {/* Languages */}
-        <View style={section}>
-          <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>Languages</Text>
-          <View style={tw`flex-row flex-wrap`}>
+        <View
+          style={[
+            sectionBase,
+            focusSection === 'languages' && sectionError,
+          ]}
+          onLayout={registerSection('languages')}
+        >
+          <Text style={tw`text-lg mb-1 font-semibold text-[#0d141c] dark:text-white`}>
+            Languages
+          </Text>
+          <Text style={helperText}>
+            Choose at least one language you speak or teach in.
+          </Text>
+          <View style={tw`flex-row flex-wrap mt-1`}>
             {Object.keys(updatedData.languages).map((lang) => {
               const on = !!updatedData.languages[lang];
               return (
@@ -397,25 +527,42 @@ export default function ManageProfileFormNative() {
                   key={lang}
                   onPress={() => handleLanguageSelect(lang)}
                   style={on ? pillOn : pillOff}
+                  activeOpacity={0.9}
                 >
-                  <Text style={on ? tw`text-white` : tw`text-gray-300`}>{lang}</Text>
+                  <Text style={on ? tw`text-white` : tw`text-[#0d141c] dark:text-slate-200`}>
+                    {lang}
+                  </Text>
                 </TouchableOpacity>
               );
             })}
           </View>
         </View>
 
-        {/* Tutor-only */}
+        {/* Tutor-only sections */}
         {role === 'tutor' && (
           <>
             {/* Category */}
-            <View style={section}>
-              <Text style={tw`text-gray-300 font-semibold mb-2`}>Category</Text>
+            <View
+              style={[
+                sectionBase,
+                focusSection === 'category' && sectionError,
+              ]}
+              onLayout={registerSection('category')}
+            >
+              <Text style={labelText}>Category</Text>
+              <Text style={helperText}>
+                This helps learners quickly understand what you teach.
+              </Text>
               <View style={pickerWrap}>
                 <Picker
                   selectedValue={updatedData.category}
                   onValueChange={(val: string) => handleInputChange('category', makeEvent(val))}
-                  style={[pickerStyle, { color: updatedData.category ? selectedColor : placeholderColor }]}
+                  style={[
+                    pickerStyle,
+                    {
+                      color: updatedData.category ? selectedColor : placeholderColor,
+                    },
+                  ]}
                   mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
                   dropdownIconColor={selectedColor}
                 >
@@ -428,13 +575,16 @@ export default function ManageProfileFormNative() {
             </View>
 
             {/* Status */}
-            <View style={section}>
-              <Text style={tw`text-gray-300 font-semibold mb-2`}>Status</Text>
+            <View style={sectionBase}>
+              <Text style={labelText}>Status</Text>
               <View style={pickerWrap}>
                 <Picker
                   selectedValue={updatedData.status}
                   onValueChange={(val: string) => handleInputChange('status', makeEvent(val))}
-                  style={[pickerStyle, { color: updatedData.status ? selectedColor : placeholderColor }]}
+                  style={[
+                    pickerStyle,
+                    { color: updatedData.status ? selectedColor : placeholderColor },
+                  ]}
                   mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
                   dropdownIconColor={selectedColor}
                 >
@@ -450,41 +600,63 @@ export default function ManageProfileFormNative() {
             </View>
 
             {/* Notifications */}
-            <View style={[section, tw`flex-row items-center justify-between`]}>
-              <Text style={tw`text-gray-300`}>Notifications</Text>
+            <View
+              style={[
+                sectionBase,
+                tw`flex-row items-center justify-between`,
+              ]}
+            >
+              <Text style={tw`text-[#0d141c] dark:text-white`}>
+                Notifications
+              </Text>
               <Switch
                 value={!!updatedData.notifications}
                 onValueChange={handleToggleNotifications}
-                trackColor={{ false: '#374151', true: '#ec4899' }}
-                thumbColor="#f9fafb"
+                trackColor={{
+                  false: resolvedScheme === 'dark' ? '#1F2933' : '#E5E7EB',
+                  true: '#ec4899',
+                }}
+                thumbColor={resolvedScheme === 'dark' ? '#F9FAFB' : '#FFFFFF'}
               />
             </View>
 
             {/* Bio */}
-            <View style={section}>
-              <Text style={tw`text-gray-300 font-semibold mb-2`}>Bio</Text>
+            <View style={sectionBase}>
+              <Text style={labelText}>Bio</Text>
+              <Text style={helperText}>
+                Write a short, friendly introduction for your future learners.
+              </Text>
               <TextInput
                 placeholder="Write a brief introduction…"
                 multiline
                 value={updatedData.bio}
                 onChangeText={(t) => handleInputChange('bio', makeEvent(t))}
                 placeholderTextColor={placeholderColor}
-                style={[input, tw`h-24`]}
+                style={[inputBase, tw`h-24`]}
               />
             </View>
 
             {/* Pricing */}
-            <View style={section}>
-              <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>
+            <View
+              style={[
+                sectionBase,
+                focusSection === 'pricing' && sectionError,
+              ]}
+              onLayout={registerSection('pricing')}
+            >
+              <Text style={tw`text-lg font-semibold text-[#0d141c] dark:text-white mb-1`}>
                 Rates (1 token = $1 USD)
               </Text>
-              <View style={tw`flex-row flex-wrap -mx-2`}>
+              <Text style={helperText}>
+                Set your rates within the allowed ranges so learners can book confidently.
+              </Text>
+              <View style={tw`flex-row flex-wrap -mx-2 mt-1`}>
                 {(Object.keys(TOKEN_RANGES) as TokenField[]).map((field) => {
                   const { min, max } = TOKEN_RANGES[field];
                   const label = field.replace(/([A-Z])/g, ' $1');
                   return (
                     <View key={field} style={tw`w-1/2 px-2 mb-3`}>
-                      <Text style={tw`text-sm text-gray-400 mb-1`}>
+                      <Text style={tw`text-xs text-slate-600 dark:text-slate-400 mb-1`}>
                         {label} (Min {min}, Max {max})
                       </Text>
                       <TextInput
@@ -492,7 +664,7 @@ export default function ManageProfileFormNative() {
                         value={String(updatedData.pricing[field] ?? '')}
                         onChangeText={(t) => handlePricingChange(field, t)}
                         placeholderTextColor={placeholderColor}
-                        style={tw`w-full p-2 rounded bg-gray-700 text-gray-200 border border-gray-600`}
+                        style={tw`w-full px-2 py-2 rounded-xl bg-slate-100 dark:bg-slate-900/60 text-[#0d141c] dark:text-white border border-slate-200 dark:border-white/10`}
                       />
                     </View>
                   );
@@ -501,9 +673,14 @@ export default function ManageProfileFormNative() {
             </View>
 
             {/* Expertise */}
-            <View style={section}>
-              <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>Expertise</Text>
-              <View style={tw`flex-row flex-wrap`}>
+            <View style={sectionBase}>
+              <Text style={tw`text-lg text-[#0d141c] dark:text-white mb-1 font-semibold`}>
+                Expertise
+              </Text>
+              <Text style={helperText}>
+                What do you enjoy helping learners with most?
+              </Text>
+              <View style={tw`flex-row flex-wrap mt-1`}>
                 {['Exam Prep', 'Skill Building', 'Homework Help', 'Career Guidance'].map((opt) => {
                   const on = updatedData.expertise.includes(opt);
                   return (
@@ -511,8 +688,11 @@ export default function ManageProfileFormNative() {
                       key={opt}
                       onPress={() => handleExpertiseSelect(opt)}
                       style={on ? pillOn : pillOff}
+                      activeOpacity={0.9}
                     >
-                      <Text style={on ? tw`text-white` : tw`text-gray-300`}>{opt}</Text>
+                      <Text style={on ? tw`text-white` : tw`text-[#0d141c] dark:text-slate-200`}>
+                        {opt}
+                      </Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -520,20 +700,26 @@ export default function ManageProfileFormNative() {
             </View>
 
             {/* Experience Level */}
-            <View style={section}>
-              <Text style={tw`text-gray-300 font-semibold mb-2`}>Experience Level</Text>
+            <View style={sectionBase}>
+              <Text style={labelText}>Experience Level</Text>
               <View style={pickerWrap}>
                 <Picker
                   selectedValue={updatedData.experienceLevel}
                   onValueChange={(val: string) => handleInputChange('experienceLevel', val as any)}
                   style={[
                     pickerStyle,
-                    { color: updatedData.experienceLevel ? selectedColor : placeholderColor },
+                    {
+                      color: updatedData.experienceLevel ? selectedColor : placeholderColor,
+                    },
                   ]}
                   mode={Platform.OS === 'android' ? 'dialog' : 'dropdown'}
                   dropdownIconColor={selectedColor}
                 >
-                  <Picker.Item label="Select experience level…" value="" color={placeholderColor} />
+                  <Picker.Item
+                    label="Select experience level…"
+                    value=""
+                    color={placeholderColor}
+                  />
                   {['Beginner', 'Intermediate', 'Advanced', 'Expert'].map((opt) => (
                     <Picker.Item key={opt} label={opt} value={opt} />
                   ))}
@@ -542,9 +728,14 @@ export default function ManageProfileFormNative() {
             </View>
 
             {/* Teaching Styles */}
-            <View style={section}>
-              <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>Teaching Styles</Text>
-              <View style={tw`flex-row flex-wrap`}>
+            <View style={sectionBase}>
+              <Text style={tw`text-lg text-[#0d141c] dark:text-white mb-1 font-semibold`}>
+                Teaching Styles
+              </Text>
+              <Text style={helperText}>
+                How do you prefer to run your sessions?
+              </Text>
+              <View style={tw`flex-row flex-wrap mt-1`}>
                 {['One-on-One', 'Group', 'Workshop', 'Lecture'].map((s) => {
                   const on = updatedData.teachingStyle.includes(s);
                   return (
@@ -552,8 +743,11 @@ export default function ManageProfileFormNative() {
                       key={s}
                       onPress={() => handleTeachingStyleSelect(s)}
                       style={on ? pillOn : pillOff}
+                      activeOpacity={0.9}
                     >
-                      <Text style={on ? tw`text-white` : tw`text-gray-300`}>{s}</Text>
+                      <Text style={on ? tw`text-white` : tw`text-[#0d141c] dark:text-slate-200`}>
+                        {s}
+                      </Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -561,10 +755,23 @@ export default function ManageProfileFormNative() {
             </View>
 
             {/* Payout Preferences */}
-            <View style={section}>
-              <Text style={tw`text-lg text-gray-300 mb-3 font-semibold`}>Payout Preferences</Text>
+            <View
+              style={[
+                sectionBase,
+                focusSection === 'payout' && sectionError,
+              ]}
+              onLayout={registerSection('payout')}
+            >
+              <Text style={tw`text-lg text-[#0d141c] dark:text-white mb-1 font-semibold`}>
+                Payout Preferences
+              </Text>
+              <Text style={helperText}>
+                Choose how you’d like to receive your earnings.
+              </Text>
 
-              <Text style={tw`text-gray-300 mb-2`}>Payout Method</Text>
+              <Text style={tw`text-sm text-[#0d141c] dark:text-white mb-2`}>
+                Payout Method
+              </Text>
               <View style={pickerWrap}>
                 <Picker
                   selectedValue={updatedData.payoutMethod ?? 'wise'}
@@ -584,12 +791,16 @@ export default function ManageProfileFormNative() {
                 </Picker>
               </View>
 
-              <Text style={tw`text-gray-400 mb-1`}>Payout Currency</Text>
+              <Text style={tw`text-xs text-slate-600 dark:text-slate-400 mb-1`}>
+                Payout Currency
+              </Text>
               <View
-                style={tw`flex-row items-center justify-between bg-gray-700 rounded px-3 py-3 mb-3`}
+                style={tw`flex-row items-center justify-between bg-slate-100 dark:bg-slate-900/60 rounded-xl px-3 py-3 mb-3 border border-slate-200 dark:border-white/10`}
               >
-                <Text style={tw`text-white`}>{payoutCurrency}</Text>
-                <Text style={tw`text-gray-400 text-xs`}>Wise → USD • M-Pesa → KES</Text>
+                <Text style={tw`text-[#0d141c] dark:text-white`}>{payoutCurrency}</Text>
+                <Text style={tw`text-slate-600 dark:text-slate-400 text-xs`}>
+                  Wise → USD • M-Pesa → KES
+                </Text>
               </View>
 
               {updatedData.payoutMethod !== 'mpesa' && (
@@ -598,7 +809,7 @@ export default function ManageProfileFormNative() {
                   value={updatedData.wiseEmail || ''}
                   onChangeText={(t) => setUpdatedData(prev => ({ ...prev, wiseEmail: t }))}
                   placeholderTextColor={placeholderColor}
-                  style={input}
+                  style={inputBase}
                   keyboardType="email-address"
                   autoCapitalize="none"
                 />
@@ -610,21 +821,30 @@ export default function ManageProfileFormNative() {
                   value={updatedData.mpesaPhoneNumber || ''}
                   onChangeText={(t) => setUpdatedData(prev => ({ ...prev, mpesaPhoneNumber: t }))}
                   placeholderTextColor={placeholderColor}
-                  style={input}
+                  style={inputBase}
                   keyboardType="phone-pad"
                 />
               )}
             </View>
 
             {/* Profile Image */}
-            <View style={section}>
-              <Text style={tw`text-gray-300 font-semibold mb-2`}>Upload Profile Image</Text>
-              <View style={tw`w-40 h-40 rounded-lg overflow-hidden bg-gray-700 border border-gray-600`}>
+            <View style={sectionBase}>
+              <Text style={labelText}>Profile image</Text>
+              <Text style={helperText}>
+                A clear, friendly photo builds trust with learners.
+              </Text>
+              <View
+                style={tw`w-40 h-40 rounded-2xl overflow-hidden bg-slate-200 dark:bg-white/5 border border-slate-200 dark:border-white/10`}
+              >
                 {imageUri ? (
-                  <Image source={{ uri: imageUri }} style={tw`w-full h-full`} resizeMode="cover" />
+                  <Image
+                    source={{ uri: imageUri }}
+                    style={tw`w-full h-full`}
+                    resizeMode="cover"
+                  />
                 ) : (
                   <View style={tw`flex-1 items-center justify-center`}>
-                    <Text style={tw`text-gray-400`}>No image</Text>
+                    <Text style={tw`text-slate-500 dark:text-slate-400`}>No image</Text>
                   </View>
                 )}
               </View>
@@ -633,21 +853,24 @@ export default function ManageProfileFormNative() {
                   <>
                     <TouchableOpacity
                       onPress={pickImage}
-                      style={tw`bg-pink-600 px-3 py-2 rounded mr-2`}
+                      style={tw`bg-pink-600 px-3 py-2 rounded-xl mr-2`}
+                      activeOpacity={0.9}
                     >
                       <Text style={tw`text-white`}>Replace</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() => handleDeleteImage(0)}
-                      style={tw`bg-gray-700 px-3 py-2 rounded`}
+                      style={tw`bg-slate-200 dark:bg-slate-800 px-3 py-2 rounded-xl`}
+                      activeOpacity={0.9}
                     >
-                      <Text style={tw`text-white`}>Delete</Text>
+                      <Text style={tw`text-[#0d141c] dark:text-white`}>Delete</Text>
                     </TouchableOpacity>
                   </>
                 ) : (
                   <TouchableOpacity
                     onPress={pickImage}
-                    style={tw`bg-pink-600 px-3 py-2 rounded`}
+                    style={tw`bg-pink-600 px-3 py-2 rounded-xl`}
+                    activeOpacity={0.9}
                   >
                     <Text style={tw`text-white`}>Upload</Text>
                   </TouchableOpacity>
@@ -656,9 +879,12 @@ export default function ManageProfileFormNative() {
             </View>
 
             {/* Video */}
-            <View style={section}>
-              <Text style={tw`text-gray-300 font-semibold mb-2`}>Uploaded Video</Text>
-              <View style={tw`rounded-lg overflow-hidden bg-black`}>
+            <View style={sectionBase}>
+              <Text style={labelText}>Intro video (optional)</Text>
+              <Text style={helperText}>
+                A short intro video can greatly improve your chances of being booked.
+              </Text>
+              <View style={tw`rounded-2xl overflow-hidden bg-black`}>
                 {videoUri ? (
                   <VideoView
                     player={previewPlayer}
@@ -669,8 +895,12 @@ export default function ManageProfileFormNative() {
                     allowsPictureInPicture
                   />
                 ) : (
-                  <View style={tw`w-full h-40 items-center justify-center bg-gray-700`}>
-                    <Text style={tw`text-gray-300`}>No video uploaded</Text>
+                  <View
+                    style={tw`w-full h-40 items-center justify-center bg-slate-200 dark:bg-white/5`}
+                  >
+                    <Text style={tw`text-slate-600 dark:text-slate-300`}>
+                      No video uploaded
+                    </Text>
                   </View>
                 )}
               </View>
@@ -679,21 +909,24 @@ export default function ManageProfileFormNative() {
                   <>
                     <TouchableOpacity
                       onPress={replaceVideo}
-                      style={tw`bg-pink-600 px-3 py-2 rounded mr-2`}
+                      style={tw`bg-pink-600 px-3 py-2 rounded-xl mr-2`}
+                      activeOpacity={0.9}
                     >
                       <Text style={tw`text-white`}>Replace</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={handleDeleteVideo}
-                      style={tw`bg-gray-700 px-3 py-2 rounded`}
+                      style={tw`bg-slate-200 dark:bg-slate-800 px-3 py-2 rounded-xl`}
+                      activeOpacity={0.9}
                     >
-                      <Text style={tw`text-white`}>Delete</Text>
+                      <Text style={tw`text-[#0d141c] dark:text-white`}>Delete</Text>
                     </TouchableOpacity>
                   </>
                 ) : (
                   <TouchableOpacity
                     onPress={replaceVideo}
-                    style={tw`bg-pink-600 px-3 py-2 rounded`}
+                    style={tw`bg-pink-600 px-3 py-2 rounded-xl`}
+                    activeOpacity={0.9}
                   >
                     <Text style={tw`text-white`}>Upload</Text>
                   </TouchableOpacity>
@@ -702,25 +935,31 @@ export default function ManageProfileFormNative() {
             </View>
 
             {/* Recommendations */}
-            <View style={section}>
-              <Text style={tw`text-gray-300 font-semibold mb-2`}>Recommendations</Text>
+            <View style={sectionBase}>
+              <Text style={labelText}>Recommendations</Text>
+              <Text style={helperText}>
+                Add other tutors you’d personally recommend to your learners.
+              </Text>
               <TextInput
                 placeholder="Search profiles…"
                 onChangeText={(t) => handleSearch(makeEvent(t))}
                 placeholderTextColor={placeholderColor}
-                style={input}
+                style={inputBase}
               />
               {searchResults.length > 0 && (
-                <View style={tw`bg-gray-700 rounded p-2 mt-2`}>
+                <View
+                  style={tw`bg-slate-100 dark:bg-slate-900/60 rounded-xl p-2 mt-2 border border-slate-200 dark:border-white/10`}
+                >
                   {searchResults.map((p) => (
                     <View
                       key={p._id}
-                      style={tw`flex-row items-center justify-between p-2 border-b border-gray-600 last:border-b-0`}
+                      style={tw`flex-row items-center justify-between p-2 border-b border-slate-200 dark:border-white/10 last:border-b-0`}
                     >
-                      <Text style={tw`text-white`}>{p.name}</Text>
+                      <Text style={tw`text-[#0d141c] dark:text-white`}>{p.name}</Text>
                       <TouchableOpacity
                         onPress={() => handleAddRecommendation(p._id)}
-                        style={tw`bg-pink-600 px-3 py-1 rounded`}
+                        style={tw`bg-pink-600 px-3 py-1 rounded-xl`}
+                        activeOpacity={0.9}
                       >
                         <Text style={tw`text-white text-sm`}>Add</Text>
                       </TouchableOpacity>
@@ -729,7 +968,9 @@ export default function ManageProfileFormNative() {
                 </View>
               )}
 
-              <Text style={tw`text-gray-300 font-semibold mt-3 mb-2`}>Selected</Text>
+              <Text style={tw`text-sm font-semibold text-[#0d141c] dark:text-white mt-3 mb-2`}>
+                Selected
+              </Text>
               {updatedData.recommended.length > 0 ? (
                 updatedData.recommended.map((id) => {
                   const prof = availableProfiles.find(
@@ -739,17 +980,21 @@ export default function ManageProfileFormNative() {
                   return (
                     <View
                       key={id}
-                      style={tw`flex-row items-center justify-between bg-gray-700 p-3 rounded mb-2`}
+                      style={tw`flex-row items-center justify-between bg-slate-100 dark:bg-slate-900/60 p-3 rounded-xl mb-2 border border-slate-200 dark:border-white/10`}
                     >
-                      <Text style={tw`text-white flex-1`}>{prof.name}</Text>
+                      <Text style={tw`text-[#0d141c] dark:text-white flex-1`}>
+                        {prof.name}
+                      </Text>
                       <TouchableOpacity onPress={() => handleRemoveRecommendation(id)}>
-                        <Text style={tw`text-red-400 text-lg`}>✕</Text>
+                        <Text style={tw`text-red-500 text-lg`}>✕</Text>
                       </TouchableOpacity>
                     </View>
                   );
                 })
               ) : (
-                <Text style={tw`text-gray-500`}>No recommendations.</Text>
+                <Text style={tw`text-slate-500 dark:text-slate-400`}>
+                  No recommendations.
+                </Text>
               )}
             </View>
           </>
@@ -761,12 +1006,17 @@ export default function ManageProfileFormNative() {
           onPress={() => {
             const v = validateBeforeSubmit();
             if (!v.ok) {
+              setFocusSection(v.focus);
+              scrollToSection(v.focus);
               Alert.alert('Fix required', v.msg);
               return;
             }
             handleSubmit();
           }}
-          style={tw`bg-pink-600 py-3 rounded-lg items-center`}
+          style={tw`mt-2 mb-6 bg-pink-600 py-3 rounded-2xl items-center opacity-100 ${
+            isUploading ? 'opacity-80' : ''
+          }`}
+          activeOpacity={0.9}
         >
           <Text style={tw`text-white font-semibold`}>
             {isUploading ? 'Updating…' : 'Update Profile'}

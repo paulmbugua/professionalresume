@@ -4,31 +4,6 @@
 // 🔹 Utility & Core Types
 // -------------------------------------------------------------
 export type GalleryImage = File | string | null;
-/** How AI should shape language-learning content */
-export type LanguageMode = 'generic' | 'language_course' | 'bilingual_phrases';
-
-export interface LanguageConfig {
-  /** UI / base language (learner already knows) – ISO 639-1 */
-  sourceLangCode: string;       // e.g. "en"
-  /** Target / learning language – ISO 639-1 */
-  targetLangCode: string;       // e.g. "de"
-  /** Human-readable labels for UI + prompts */
-  sourceLabel: string;          // e.g. "English"
-  targetLabel: string;          // e.g. "German"
-
-  /** How to shape content */
-  mode: LanguageMode;
-
-  /** If true, narration should be mostly target language (very light L1). */
-  targetSpeechOnly?: boolean;
-
-  /** Optional hint passed straight into prompts */
-  styleHint?: string;           // e.g. "A1 beginner, travel phrases"
-
-  /** Optional explicit SSML xml:lang override (e.g. "de-DE") */
-  ttsLang?: string;
-}
-
 export type LanguageMap = Record<string, boolean>;
 export type Role = 'student' | 'tutor';
 export type LegacySize = 'micro' | 'short' | 'standard' | 'deep_dive';
@@ -723,7 +698,6 @@ export interface AiOutlineRequest extends AiSizingKnobs {
   courseId?: string;
   title?: string;
   assignmentId?: string;
-  languageConfig?: LanguageConfig;   // NEW
 }
 
 export interface AiLessonSSMLRequest extends AiSizingKnobs {
@@ -733,8 +707,6 @@ export interface AiLessonSSMLRequest extends AiSizingKnobs {
   count?: number;
   start?: number;
   assignmentId?: string;
-  noPrewarm?: 1 | 0;
-  languageConfig?: LanguageConfig;
 }
 
 export interface AiQuizRequest extends AiSizingKnobs {
@@ -744,7 +716,6 @@ export interface AiQuizRequest extends AiSizingKnobs {
   assignmentId?: string;
   quizType?: 'mcq' | 'short';
   lessonIndex?: number;
-  languageConfig?: LanguageConfig;
 }
 
 export type AiOutlineResponse = {

@@ -125,6 +125,29 @@ type HookResult = ReturnType<typeof useAccountSection> & {
   setRatingData: (v: { rating: string; comment: string }) => void;
 };
 
+// --- Session form validation types (web parity) -----------------------------
+
+type SessionFormErrors = {
+  tutorId?: string;
+  subject?: string;
+  sessionType?: string;
+  date?: string;
+};
+
+const sessionLabelFor: Record<string, string> = {
+  tutorId: 'Tutor',
+  subject: 'Subject',
+  sessionType: 'Session type',
+  date: 'Session date',
+};
+
+const buildSessionBannerFromErrors = (errs: SessionFormErrors) => {
+  const keys = Object.keys(errs);
+  if (!keys.length) return '';
+  const items = keys.map((k) => sessionLabelFor[k] || k);
+  return `Please complete: ${items.join(' • ')}.`;
+};
+
 const AccountSectionNative: React.FC = () => {
   const { backendUrl } = useShopContext();
   const navigation = useNavigation<NavigationProp<MainStackParamList>>();
@@ -132,6 +155,10 @@ const AccountSectionNative: React.FC = () => {
 
   // Track which session IDs have missing-reason errors (for red borders)
   const [cancelError, setCancelError] = useState<Record<string, boolean>>({});
+
+  // 🔴 Session form validation state (web parity)
+  const [sessionFormErrors, setSessionFormErrors] = useState<SessionFormErrors>({});
+  const [sessionBanner, setSessionBanner] = useState<string>('');
 
   // Strongly-typed params alias (includes optional tab)
   const params: MainStackParamList['Account'] = route.params ?? {};
@@ -284,7 +311,7 @@ const AccountSectionNative: React.FC = () => {
   const [withdrawAmount, setWithdrawAmount] = useState<string>('');
   const minAmount = MIN_WITHDRAW[payoutCurrency];
 
-  // Sync tab from query (?tab=sessions)
+  // Sync tab from params (web-style ?tab=)
   useEffect(() => {
     const desired = params.tab;
     if (desired && desired !== activeTab) {
@@ -392,6 +419,30 @@ const AccountSectionNative: React.FC = () => {
     ...(role === 'tutor' ? (['earnings'] as const) : []),
   ];
 
+  // --- Session form validate (native version of web's validateSessionForm) ----
+  const validateSessionForm = (): boolean => {
+    const errs: SessionFormErrors = {};
+
+    if (!formData.tutorId) {
+      errs.tutorId =
+        'Choose a tutor by visiting their profile and tapping "Create Session".';
+    }
+    if (!formData.subject?.trim()) {
+      errs.subject = 'Enter the subject or topic for this session.';
+    }
+    if (!formData.sessionType) {
+      errs.sessionType = 'Select a session type.';
+    }
+    if (!formData.date) {
+      errs.date = 'Pick a preferred date for the session.';
+    }
+
+    setSessionFormErrors(errs);
+    setSessionBanner(buildSessionBannerFromErrors(errs));
+
+    return Object.keys(errs).length === 0;
+  };
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
@@ -415,20 +466,20 @@ const AccountSectionNative: React.FC = () => {
                     : `${backendUrl}${user.profileImage}`
                   : 'https://ui-avatars.com/api/?name=Tutor&background=e7edf4&color=0d141c',
               }}
-              style={tw`w-16 h-16 rounded-full mr-4 bg-[#e7edf4] dark:bg-white/5`}
+              style={tw`w-16 h-16 rounded-full mr-4 bg-[#e7edf4] dark:bg:white/5`}
             />
           )}
           <View style={tw`flex-1`}>
             <Text style={tw`text-[20px] font-extrabold text-slate-900 dark:text-white`}>
               {user?.name || 'User Name'}
             </Text>
-            <Text style={tw`text-xs text-[#49739c] dark:text-white/70 mt-0.5`}>
+            <Text style={tw`text-xs text-[#49739c] dark:text:white/70 mt-0.5`}>
               {user?.email ?? ''}
             </Text>
             {role === 'student' && (
-              <Text style={tw`text-xs text-[#49739c] dark:text-white/70 mt-1`}>
+              <Text style={tw`text-xs text-[#49739c] dark:text:white/70 mt-1`}>
                 Tokens:{' '}
-                <Text style={tw`font-semibold text-slate-900 dark:text-white`}>
+                <Text style={tw`font-semibold text-slate-900 dark:text:white`}>
                   {user.tokens ?? 0}
                 </Text>
               </Text>
@@ -457,7 +508,7 @@ const AccountSectionNative: React.FC = () => {
                 <Text
                   style={tw.style(
                     'text-xs font-semibold',
-                    isActive ? 'text-white' : 'text-[#0d141c] dark:text-white/80'
+                    isActive ? 'text-white' : 'text-[#0d141c] dark:text:white/80'
                   )}
                 >
                   {tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -479,7 +530,7 @@ const AccountSectionNative: React.FC = () => {
               style={tw`rounded-2xl p-4 bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}
             >
               <Text
-                style={tw`text-base text-[#49739c] dark:text-white/70 text-center`}
+                style={tw`text-base text-[#49739c] dark:text:white/70 text-center`}
               >
                 Welcome to your account overview.
               </Text>
@@ -490,7 +541,7 @@ const AccountSectionNative: React.FC = () => {
           {activeTab === 'transactions' && (
             <View>
               <Text
-                style={tw`text-xl font-bold text-slate-900 dark:text-white mb-3`}
+                style={tw`text-xl font-bold text-slate-900 dark:text:white mb-3`}
               >
                 Transaction History
               </Text>
@@ -503,10 +554,10 @@ const AccountSectionNative: React.FC = () => {
                     <View style={tw`flex-row flex-wrap`}>
                       <View style={tw`w-full mb-1`}>
                         <Text
-                          style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                          style={tw`text-xs text-[#49739c] dark:text:white/70`}
                         >
                           <Text
-                            style={tw`font-semibold text-slate-900 dark:text-white`}
+                            style={tw`font-semibold text-slate-900 dark:text:white`}
                           >
                             Type:{' '}
                           </Text>
@@ -515,10 +566,10 @@ const AccountSectionNative: React.FC = () => {
                       </View>
                       <View style={tw`w-full mb-1`}>
                         <Text
-                          style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                          style={tw`text-xs text-[#49739c] dark:text:white/70`}
                         >
                           <Text
-                            style={tw`font-semibold text-slate-900 dark:text-white`}
+                            style={tw`font-semibold text-slate-900 dark:text:white`}
                           >
                             Amount:{' '}
                           </Text>
@@ -530,10 +581,10 @@ const AccountSectionNative: React.FC = () => {
                       </View>
                       <View style={tw`w-full mb-1`}>
                         <Text
-                          style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                          style={tw`text-xs text-[#49739c] dark:text:white/70`}
                         >
                           <Text
-                            style={tw`font-semibold text-slate-900 dark:text-white`}
+                            style={tw`font-semibold text-slate-900 dark:text:white`}
                           >
                             Kind:{' '}
                           </Text>
@@ -542,10 +593,10 @@ const AccountSectionNative: React.FC = () => {
                       </View>
                       <View style={tw`w-full mb-1`}>
                         <Text
-                          style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                          style={tw`text-xs text-[#49739c] dark:text:white/70`}
                         >
                           <Text
-                            style={tw`font-semibold text-slate-900 dark:text-white`}
+                            style={tw`font-semibold text-slate-900 dark:text:white`}
                           >
                             Status:{' '}
                           </Text>
@@ -554,10 +605,10 @@ const AccountSectionNative: React.FC = () => {
                       </View>
                       <View style={tw`w-full mb-1`}>
                         <Text
-                          style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                          style={tw`text-xs text-[#49739c] dark:text:white/70`}
                         >
                           <Text
-                            style={tw`font-semibold text-slate-900 dark:text-white`}
+                            style={tw`font-semibold text-slate-900 dark:text:white`}
                           >
                             Description:{' '}
                           </Text>
@@ -566,10 +617,10 @@ const AccountSectionNative: React.FC = () => {
                       </View>
                       <View style={tw`w-full mb-1`}>
                         <Text
-                          style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                          style={tw`text-xs text-[#49739c] dark:text:white/70`}
                         >
                           <Text
-                            style={tw`font-semibold text-slate-900 dark:text-white`}
+                            style={tw`font-semibold text-slate-900 dark:text:white`}
                           >
                             Date:{' '}
                           </Text>
@@ -580,7 +631,7 @@ const AccountSectionNative: React.FC = () => {
                   </View>
                 ))
               ) : (
-                <Text style={tw`text-xs text-[#49739c] dark:text-white/70`}>
+                <Text style={tw`text-xs text-[#49739c] dark:text:white/70`}>
                   No transactions found.
                 </Text>
               )}
@@ -594,9 +645,25 @@ const AccountSectionNative: React.FC = () => {
               <View
                 style={tw`max-w-[680px] self-center w-full p-4 rounded-2xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10 mb-4`}
               >
+                {/* Top error banner (web parity) */}
+                {!!sessionBanner && (
+                  <View
+                    style={tw`mb-3 rounded-lg border border-red-400 bg-red-50 dark:bg-red-900/30 px-3 py-2`}
+                  >
+                    <Text style={tw`text-xs text-red-800 dark:text-red-100`}>
+                      {sessionBanner}
+                    </Text>
+                  </View>
+                )}
+
                 {!formData.tutorId && (
                   <View
-                    style={tw`p-2 bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-500 rounded mb-3`}
+                    style={tw.style(
+                      'p-2 border-l-4 rounded mb-3',
+                      sessionFormErrors.tutorId
+                        ? 'bg-red-50 border-red-500'
+                        : 'bg-amber-50 border-amber-500 dark:bg-amber-900/20'
+                    )}
                   >
                     <Text
                       style={tw`text-xs text-amber-800 dark:text-amber-100`}
@@ -604,10 +671,17 @@ const AccountSectionNative: React.FC = () => {
                       To create a session, visit a tutor’s profile and tap
                       “Create Session.”
                     </Text>
+                    {sessionFormErrors.tutorId && (
+                      <Text
+                        style={tw`mt-1 text-[11px] text-red-700 dark:text-red-200`}
+                      >
+                        {sessionFormErrors.tutorId}
+                      </Text>
+                    )}
                   </View>
                 )}
                 <Text
-                  style={tw`text-lg font-bold text-slate-900 dark:text-white mb-3`}
+                  style={tw`text-lg font-bold text-slate-900 dark:text:white mb-3`}
                 >
                   {formData.tutorName
                     ? `Session with ${formData.tutorName}`
@@ -619,13 +693,36 @@ const AccountSectionNative: React.FC = () => {
                   placeholder="Subject"
                   placeholderTextColor="#93a3b0"
                   value={formData.subject}
-                  onChangeText={(t) => setFormData({ ...formData, subject: t })}
-                  style={tw`w-full p-3 rounded-xl text-slate-900 dark:text-white bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 mb-3`}
+                  onChangeText={(t) => {
+                    setFormData({ ...formData, subject: t });
+                    if (sessionFormErrors.subject) {
+                      const { subject, ...rest } = sessionFormErrors;
+                      setSessionFormErrors(rest);
+                    }
+                  }}
+                  style={tw.style(
+                    'w-full p-3 rounded-xl text-slate-900 dark:text:white bg-[#e7edf4] dark:bg-[#172534] border mb-1',
+                    sessionFormErrors.subject
+                      ? 'border-red-500'
+                      : 'border-[#cedbe8] dark:border-white/10'
+                  )}
                 />
+                {sessionFormErrors.subject && (
+                  <Text
+                    style={tw`mb-2 text-[11px] text-red-600 dark:text-red-400`}
+                  >
+                    {sessionFormErrors.subject}
+                  </Text>
+                )}
 
                 {/* Session Type (from pricing map) */}
                 <View
-                  style={tw`bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 rounded-xl mb-3 overflow-hidden`}
+                  style={tw.style(
+                    'bg-[#e7edf4] dark:bg-[#172534] border rounded-xl mb-1 overflow-hidden',
+                    sessionFormErrors.sessionType
+                      ? 'border-red-500'
+                      : 'border-[#cedbe8] dark:border-white/10'
+                  )}
                 >
                   <Picker
                     selectedValue={formData.sessionType || ''}
@@ -636,9 +733,13 @@ const AccountSectionNative: React.FC = () => {
                         ] ?? 0
                       );
                       setFormData({ ...formData, sessionType, sessionCost });
+                      if (sessionFormErrors.sessionType) {
+                        const { sessionType: _st, ...rest } = sessionFormErrors;
+                        setSessionFormErrors(rest);
+                      }
                     }}
                     dropdownIconColor="#64748b"
-                    style={tw`text-slate-900 dark:text-white`}
+                    style={tw`text-slate-900 dark:text:white`}
                   >
                     <Picker.Item label="Select Session Type" value="" />
                     {formData.pricing &&
@@ -651,16 +752,35 @@ const AccountSectionNative: React.FC = () => {
                       ))}
                   </Picker>
                 </View>
+                {sessionFormErrors.sessionType && (
+                  <Text
+                    style={tw`mb-2 text-[11px] text-red-600 dark:text-red-400`}
+                  >
+                    {sessionFormErrors.sessionType}
+                  </Text>
+                )}
 
                 {/* Date */}
                 <TouchableOpacity
                   onPress={() => setShowDatePicker(true)}
-                  style={tw`bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 rounded-xl p-3`}
+                  style={tw.style(
+                    'bg-[#e7edf4] dark:bg-[#172534] border rounded-xl p-3',
+                    sessionFormErrors.date
+                      ? 'border-red-500'
+                      : 'border-[#cedbe8] dark:border-white/10'
+                  )}
                 >
-                  <Text style={tw`text-sm text-slate-900 dark:text-white`}>
+                  <Text style={tw`text-sm text-slate-900 dark:text:white`}>
                     {formData.date || 'Select date'}
                   </Text>
                 </TouchableOpacity>
+                {sessionFormErrors.date && (
+                  <Text
+                    style={tw`mt-1 mb-2 text-[11px] text-red-600 dark:text-red-400`}
+                  >
+                    {sessionFormErrors.date}
+                  </Text>
+                )}
                 {showDatePicker && (
                   <DateTimePicker
                     value={dateValue}
@@ -673,6 +793,10 @@ const AccountSectionNative: React.FC = () => {
                           ...formData,
                           date: d.toISOString().slice(0, 10),
                         });
+                        if (sessionFormErrors.date) {
+                          const { date, ...rest } = sessionFormErrors;
+                          setSessionFormErrors(rest);
+                        }
                       }
                     }}
                   />
@@ -681,6 +805,13 @@ const AccountSectionNative: React.FC = () => {
                 {/* Submit */}
                 <TouchableOpacity
                   onPress={async () => {
+                    // reset previous errors/banner
+                    setSessionFormErrors({});
+                    setSessionBanner('');
+
+                    const ok = validateSessionForm();
+                    if (!ok) return;
+
                     await handleSessionCreation();
                     setJustCreated(true);
                     await notifyNow(
@@ -712,7 +843,7 @@ const AccountSectionNative: React.FC = () => {
                   style={tw`p-4 rounded-2xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}
                 >
                   <Text
-                    style={tw`text-xl font-bold text-slate-900 dark:text-white mb-2`}
+                    style={tw`text-xl font-bold text-slate-900 dark:text:white mb-2`}
                   >
                     Your Sessions
                   </Text>
@@ -725,10 +856,10 @@ const AccountSectionNative: React.FC = () => {
                         <View style={tw`flex-row flex-wrap`}>
                           <View style={tw`w-full mb-1`}>
                             <Text
-                              style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                              style={tw`text-xs text-[#49739c] dark:text:white/70`}
                             >
                               <Text
-                                style={tw`font-semibold text-slate-900 dark:text-white`}
+                                style={tw`font-semibold text-slate-900 dark:text:white`}
                               >
                                 Tutor:{' '}
                               </Text>
@@ -737,10 +868,10 @@ const AccountSectionNative: React.FC = () => {
                           </View>
                           <View style={tw`w-full mb-1`}>
                             <Text
-                              style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                              style={tw`text-xs text-[#49739c] dark:text:white/70`}
                             >
                               <Text
-                                style={tw`font-semibold text-slate-900 dark:text-white`}
+                                style={tw`font-semibold text-slate-900 dark:text:white`}
                               >
                                 Type:{' '}
                               </Text>
@@ -749,10 +880,10 @@ const AccountSectionNative: React.FC = () => {
                           </View>
                           <View style={tw`w-full mb-1`}>
                             <Text
-                              style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                              style={tw`text-xs text-[#49739c] dark:text:white/70`}
                             >
                               <Text
-                                style={tw`font-semibold text-slate-900 dark:text-white`}
+                                style={tw`font-semibold text-slate-900 dark:text:white`}
                               >
                                 Subject:{' '}
                               </Text>
@@ -761,10 +892,10 @@ const AccountSectionNative: React.FC = () => {
                           </View>
                           <View style={tw`w-full mb-1`}>
                             <Text
-                              style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                              style={tw`text-xs text-[#49739c] dark:text:white/70`}
                             >
                               <Text
-                                style={tw`font-semibold text-slate-900 dark:text-white`}
+                                style={tw`font-semibold text-slate-900 dark:text:white`}
                               >
                                 Cost:{' '}
                               </Text>
@@ -773,10 +904,10 @@ const AccountSectionNative: React.FC = () => {
                           </View>
                           <View style={tw`w-full mb-1`}>
                             <Text
-                              style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                              style={tw`text-xs text-[#49739c] dark:text:white/70`}
                             >
                               <Text
-                                style={tw`font-semibold text-slate-900 dark:text-white`}
+                                style={tw`font-semibold text-slate-900 dark:text:white`}
                               >
                                 Date:{' '}
                               </Text>
@@ -785,10 +916,10 @@ const AccountSectionNative: React.FC = () => {
                           </View>
                           <View style={tw`w-full mb-1`}>
                             <Text
-                              style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                              style={tw`text-xs text-[#49739c] dark:text:white/70`}
                             >
                               <Text
-                                style={tw`font-semibold text-slate-900 dark:text-white`}
+                                style={tw`font-semibold text-slate-900 dark:text:white`}
                               >
                                 Status:{' '}
                               </Text>
@@ -822,7 +953,7 @@ const AccountSectionNative: React.FC = () => {
                               </View>
                             ) : (
                               <Text
-                                style={tw`mt-3 text-xs text-[#49739c] dark:text-white/70 italic`}
+                                style={tw`mt-3 text-xs text-[#49739c] dark:text:white/70 italic`}
                               >
                                 Please wait for the tutor to create Zoom links.
                               </Text>
@@ -841,7 +972,7 @@ const AccountSectionNative: React.FC = () => {
                                 handleCancelReasonChange(String(session.id), t);
                               }}
                               style={tw.style(
-                                'mt-3 w-full p-3 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-[#0f1821] border',
+                                'mt-3 w-full p-3 rounded-xl text-slate-900 dark:text:white bg-white dark:bg-[#0f1821] border',
                                 cancelError[String(session.id)]
                                   ? 'border-red-500'
                                   : 'border-[#cedbe8] dark:border-white/10'
@@ -915,7 +1046,7 @@ const AccountSectionNative: React.FC = () => {
                     ))
                   ) : (
                     <Text
-                      style={tw`text-xs text-[#49739c] dark:text-white/70 text-center`}
+                      style={tw`text-xs text-[#49739c] dark:text:white/70 text-center`}
                     >
                       No sessions yet.
                     </Text>
@@ -936,7 +1067,7 @@ const AccountSectionNative: React.FC = () => {
                 style={tw`p-4 rounded-2xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}
               >
                 <Text
-                  style={tw`text-xl font-bold text-slate-900 dark:text-white mb-2`}
+                  style={tw`text-xl font-bold text-slate-900 dark:text:white mb-2`}
                 >
                   Your Upcoming Sessions
                 </Text>
@@ -949,10 +1080,10 @@ const AccountSectionNative: React.FC = () => {
                       <View style={tw`flex-row flex-wrap`}>
                         <View style={tw`w-full mb-1`}>
                           <Text
-                            style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                            style={tw`text-xs text-[#49739c] dark:text:white/70`}
                           >
                             <Text
-                              style={tw`font-semibold text-slate-900 dark:text-white`}
+                              style={tw`font-semibold text-slate-900 dark:text:white`}
                             >
                               Student:{' '}
                             </Text>
@@ -961,10 +1092,10 @@ const AccountSectionNative: React.FC = () => {
                         </View>
                         <View style={tw`w-full mb-1`}>
                           <Text
-                            style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                            style={tw`text-xs text-[#49739c] dark:text:white/70`}
                           >
                             <Text
-                              style={tw`font-semibold text-slate-900 dark:text-white`}
+                              style={tw`font-semibold text-slate-900 dark:text:white`}
                             >
                               Type:{' '}
                             </Text>
@@ -973,10 +1104,10 @@ const AccountSectionNative: React.FC = () => {
                         </View>
                         <View style={tw`w-full mb-1`}>
                           <Text
-                            style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                            style={tw`text-xs text-[#49739c] dark:text:white/70`}
                           >
                             <Text
-                              style={tw`font-semibold text-slate-900 dark:text-white`}
+                              style={tw`font-semibold text-slate-900 dark:text:white`}
                             >
                               Date:{' '}
                             </Text>
@@ -1020,7 +1151,7 @@ const AccountSectionNative: React.FC = () => {
                               handleCancelReasonChange(String(session.id), t);
                             }}
                             style={tw.style(
-                              'min-h-[42px] p-3 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-[#0f1821] border',
+                              'min-h-[42px] p-3 rounded-xl text-slate-900 dark:text:white bg-white dark:bg-[#0f1821] border',
                               cancelError[String(session.id)]
                                 ? 'border-red-500'
                                 : 'border-[#cedbe8] dark:border-white/10'
@@ -1156,7 +1287,7 @@ const AccountSectionNative: React.FC = () => {
                   ))
                 ) : (
                   <Text
-                    style={tw`text-xs text-[#49739c] dark:text-white/70 text-center`}
+                    style={tw`text-xs text-[#49739c] dark:text:white/70 text-center`}
                   >
                     No upcoming sessions.
                   </Text>
@@ -1171,7 +1302,7 @@ const AccountSectionNative: React.FC = () => {
               style={tw`p-4 rounded-2xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}
             >
               <Text
-                style={tw`text-xl font-bold text-slate-900 dark:text-white mb-3`}
+                style={tw`text-xl font-bold text-slate-900 dark:text:white mb-3`}
               >
                 Post a Review
               </Text>
@@ -1181,7 +1312,7 @@ const AccountSectionNative: React.FC = () => {
                 placeholderTextColor="#93a3b0"
                 value={formData.tutorId}
                 onChangeText={(t) => setFormData({ ...formData, tutorId: t })}
-                style={tw`w-full p-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 text-slate-900 dark:text-white mb-3`}
+                style={tw`w-full p-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 text-slate-900 dark:text:white mb-3`}
               />
 
               <TextInput
@@ -1189,7 +1320,7 @@ const AccountSectionNative: React.FC = () => {
                 placeholderTextColor="#93a3b0"
                 value={formData.comment}
                 onChangeText={(t) => setFormData({ ...formData, comment: t })}
-                style={tw`w-full p-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 text-slate-900 dark:text-white mb-3`}
+                style={tw`w-full p-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 text-slate-900 dark:text:white mb-3`}
                 multiline
               />
 
@@ -1199,7 +1330,7 @@ const AccountSectionNative: React.FC = () => {
                 keyboardType="numeric"
                 value={String(formData.rating ?? '')}
                 onChangeText={(t) => setFormData({ ...formData, rating: t })}
-                style={tw`w-full p-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 text-slate-900 dark:text-white mb-3`}
+                style={tw`w-full p-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 text-slate-900 dark:text:white mb-3`}
               />
 
               <TouchableOpacity
@@ -1262,12 +1393,12 @@ const AccountSectionNative: React.FC = () => {
                 style={tw`p-5 rounded-2xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}
               >
                 <Text
-                  style={tw`text-lg font-bold text-slate-900 dark:text-white`}
+                  style={tw`text-lg font-bold text-slate-900 dark:text:white`}
                 >
                   Withdraw Earnings
                 </Text>
                 <Text
-                  style={tw`mt-1 text-[11px] text-[#49739c] dark:text-white/70`}
+                  style={tw`mt-1 text-[11px] text-[#49739c] dark:text:white/70`}
                 >
                   Minimum:{' '}
                   {currencyFmt(minAmount, String(payoutCurrency))} • Balance
@@ -1278,19 +1409,19 @@ const AccountSectionNative: React.FC = () => {
                   <View style={tw`flex-row gap-3`}>
                     <View style={tw`flex-1`}>
                       <Text
-                        style={tw`text-[11px] text-[#49739c] dark:text-white/70 mb-1`}
+                        style={tw`text-[11px] text-[#49739c] dark:text:white/70 mb-1`}
                       >
                         Currency
                       </Text>
                       <TextInput
                         editable={false}
                         value={String(payoutCurrency)}
-                        style={tw`w-full p-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 text-slate-900 dark:text-white`}
+                        style={tw`w-full p-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 text-slate-900 dark:text:white`}
                       />
                     </View>
                     <View style={tw`flex-1`}>
                       <Text
-                        style={tw`text-[11px] text-[#49739c] dark:text-white/70 mb-1`}
+                        style={tw`text-[11px] text-[#49739c] dark:text:white/70 mb-1`}
                       >
                         Amount
                       </Text>
@@ -1300,7 +1431,7 @@ const AccountSectionNative: React.FC = () => {
                         placeholderTextColor="#93a3b0"
                         value={withdrawAmount}
                         onChangeText={setWithdrawAmount}
-                        style={tw`w-full p-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 text-slate-900 dark:text-white`}
+                        style={tw`w-full p-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 text-slate-900 dark:text:white`}
                       />
                     </View>
                   </View>
@@ -1351,7 +1482,7 @@ const AccountSectionNative: React.FC = () => {
               {/* Recent Earnings */}
               <View>
                 <Text
-                  style={tw`text-xl font-bold text-slate-900 dark:text-white mb-3`}
+                  style={tw`text-xl font-bold text-slate-900 dark:text:white mb-3`}
                 >
                   Recent Earnings
                 </Text>
@@ -1364,10 +1495,10 @@ const AccountSectionNative: React.FC = () => {
                       <View style={tw`flex-row flex-wrap`}>
                         <View style={tw`w-full mb-1`}>
                           <Text
-                            style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                            style={tw`text-xs text-[#49739c] dark:text:white/70`}
                           >
                             <Text
-                              style={tw`font-semibold text-slate-900 dark:text-white`}
+                              style={tw`font-semibold text-slate-900 dark:text:white`}
                             >
                               Amount:{' '}
                             </Text>
@@ -1379,10 +1510,10 @@ const AccountSectionNative: React.FC = () => {
                         </View>
                         <View style={tw`w-full mb-1`}>
                           <Text
-                            style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                            style={tw`text-xs text-[#49739c] dark:text:white/70`}
                           >
                             <Text
-                              style={tw`font-semibold text-slate-900 dark:text-white`}
+                              style={tw`font-semibold text-slate-900 dark:text:white`}
                             >
                               Date:{' '}
                             </Text>
@@ -1391,10 +1522,10 @@ const AccountSectionNative: React.FC = () => {
                         </View>
                         <View style={tw`w-full mb-1`}>
                           <Text
-                            style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                            style={tw`text-xs text-[#49739c] dark:text:white/70`}
                           >
                             <Text
-                              style={tw`font-semibold text-slate-900 dark:text-white`}
+                              style={tw`font-semibold text-slate-900 dark:text:white`}
                             >
                               Description:{' '}
                             </Text>
@@ -1405,7 +1536,7 @@ const AccountSectionNative: React.FC = () => {
                     </View>
                   ))
                 ) : (
-                  <Text style={tw`text-xs text-[#49739c] dark:text-white/70`}>
+                  <Text style={tw`text-xs text-[#49739c] dark:text:white/70`}>
                     No earnings found.
                   </Text>
                 )}
@@ -1414,7 +1545,7 @@ const AccountSectionNative: React.FC = () => {
               {/* Withdrawal Activity */}
               <View>
                 <Text
-                  style={tw`text-xl font-bold text-slate-900 dark:text-white mb-3`}
+                  style={tw`text-xl font-bold text-slate-900 dark:text:white mb-3`}
                 >
                   Withdrawal Activity
                 </Text>
@@ -1431,10 +1562,10 @@ const AccountSectionNative: React.FC = () => {
                         <View style={tw`flex-row flex-wrap`}>
                           <View style={tw`w-full mb-1`}>
                             <Text
-                              style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                              style={tw`text-xs text-[#49739c] dark:text:white/70`}
                             >
                               <Text
-                                style={tw`font-semibold text-slate-900 dark:text-white`}
+                                style={tw`font-semibold text-slate-900 dark:text:white`}
                               >
                                 Type:{' '}
                               </Text>
@@ -1443,10 +1574,10 @@ const AccountSectionNative: React.FC = () => {
                           </View>
                           <View style={tw`w-full mb-1`}>
                             <Text
-                              style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                              style={tw`text-xs text-[#49739c] dark:text:white/70`}
                             >
                               <Text
-                                style={tw`font-semibold text-slate-900 dark:text-white`}
+                                style={tw`font-semibold text-slate-900 dark:text:white`}
                               >
                                 Amount:{' '}
                               </Text>
@@ -1460,10 +1591,10 @@ const AccountSectionNative: React.FC = () => {
                           </View>
                           <View style={tw`w-full mb-1`}>
                             <Text
-                              style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                              style={tw`text-xs text-[#49739c] dark:text:white/70`}
                             >
                               <Text
-                                style={tw`font-semibold text-slate-900 dark:text-white`}
+                                style={tw`font-semibold text-slate-900 dark:text:white`}
                               >
                                 Status:{' '}
                               </Text>
@@ -1472,10 +1603,10 @@ const AccountSectionNative: React.FC = () => {
                           </View>
                           <View style={tw`w-full mb-1`}>
                             <Text
-                              style={tw`text-xs text-[#49739c] dark:text-white/70`}
+                              style={tw`text-xs text-[#49739c] dark:text:white/70`}
                             >
                               <Text
-                                style={tw`font-semibold text-slate-900 dark:text-white`}
+                                style={tw`font-semibold text-slate-900 dark:text:white`}
                               >
                                 Date:{' '}
                               </Text>
@@ -1485,7 +1616,7 @@ const AccountSectionNative: React.FC = () => {
                         </View>
                         {tx.description ? (
                           <Text
-                            style={tw`mt-1 text-xs text-[#49739c] dark:text-white/70`}
+                            style={tw`mt-1 text-xs text-[#49739c] dark:text:white/70`}
                           >
                             {tx.description}
                           </Text>
@@ -1493,7 +1624,7 @@ const AccountSectionNative: React.FC = () => {
                       </View>
                     ))
                 ) : (
-                  <Text style={tw`text-xs text-[#49739c] dark:text-white/70`}>
+                  <Text style={tw`text-xs text-[#49739c] dark:text:white/70`}>
                     No withdrawal activity yet.
                   </Text>
                 )}
@@ -1516,14 +1647,14 @@ const AccountSectionNative: React.FC = () => {
               style={tw`w-11/12 max-w-md p-6 rounded-2xl bg-white dark:bg-[#0f1821] border border-[#cedbe8] dark:border-white/10`}
             >
               <Text
-                style={tw`text-xl font-bold text-slate-900 dark:text-white mb-4`}
+                style={tw`text-xl font-bold text-slate-900 dark:text:white mb-4`}
               >
                 Rate Your Tutor
               </Text>
 
               <View style={tw`mb-4`}>
                 <Text
-                  style={tw`text-xs text-[#49739c] dark:text-white/70 mb-1`}
+                  style={tw`text-xs text-[#49739c] dark:text:white/70 mb-1`}
                 >
                   Rating (1–5)
                 </Text>
@@ -1533,13 +1664,13 @@ const AccountSectionNative: React.FC = () => {
                   onChangeText={(v) =>
                     setRatingData({ ...ratingData, rating: v })
                   }
-                  style={tw`w-full p-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 text-slate-900 dark:text-white`}
+                  style={tw`w-full p-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 text-slate-900 dark:text:white`}
                 />
               </View>
 
               <View style={tw`mb-4`}>
                 <Text
-                  style={tw`text-xs text-[#49739c] dark:text-white/70 mb-1`}
+                  style={tw`text-xs text-[#49739c] dark:text:white/70 mb-1`}
                 >
                   Comment
                 </Text>
@@ -1551,7 +1682,7 @@ const AccountSectionNative: React.FC = () => {
                   }
                   placeholder="Leave a comment (optional)…"
                   placeholderTextColor="#93a3b0"
-                  style={tw`h-24 w-full p-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 text-slate-900 dark:text-white`}
+                  style={tw`h-24 w-full p-3 rounded-xl bg-[#e7edf4] dark:bg-[#172534] border border-[#cedbe8] dark:border-white/10 text-slate-900 dark:text:white`}
                 />
               </View>
 
@@ -1560,7 +1691,7 @@ const AccountSectionNative: React.FC = () => {
                   onPress={() => setShowRatingModal(false)}
                   style={tw`px-4 py-2 rounded-lg bg-[#e7edf4] dark:bg-[#172534] mr-2`}
                 >
-                  <Text style={tw`text-sm text-[#0d141c] dark:text-white`}>
+                  <Text style={tw`text-sm text-[#0d141c] dark:text:white`}>
                     Cancel
                   </Text>
                 </TouchableOpacity>

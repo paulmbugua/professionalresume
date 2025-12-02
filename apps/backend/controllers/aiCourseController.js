@@ -688,7 +688,6 @@ export async function generateCoursePackage(req, res) {
         numQuestions,
         courseSize,
         totalLessons,
-        languageConfig,
       } = req.body || {};
       if (!courseId) return res.status(400).json({ error: 'courseId is required' });
       const programTrack = getProgramTrack(req);           // <-- read safely
@@ -745,7 +744,6 @@ export async function generateCoursePackage(req, res) {
    totalLessons,
    programTrack,
    quizType,
-   languageConfig, 
  });
  
 

@@ -22,12 +22,34 @@ function normalizeBase(url: string) {
   return url?.endsWith('/') ? url.slice(0, -1) : url;
 }
 
-function buildHeaders(token?: string, isJson = true): Record<string, string> {
+function buildHeaders(
+  token?: string,
+  isJson = true,
+  programTrack?: string
+): Record<string, string> {
   const h: Record<string, string> = { Accept: 'application/json' };
   if (isJson) h['Content-Type'] = 'application/json';
-  if (token) h['Authorization'] = `Bearer ${token}`;
+
+  // ✅ Only attach Authorization when we have a real token
+  const safeToken =
+    typeof token === 'string' ? token.trim() : '';
+
+  if (
+    safeToken &&
+    safeToken.toLowerCase() !== 'null' &&
+    safeToken.toLowerCase() !== 'undefined'
+  ) {
+    h['Authorization'] = `Bearer ${safeToken}`;
+  }
+
+  // optional: support X-Program-Track if you want header visibility
+  if (programTrack && programTrack.trim()) {
+    h['X-Program-Track'] = programTrack.trim();
+  }
+
   return h;
 }
+
 
 // -------------------- Debug switch --------------------
 const DBG_AI = ((): boolean => {
@@ -263,7 +285,7 @@ export async function createOutline(
   opts?: CommonOpts
 ): Promise<AiOutlineResponse> {
   const base = normalizeBase(backendUrl);
-  const headers = buildHeaders(opts?.token, true);
+  const headers = buildHeaders(opts?.token, true, opts?.programTrack);
   const { signal, cancel } = withTimeoutSignal(opts?.signal, opts?.timeoutMs);
   try {
     return await fetchJson<AiOutlineResponse>(
@@ -282,6 +304,7 @@ export async function createOutline(
   }
 }
 
+
 /* ────────────────────────────────────────────────────────────
  * POST /api/ai/lesson-ssml
  * ─────────────────────────────────────────────────────────── */
@@ -291,7 +314,8 @@ export async function createLessonSSML(
   opts?: CommonOpts
 ): Promise<LessonPack> {
   const base = normalizeBase(backendUrl);
- const headers = buildHeaders(opts?.token, true);
+ const headers = buildHeaders(opts?.token, true, opts?.programTrack);
+
 
   const { signal, cancel } = withTimeoutSignal(opts?.signal, opts?.timeoutMs);
   try {
@@ -320,7 +344,8 @@ export async function createQuiz(
   opts?: CommonOpts
 ): Promise<{ quiz: Quiz }> {
   const base = normalizeBase(backendUrl);
- const headers = buildHeaders(opts?.token, true);
+const headers = buildHeaders(opts?.token, true, opts?.programTrack);
+
 
   const { signal, cancel } = withTimeoutSignal(opts?.signal, opts?.timeoutMs);
   try {
@@ -389,7 +414,8 @@ export async function createCoursePackage(
   opts?: CommonOpts
 ): Promise<CoursePackage> {
   const base = normalizeBase(backendUrl);
-  const headers = buildHeaders(opts?.token, true);
+ const headers = buildHeaders(opts?.token, true, opts?.programTrack);
+
 
   const { signal, cancel } = withTimeoutSignal(opts?.signal, opts?.timeoutMs);
   try {
@@ -441,7 +467,8 @@ export async function createAiSandboxCourse(
           assignmentId: titleOrInit.assignmentId,
         };
 
-  const headers = buildHeaders(opts?.token, true); // ✅ send Authorization when present
+ const headers = buildHeaders(opts?.token, true, opts?.programTrack);
+
   const { signal, cancel } = withTimeoutSignal(opts?.signal, opts?.timeoutMs);
 
   try {

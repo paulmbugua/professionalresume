@@ -879,22 +879,41 @@ const OrgExamMarksTab: React.FC<OrgExamMarksTabProps> = ({
           </View>
 
           <TouchableOpacity
-            disabled={
-              aiBusy ||
-              !backendUrl ||
-              !orgId ||
-              !selectedSessionId ||
-              !sheetRows.length
-            }
-            onPress={handleAiSheetCommand}
-            style={tw`h-9 px-3 rounded-xl bg-white items-center justify-center self-end`}
-          >
-            <Text
-              style={tw`text-[11px] text-slate-900 font-semibold`}
-            >
-              {aiBusy ? 'Working…' : 'Run on sheet'}
-            </Text>
-          </TouchableOpacity>
+  disabled={
+    aiBusy ||
+    !backendUrl ||
+    !orgId ||
+    !selectedSessionId ||
+    !sheetRows.length
+  }
+  onPress={handleAiSheetCommand}
+  style={[
+    tw`h-9 px-3 rounded-xl items-center justify-center self-end`,
+    {
+      backgroundColor: palette.isDark ? palette.chipBg : palette.accent,
+      borderColor: palette.isDark ? palette.border : palette.accentSoft,
+      borderWidth: 1,
+      opacity:
+        aiBusy ||
+        !backendUrl ||
+        !orgId ||
+        !selectedSessionId ||
+        !sheetRows.length
+          ? 0.6
+          : 1,
+    },
+  ]}
+>
+  <Text
+    style={[
+      tw`text-[11px] font-semibold`,
+      { color: '#ffffff' },
+    ]}
+  >
+    {aiBusy ? 'Working…' : 'Run on sheet'}
+  </Text>
+</TouchableOpacity>
+
         </View>
 
         <TextInput

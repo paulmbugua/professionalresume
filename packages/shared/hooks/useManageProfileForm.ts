@@ -36,8 +36,6 @@ export type UseManageProfileFormOptions = {
   notify?: Notifier;
 };
 
-
-
 const NOOP_NOTIFY: Required<Notifier> = {
   success: (m) => console.log('[success]', m),
   error:   (m) => console.error('[error]', m),
@@ -97,7 +95,6 @@ const initialProfileData: UpdatedProfileData = {
   },
   pricing: { privateSession: 0, groupSession: 0, lecture: 0, workshop: 0 },
   experienceLevel: '',
- 
   category: '',
   recommended: [],
   mpesaPhoneNumber: '',
@@ -114,7 +111,16 @@ const useManageProfileForm = (
 ) => {
   const notify = { ...NOOP_NOTIFY, ...(options?.notify ?? {}) };
 
-  const { token, backendUrl, refreshProfile } = useShopContext();
+  // ⬇️ Pull more from context so we can derive role even if backend is missing it
+  const {
+    token,
+    backendUrl,
+    refreshProfile,
+    role: ctxRole,
+    orgUser,
+    orgLearner,
+  } = useShopContext() as any;
+
   const queryClient = useQueryClient();
 
   const {
@@ -137,12 +143,19 @@ const useManageProfileForm = (
     { enabled: Boolean(token) }
   );
 
-  const [role, setRole] = useState<'tutor' | 'student' | ''>('');
+  // 🔑 Initialise role from context, fall back to '' if we can't tell
+  const [role, setRole] = useState<'tutor' | 'student' | ''>(() => {
+    if (ctxRole === 'tutor') return 'tutor';
+    if (ctxRole === 'student' || ctxRole === 'learner') return 'student';
+    if (orgLearner) return 'student';
+    if (orgUser) return 'tutor';
+    return '';
+  });
+
   const [profile, setProfile] = useState<MappedProfile | null>(null);
   const [initialData, setInitialData] = useState<UpdatedProfileData | null>(null);
   const [updatedData, setUpdatedData] = useState<UpdatedProfileData>(initialProfileData);
   const [searchResults, setSearchResults] = useState<AvailableProfile[]>([]);
-  
 
   useEffect(() => {
     if (!token) {
@@ -156,14 +169,38 @@ const useManageProfileForm = (
     if (!rawProfileResponse || !rawProfileResponse.profileExists) return;
     const raw = rawProfileResponse.profile;
 
-    
+    // -----------------------------
+    // 🔍 Derive role from backend + context
+    // -----------------------------
+    const backendRole =
+      raw.role ||
+      raw.user_role ||
+      raw.account_type ||
+      raw.profile_role;
+
+    let derivedRole: 'tutor' | 'student' | '' = '';
+
+    if (backendRole === 'tutor') derivedRole = 'tutor';
+    if (backendRole === 'student' || backendRole === 'learner') derivedRole = 'student';
+
+    if (!derivedRole) {
+      if (ctxRole === 'tutor') derivedRole = 'tutor';
+      else if (ctxRole === 'student' || ctxRole === 'learner') derivedRole = 'student';
+      else if (orgLearner) derivedRole = 'student';
+      else if (orgUser) derivedRole = 'tutor';
+    }
+
+    setRole(derivedRole);
+
     let descObj: any = {};
-      try {
-        descObj = typeof raw.description === 'string'
-          ? JSON.parse(raw.description || '{}')
-          : (raw.description || {});
-      } catch { descObj = {}; }
-      
+    try {
+      descObj = typeof raw.description === 'string'
+        ? JSON.parse(raw.description || '{}')
+        : (raw.description || {});
+    } catch {
+      descObj = {};
+    }
+
     const galleryArray = Array.isArray(raw.gallery) ? raw.gallery : [];
     const normalizedStatus = raw.status === 'Free Session' ? 'Free' : raw.status;
     const gallery: GalleryImage[] = galleryArray
@@ -183,7 +220,6 @@ const useManageProfileForm = (
       ...rest
     } = raw;
 
-    setRole(raw.role);
     setProfile(rest as MappedProfile);
 
     const languages: Record<string, boolean> = {
@@ -199,50 +235,64 @@ const useManageProfileForm = (
       });
     }
 
-     const rawCountry =
-    (raw.country ?? raw.country_code ?? descObj.country ?? '')
-      .toString()
-      .trim()
-      .toUpperCase()
-      .slice(0, 2); // ISO-3166-1 alpha-2
+    const rawCountry =
+      (raw.country ?? raw.country_code ?? descObj.country ?? '')
+        .toString()
+        .trim()
+        .toUpperCase()
+        .slice(0, 2); // ISO-3166-1 alpha-2
 
     const resolvedMethod: PayoutMethod =
-      ((payout_method as PayoutMethod) || (mpesa_phone_number ? 'mpesa' : 'wise')) as PayoutMethod;
+      ((payout_method as PayoutMethod) ||
+        (mpesa_phone_number ? 'mpesa' : 'wise')) as PayoutMethod;
 
     const resolvedCurrency: PayoutCurrency =
-      (payout_currency as PayoutCurrency) || (resolvedMethod === 'mpesa' ? 'KES' : 'USD');
+      (payout_currency as PayoutCurrency) ||
+      (resolvedMethod === 'mpesa' ? 'KES' : 'USD');
 
     const finalData: UpdatedProfileData = {
-        ...initialProfileData,
-        ...rest,
-        gallery,
-        country: rawCountry || '', // ✅ use the normalized country from country/country_code/desc
-        schoolGrade: raw.school_grade || raw.schoolGrade || '',
-        status: normalizedStatus,
-        video: raw.video || '',
-        languages,
-        pricing: pricing || initialProfileData.pricing,
-        experienceLevel: experience_level || '',
-        // ✅ use parsed descObj (handles string or object)
-        teachingStyle: Array.isArray(descObj.teachingStyle) ? descObj.teachingStyle : [],
-        bio: typeof descObj.bio === 'string' ? descObj.bio : '',
-        expertise: Array.isArray(descObj.expertise) ? descObj.expertise : [],
-        category: raw.category || '',
-        recommended: recommended || [],
-        payoutCurrency: resolvedCurrency,
-        payoutMethod: resolvedMethod,
-        mpesaPhoneNumber: mpesa_phone_number || '',
-        wiseEmail: wise_email || raw.wiseEmail || '',
-      };
+      ...initialProfileData,
+      ...rest,
+      gallery,
+      country: rawCountry || '',
+      schoolGrade: raw.school_grade || raw.schoolGrade || '',
+      status: normalizedStatus,
+      video: raw.video || '',
+      languages,
+      pricing: pricing || initialProfileData.pricing,
+      experienceLevel: experience_level || '',
+      teachingStyle: Array.isArray(descObj.teachingStyle) ? descObj.teachingStyle : [],
+      bio: typeof descObj.bio === 'string' ? descObj.bio : '',
+      expertise: Array.isArray(descObj.expertise) ? descObj.expertise : [],
+      category: raw.category || '',
+      recommended: recommended || [],
+      payoutCurrency: resolvedCurrency,
+      payoutMethod: resolvedMethod,
+      mpesaPhoneNumber: mpesa_phone_number || '',
+      wiseEmail: wise_email || raw.wiseEmail || '',
+    };
 
     setInitialData(finalData);
     setUpdatedData(finalData);
-  }, [rawProfileResponse]);
+  }, [rawProfileResponse, ctxRole, orgLearner, orgUser]);
 
   useEffect(() => {
     if (profileError) notify.error('Failed to load profile.');
     if (availableError) notify.error('Failed to load profiles.');
   }, [profileError, availableError, notify]);
+
+  // 🔍 Small dev-only debug helper so you can see why role might be missing
+  useEffect(() => {
+    if (!isDev) return;
+    console.debug('[useManageProfileForm] debug', {
+      token: !!token,
+      ctxRole,
+      orgUser: !!orgUser,
+      orgLearner: !!orgLearner,
+      backendRole: rawProfileResponse?.profile?.role,
+      resolvedRole: role,
+    });
+  }, [token, ctxRole, orgUser, orgLearner, rawProfileResponse, role]);
 
   const isDataChanged = (a: UpdatedProfileData, b: UpdatedProfileData | null) =>
     JSON.stringify(a) !== JSON.stringify(b);
@@ -289,8 +339,7 @@ const useManageProfileForm = (
             return uploadAsset(backendUrl!, token!, img, 'image');
           }
           if (isDev) console.debug(`⬆️ gallery[${idx}] uploading file-like…`);
-          return uploadAsset(backendUrl!, token!, img as any, 'image'); // was: img as FileLike
-
+          return uploadAsset(backendUrl!, token!, img as any, 'image');
         })
       );
 
@@ -306,7 +355,6 @@ const useManageProfileForm = (
       } else {
         // file-like object; upload directly
         finalVideo = await uploadAsset(backendUrl!, token!, updatedData.video as any, 'video');
-
       }
 
       const computedCurrency: PayoutCurrency =
@@ -314,13 +362,12 @@ const useManageProfileForm = (
 
       const payload: UpdateProfilePayload = {
         name: updatedData.name ?? '',
-         country: updatedData.country,
-         schoolGrade: updatedData.schoolGrade,
+        country: updatedData.country,
+        schoolGrade: updatedData.schoolGrade,
         age: updatedData.age > 0 ? String(updatedData.age) : '',
         languages: Object.keys(updatedData.languages).filter(
           (l) => updatedData.languages[l as keyof typeof updatedData.languages]
         ),
-        
         pricing: updatedData.pricing,
         recommended: updatedData.recommended,
         ...(role === 'tutor'
@@ -442,16 +489,13 @@ const useManageProfileForm = (
   };
 
   const handleExpertiseSelect = (opt: string) => {
-  setUpdatedData(prev => ({
-    ...prev,
-    expertise: prev.expertise.includes(opt)
-      ? prev.expertise.filter(e => e !== opt)
-      : [...prev.expertise, opt],
-  }));
-};
-
-
-  
+    setUpdatedData((prev) => ({
+      ...prev,
+      expertise: prev.expertise.includes(opt)
+        ? prev.expertise.filter((e) => e !== opt)
+        : [...prev.expertise, opt],
+    }));
+  };
 
   const handleTeachingStyleSelect = (style: string) => {
     setUpdatedData((prev) => ({
@@ -508,7 +552,8 @@ const useManageProfileForm = (
           vid.onloadedmetadata = () => {
             const dur = Number.isFinite(vid.duration) ? vid.duration : 0;
             URL.revokeObjectURL(url);
-            if (dur > maxSeconds) reject(new Error(`Video too long (${dur.toFixed(1)}s). Must be ≤${maxSeconds}s.`));
+            if (dur > maxSeconds)
+              reject(new Error(`Video too long (${dur.toFixed(1)}s). Must be ≤${maxSeconds}s.`));
             else resolve();
           };
           vid.onerror = () => {
@@ -586,7 +631,6 @@ const useManageProfileForm = (
     handleRemoveRecommendation,
     handlePricingChange,
     handleToggleNotifications,
-   
     handleTeachingStyleSelect,
 
     // media handlers (agnostic)

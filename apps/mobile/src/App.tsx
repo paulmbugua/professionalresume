@@ -128,6 +128,19 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   return <>{children}</>;
 };
 
+const useOrgRole = () => {
+  const { role, loading, isLoading } = (useOrg() ?? {}) as any;
+  const busy = typeof loading === 'boolean' ? loading : isLoading;
+  const normalized = role ? String(role).toLowerCase() : '';
+
+  const isAdmin = normalized === 'owner' || normalized === 'admin';
+  const isInstructor =
+    normalized === 'instructor' || normalized === 'teacher';
+  const isLearner = normalized === 'learner' || normalized === 'student';
+
+  return { busy, role: normalized, isAdmin, isInstructor, isLearner };
+};
+
 const OrgProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { orgToken } = useShopContext() as any;
   if (!orgToken) return <InstitutionLogin />;
@@ -138,92 +151,78 @@ const OrgProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
 
 const OrgAdminOnlyGuard: React.FC<ProtectedRouteProps> = ({ children }) => {
   const navigation = useNavigation<any>();
-  const { role, loading, isLoading } = (useOrg() ?? {}) as any;
-  const busy = typeof loading === 'boolean' ? loading : isLoading;
+  const { busy, role, isAdmin, isInstructor, isLearner } = useOrgRole();
+
+  // 🔁 Redirect *after* render
+  React.useEffect(() => {
+    if (busy || !role) return;
+
+    if (isInstructor) {
+      navigation.reset({ index: 0, routes: [{ name: 'OrgInstructorHome' }] });
+    } else if (isLearner) {
+      navigation.reset({ index: 0, routes: [{ name: 'OrgLearnerHome' }] });
+    } else if (!isAdmin) {
+      navigation.reset({ index: 0, routes: [{ name: 'InstitutionLogin' }] });
+    }
+  }, [busy, role, isAdmin, isInstructor, isLearner, navigation]);
 
   if (busy || !role) return <Spinner />;
 
-  const normalized = String(role || '').toLowerCase();
-  const isAdmin = normalized === 'owner' || normalized === 'admin';
-  const isInstructor =
-    normalized === 'instructor' || normalized === 'teacher';
-  const isLearner = normalized === 'learner' || normalized === 'student';
-
+  // If admin, show the protected page
   if (isAdmin) return <>{children}</>;
 
-  if (isInstructor) {
-    navigation.reset({ index: 0, routes: [{ name: 'OrgInstructorHome' }] });
-    return null;
-  }
-
-  if (isLearner) {
-    navigation.reset({ index: 0, routes: [{ name: 'OrgLearnerHome' }] });
-    return null;
-  }
-
-  navigation.reset({ index: 0, routes: [{ name: 'InstitutionLogin' }] });
+  // While redirecting, render nothing
   return null;
 };
+
 
 const OrgLearnerOnlyGuard: React.FC<ProtectedRouteProps> = ({ children }) => {
   const navigation = useNavigation<any>();
-  const { role, loading, isLoading } = (useOrg() ?? {}) as any;
-  const busy = typeof loading === 'boolean' ? loading : isLoading;
+  const { busy, role, isAdmin, isInstructor, isLearner } = useOrgRole();
+
+  React.useEffect(() => {
+    if (busy || !role) return;
+
+    if (isInstructor) {
+      navigation.reset({ index: 0, routes: [{ name: 'OrgInstructorHome' }] });
+    } else if (isAdmin) {
+      navigation.reset({ index: 0, routes: [{ name: 'OrgProfile' }] });
+    } else if (!isLearner) {
+      navigation.reset({ index: 0, routes: [{ name: 'InstitutionLogin' }] });
+    }
+  }, [busy, role, isAdmin, isInstructor, isLearner, navigation]);
 
   if (busy || !role) return <Spinner />;
-
-  const normalized = String(role || '').toLowerCase();
-  const isLearner = normalized === 'learner' || normalized === 'student';
-  const isInstructor =
-    normalized === 'instructor' || normalized === 'teacher';
-  const isAdmin = normalized === 'owner' || normalized === 'admin';
 
   if (isLearner) return <>{children}</>;
 
-  if (isInstructor) {
-    navigation.reset({ index: 0, routes: [{ name: 'OrgInstructorHome' }] });
-    return null;
-  }
-
-  if (isAdmin) {
-    navigation.reset({ index: 0, routes: [{ name: 'OrgProfile' }] });
-    return null;
-  }
-
-  navigation.reset({ index: 0, routes: [{ name: 'InstitutionLogin' }] });
   return null;
 };
 
-const OrgInstructorOnlyGuard: React.FC<ProtectedRouteProps> = ({
-  children,
-}) => {
+
+const OrgInstructorOnlyGuard: React.FC<ProtectedRouteProps> = ({ children }) => {
   const navigation = useNavigation<any>();
-  const { role, loading, isLoading } = (useOrg() ?? {}) as any;
-  const busy = typeof loading === 'boolean' ? loading : isLoading;
+  const { busy, role, isAdmin, isInstructor, isLearner } = useOrgRole();
+
+  React.useEffect(() => {
+    if (busy || !role) return;
+
+    if (isLearner) {
+      navigation.reset({ index: 0, routes: [{ name: 'OrgLearnerHome' }] });
+    } else if (isAdmin) {
+      navigation.reset({ index: 0, routes: [{ name: 'OrgProfile' }] });
+    } else if (!isInstructor) {
+      navigation.reset({ index: 0, routes: [{ name: 'InstitutionLogin' }] });
+    }
+  }, [busy, role, isAdmin, isInstructor, isLearner, navigation]);
 
   if (busy || !role) return <Spinner />;
 
-  const normalized = String(role || '').toLowerCase();
-  const isInstructor =
-    normalized === 'instructor' || normalized === 'teacher';
-  const isLearner = normalized === 'learner' || normalized === 'student';
-  const isAdmin = normalized === 'owner' || normalized === 'admin';
-
   if (isInstructor) return <>{children}</>;
 
-  if (isLearner) {
-    navigation.reset({ index: 0, routes: [{ name: 'OrgLearnerHome' }] });
-    return null;
-  }
-
-  if (isAdmin) {
-    navigation.reset({ index: 0, routes: [{ name: 'OrgProfile' }] });
-    return null;
-  }
-
-  navigation.reset({ index: 0, routes: [{ name: 'InstitutionLogin' }] });
   return null;
 };
+
 
 /* ───────── App ───────── */
 const App: React.FC = () => {
@@ -402,12 +401,10 @@ const App: React.FC = () => {
           </Stack.Screen>
 
           {/* Exams portal – instructor only (matches native instructor home shortcut) */}
-          <Stack.Screen name="OrgExamResultsPortal">
+            <Stack.Screen name="OrgExamResultsPortal">
             {() => (
               <OrgProtectedRoute>
-                <OrgInstructorOnlyGuard>
-                  <OrgExamResultsPortal />
-                </OrgInstructorOnlyGuard>
+                <OrgExamResultsPortal />
               </OrgProtectedRoute>
             )}
           </Stack.Screen>

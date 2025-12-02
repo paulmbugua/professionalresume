@@ -2,18 +2,13 @@
 import authUser from './authUser.js';
 import requireAuth from './auth.js';
 
-// Run an Express middleware "silently":
-// - Use the real req
-// - Use a mock res so it can't actually send
-// - Resolve true if it called next() without error
-// - Resolve false if it tried to send an error or didn't call next()
+// Run an Express middleware "silently"
 function runSilently(mw, req) {
   return new Promise((resolve) => {
     let nextCalled = false;
     let errored = false;
     let wrote = false;
 
-    // minimal mock of res that captures writes but doesn't send them
     const mockRes = {
       statusCode: 200,
       headers: {},
@@ -40,7 +35,22 @@ function runSilently(mw, req) {
   });
 }
 
+// helper to normalise query token
+function normalizeQueryToken(qVal) {
+  if (!qVal) return null;
+  if (Array.isArray(qVal)) return String(qVal[0]);
+  return String(qVal);
+}
+
 export default async function anyAuth(req, res, next) {
+  // 🔐 If there is no Authorization header, allow ?token=<jwt> to stand in
+  if (!req.headers.authorization && !req.headers.Authorization) {
+    const tokenFromQuery = normalizeQueryToken(req.query?.token);
+    if (tokenFromQuery) {
+      req.headers.authorization = `Bearer ${tokenFromQuery}`;
+    }
+  }
+
   // Try regular user auth first
   if (await runSilently(authUser, req)) return next();
 

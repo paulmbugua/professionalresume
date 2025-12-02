@@ -31,7 +31,6 @@ import type {
   AiQuizRequest,
   DbCourseSize,
   AiOutlineResponse,
-  LanguageConfig,
 } from '@mytutorapp/shared/types';
 
 export type StartState =
@@ -150,8 +149,7 @@ const DEFAULT_SIZE = {
 export function useAiCourse(
   backendUrl: string,
   authToken?: string,
-  flowHints?: FlowHints,
-  languageConfig?: LanguageConfig
+  flowHints?: FlowHints
 ) {
   const [topCourses, setTopCourses] = useState<TopCourse[]>([]);
   const [selectedCourse, setSelectedCourse] = useState<TopCourse | null>(null);
@@ -194,11 +192,6 @@ export function useAiCourse(
   // Prefetcher knobs
   const lastVoiceRef = useRef(DEFAULT_SIZE.voiceName);
   const lastSizeRef = useRef<CourseSize>(DEFAULT_SIZE.courseSize);
-
-  const languageConfigRef = useRef<LanguageConfig | undefined>(languageConfig);
-  useEffect(() => {
-    languageConfigRef.current = languageConfig;
-  }, [languageConfig]);
 
   // Outline ref for cheap access
   const outlineRef = useRef<AiOutlineSection[]>([]);
@@ -416,24 +409,20 @@ const ensureLesson = useCallback(
         });
       }
 
-  const pack = await createLessonSSML(
-  backendUrl,
-  {
-    courseId,
-    outline: ol,
-    voiceName: lastVoiceRef.current,
-    courseSize: lastSizeRef.current,
-    start: index,
-    count: 1,
-    programTrack: buildKnobs({ courseSize: lastSizeRef.current }).programTrack,
-    noPrewarm: 1,
-    assignmentId: undefined,
-    languageConfig: languageConfigRef.current,
-  },
-  { token }
-);
-
-
+      const pack = await createLessonSSML(
+        backendUrl,
+        {
+          courseId,
+          outline: ol,
+          voiceName: lastVoiceRef.current,
+          courseSize: lastSizeRef.current,
+          start: index,
+          count: 1,
+          programTrack: buildKnobs({ courseSize: lastSizeRef.current }).programTrack,
+          noPrewarm: 1,
+        } as any,
+        { token }
+      );
 
       const L = pack?.lessons?.[0] as LessonLite | undefined;
       if (!L?.ssml) {
@@ -623,7 +612,6 @@ const prefetchAround = useCallback(async (index: number) => {
           programTrack: knobs.programTrack,
           totalLessons: knobs.totalLessons,
           assignmentId: opts?.assignmentId,
-          languageConfig: languageConfigRef.current,
         };
 
         if (DBG) {
@@ -936,7 +924,6 @@ const prefetchAround = useCallback(async (index: number) => {
             typeof opts?.lessonIndex === 'number'
               ? Math.max(0, Math.min(opts.lessonIndex, safeOutline.length - 1))
               : (programTrack ? currentIdx : undefined),
-              languageConfig: languageConfigRef.current,
         };
 
         const quizReq: AiQuizRequest = {
