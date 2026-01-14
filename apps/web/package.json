@@ -4,11 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "start": "serve -s dist",
-    "preview": "vite preview",
-    "lint": "eslint . --ext .js,.jsx,.ts,.tsx --max-warnings=0",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
     "type-check": "tsc --noEmit"
@@ -37,6 +36,7 @@
     "lodash.debounce": "^4.0.8",
     "lucide-react": "^0.546.0",
     "moti": "^0.30.0",
+    "next": "^14.2.24",
     "pdfjs-dist": "^5.4.296",
     "qrcode": "^1.5.4",
     "react": "^19.1.0",
@@ -69,9 +69,7 @@
     "@types/react-dom": "19.0.3",
     "@types/react-native-web": "^0",
     "@types/three": "^0",
-    "@vitejs/plugin-react": "4.3.1",
-    "vite": "4.5.9",
-    "vite-plugin-svgr": "4.3.0"
+    "typescript": "^5.6.3"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [

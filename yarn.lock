@@ -3799,6 +3799,7 @@ __metadata:
     react-dom: "npm:^19.1.0"
     react-error-boundary: "npm:^6.0.0"
     react-helmet-async: "npm:^2.0.5"
+    react-hook-form: "npm:^7.62.0"
     react-icons: "npm:5.3.0"
     react-markdown: "npm:^10.1.0"
     react-medium-image-zoom: "npm:5.2.10"
@@ -17026,6 +17027,15 @@ __metadata:
   peerDependencies:
     react: ^16.6.0 || ^17.0.0 || ^18.0.0
   checksum: 10c0/f390ea8bf13c2681850e5f8eb5b73d8613f407c245a5fd23e9db9b2cc14a3700dd1ce992d3966632886d1d613083294c2aeee009193f49dfa7d145d9f13ea2b0
+  languageName: node
+  linkType: hard
+
+"react-hook-form@npm:^7.62.0":
+  version: 7.71.1
+  resolution: "react-hook-form@npm:7.71.1"
+  peerDependencies:
+    react: ^16.8.0 || ^17 || ^18 || ^19
+  checksum: 10c0/6c8fc0fa740d299481de3ed32bae98f7c6331240822c602363e5cd221746d875dc3c5e65d0039902b7f7a44dc9ac9a4932e00e9ad9af3051bed1987858ce78c7
   languageName: node
   linkType: hard
 
