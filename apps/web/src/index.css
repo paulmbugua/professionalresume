@@ -334,3 +334,39 @@ section[id] { scroll-margin-top: 80px; }
     .dark .no-has .ring-wrapper { border-color: rgba(255,255,255,0.10); }
   }
 }
+
+@layer components {
+  .cv-section-title {
+    @apply mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-gray-400;
+  }
+  .cv-body {
+    @apply text-xs text-gray-600;
+  }
+}
+
+@media print {
+  body {
+    background: white !important;
+  }
+
+  header,
+  footer,
+  nav,
+  .print\\:hidden {
+    display: none !important;
+  }
+
+  .cv-preview-wrapper {
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .cv-page {
+    width: 210mm;
+    min-height: 297mm;
+    box-shadow: none !important;
+    border: none !important;
+    page-break-after: always;
+  }
+}

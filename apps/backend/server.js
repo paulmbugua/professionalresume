@@ -37,6 +37,7 @@ import earningsRoutes from './routes/earningsRoutes.js';
 import './cronJobs/scheduler.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import aiCourseRoutes from './routes/aiCourseRoutes.js';
+import aiCvRoutes from './routes/aiCvRoutes.js';
 import profileRoutes from './routes/profileRoutes.js';
 import userRouter from './routes/userRoute.js';
 import profileActionsRoutes from './routes/profileActionsRoutes.js';
@@ -56,6 +57,7 @@ import certificateRoutes from './routes/certificateRoutes.js';
 import payoutRoutes from './routes/payoutRoutes.js';
 import { inflightLimiter } from './middleware/inflightLimiter.js';
 import orgExamsRoutes from './routes/orgExamsRoutes.js';
+import cvRoutes from './routes/cvRoutes.js';
 // Middleware
 import {
   morganMiddleware,
@@ -246,6 +248,7 @@ app.use('/api',                                        webhookRoutes);
 app.use('/api/paypal',                                 paypalRoutes);
 app.use('/api/payouts',                                payoutRoutes);
 app.use('/api/payment', refundRoutes);
+app.use('/api/cv',                                      cvRoutes);
 
 
 // Tutor sessions / M-Pesa
@@ -296,6 +299,7 @@ app.use('/api/ai', inflightLimiter({ keyFn: aiKeyFn, max: Number(process.env.AI_
 // ✅ Apply strict AI limiter to expensive AI/TTS work (per-user, per-bucket)
 app.use('/api/ai',                aiLimiterStrict,     aiRoutes);          // general AI endpoints
 app.use('/api/ai',                aiLimiterStrict,     aiCourseRoutes);    // AI course generation
+app.use('/api/ai',                aiLimiterStrict,     aiCvRoutes);        // AI CV assistant
 
 // TTS avatars also hit Azure—protect them, too
 app.use('/api/ttsAvatar', inflightLimiter({ keyFn: aiKeyFn, max: Number(process.env.AI_MAX_INFLIGHT || 2) }));
