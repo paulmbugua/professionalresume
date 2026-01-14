@@ -166,6 +166,24 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
 
             {/* Desktop nav */}
             <nav className="hidden md:flex items-center gap-6">
+              <Link
+                to="/builder"
+                className="text-sm/6 hover:text-primary transition-colors"
+              >
+                My Drafts
+              </Link>
+              <Link
+                to="/templates"
+                className="text-sm/6 hover:text-primary transition-colors"
+              >
+                Templates
+              </Link>
+              <Link
+                to="/builder/new?templateId=ats-minimal"
+                className="text-sm/6 hover:text-primary transition-colors"
+              >
+                Builder
+              </Link>
               {token && (
                 <Link
                   to="/home"
@@ -343,6 +361,24 @@ const Navbar: React.FC<Props> = ({ onSearch, avatarUrl }) => {
         aria-hidden={!mobileMenuOpen}
       >
         <nav className="px-3 sm:px-4 py-3 flex flex-col gap-1">
+          <Link
+            to="/builder"
+            className="rounded-lg px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-[#172534]"
+          >
+            My Drafts
+          </Link>
+          <Link
+            to="/templates"
+            className="rounded-lg px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-[#172534]"
+          >
+            Templates
+          </Link>
+          <Link
+            to="/builder/new?templateId=ats-minimal"
+            className="rounded-lg px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-[#172534]"
+          >
+            Builder
+          </Link>
           {token && (
             <Link
               to="/home"

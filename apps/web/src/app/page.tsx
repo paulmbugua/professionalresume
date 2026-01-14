@@ -1,10 +1,11 @@
+"use client";
+
 import React from 'react';
-import { Helmet } from 'react-helmet-async';
-import { Link } from 'react-router-dom';
+import Link from 'next/link';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useMyCvDrafts } from '@mytutorapp/shared/hooks';
 
-const Landing: React.FC = () => {
+export default function LandingPage() {
   const { token, backendUrl } = useShopContext() as any;
   const { data: drafts = [] } = useMyCvDrafts({
     backendUrl,
@@ -15,14 +16,6 @@ const Landing: React.FC = () => {
 
   return (
     <div className="bg-softGray dark:bg-darkBg">
-      <Helmet>
-        <title>CVPro | Premium CV Builder</title>
-        <meta
-          name="description"
-          content="Build premium, ATS-ready CVs in minutes with live previews, templates, and AI-assisted writing."
-        />
-      </Helmet>
-
       <section className="mx-auto flex w-full max-w-screen-2xl flex-col gap-10 px-4 pb-16 pt-16 lg:flex-row lg:items-center lg:justify-between lg:px-8">
         <div className="max-w-2xl space-y-6">
           <p className="text-xs uppercase tracking-[0.3em] text-gray-400">CVPro Builder</p>
@@ -35,14 +28,14 @@ const Landing: React.FC = () => {
           </p>
           <div className="flex flex-wrap gap-3">
             <Link
-              to="/templates"
+              href="/templates"
               className="rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-white"
             >
               Choose a template
             </Link>
             {token && hasDrafts && (
               <Link
-                to="/builder"
+                href="/builder"
                 className="rounded-lg border border-gray-200 bg-white px-6 py-3 text-sm font-semibold text-gray-700 shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-white"
               >
                 Continue editing
@@ -50,18 +43,16 @@ const Landing: React.FC = () => {
             )}
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
-            {[
-              'Live preview + autosave',
-              'ATS-ready formatting',
-              'AI-written summaries',
-            ].map((item) => (
-              <div
-                key={item}
-                className="rounded-xl border border-gray-200 bg-white/70 p-3 text-xs text-gray-600 shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-white/70"
-              >
-                {item}
-              </div>
-            ))}
+            {['Live preview + autosave', 'ATS-ready formatting', 'AI-written summaries'].map(
+              (item) => (
+                <div
+                  key={item}
+                  className="rounded-xl border border-gray-200 bg-white/70 p-3 text-xs text-gray-600 shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-white/70"
+                >
+                  {item}
+                </div>
+              )
+            )}
           </div>
         </div>
 
@@ -71,9 +62,13 @@ const Landing: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs uppercase text-gray-400">Modern Sidebar</p>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Design-forward layout</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Design-forward layout
+                  </h3>
                 </div>
-                <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">Preview</span>
+                <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                  Preview
+                </span>
               </div>
               <div className="mt-6 grid gap-2">
                 <div className="h-2 w-3/4 rounded-full bg-gray-200" />
@@ -96,6 +91,4 @@ const Landing: React.FC = () => {
       </section>
     </div>
   );
-};
-
-export default Landing;
+}

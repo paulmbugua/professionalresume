@@ -3,8 +3,8 @@
   "compilerOptions": {
     "target": "esnext",
     "lib": ["dom", "esnext"],
-    "jsx": "react-jsx",
-    "types": ["react", "react-dom", "vite/client"],
+    "jsx": "preserve",
+    "types": ["react", "react-dom", "node", "next"],
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
@@ -17,5 +17,5 @@
       "@mytutorapp/shared/types": ["../../packages/shared/types/index.ts", "../../packages/shared/types/index.d.ts"]
     }
   },
-  "include": ["src", "*.ts", "*.tsx", "../../packages/shared"]
+  "include": ["next-env.d.ts", "src", "*.ts", "*.tsx", "../../packages/shared"]
 }

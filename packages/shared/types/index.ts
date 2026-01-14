@@ -18,6 +18,8 @@ export type OrgCycle = 'monthly' | 'yearly';
 export type OrgTier = 'starter' | 'pro' | 'enterprise';
 
 
+export * from './cv';
+
 
 // UI-friendly strings (for display forms etc.)
 export type Pricing = {

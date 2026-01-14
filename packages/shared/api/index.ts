@@ -19,11 +19,13 @@ export * from './enrollmentsApi';
 export * from './payoutApi';
 export * from './aiCertificatesApi';
 export * from './aiCourseApi';
+export * from './aiCvApi';
 export * from './orgApi';  
 export * from './institutionAuth';
 export * from './uploadAsset';
 export * from './oerApi';
 export * from './orgInstructorsApi';
 export * from './orgLearnersApi';
+export * from './cvApi';
 
 export { fetchTutorReviews as fetchTutorReviewsFromTutorReviewsApi } from './tutorReviewsApi';
