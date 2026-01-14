@@ -69,6 +69,10 @@ import OrgExamResultsPortal from './pages/org/OrgExamResultsPortal.web';
 
 // org change-password page
 import OrgChangePassword from './pages/org/OrgChangePassword.web';
+import CvTemplatesPage from './pages/CvTemplates.web';
+import CvDraftsPage from './pages/CvDrafts.web';
+import CvBuilderNew from './pages/CvBuilderNew.web';
+import CvBuilderPage from './pages/CvBuilderPage.web';
 
 /* ───────────────────────────
    Per-user "first login" helpers
@@ -194,17 +198,8 @@ const FirstLoginGate: React.FC = () => {
 /* Root landing: decide "/" after auth */
 const RootLandingOrHome: React.FC = () => {
   const { token } = useShopContext();
-  const isFirstLogin = useIsFirstLogin();
-  const markSeen = useMarkFirstLoginSeen();
-
   if (!token) return <Landing />;
-
-  const first = isFirstLogin();
-  if (first) {
-    markSeen();
-    return <Navigate to="/profile/me" replace />;
-  }
-  return <Navigate to="/home" replace />;
+  return <Landing />;
 };
 
 /* If already logged in, bounce away from /login appropriately
@@ -422,6 +417,7 @@ const App: React.FC<{}> = () => {
           <Route path="/fulfillment" element={<FulfillmentPolicy />} />
           <Route path="/payment-flow" element={<PaymentFlow />} />
           <Route path="/unsubscribe" element={<UnsubscribePage />} />
+          <Route path="/templates" element={<CvTemplatesPage />} />
 
          
           {/* Org public routes */}
@@ -493,6 +489,9 @@ const App: React.FC<{}> = () => {
 
         {/* Protected pages with layout (general app) */}
         <Route element={<ProtectedLayout />}>
+          <Route path="/builder" element={<CvDraftsPage />} />
+          <Route path="/builder/new" element={<CvBuilderNew />} />
+          <Route path="/builder/:id" element={<CvBuilderPage />} />
           <Route path="/account" element={<AccountSection />} />
           <Route path="/messages" element={<Messages />} />
           <Route path="/courses/:courseId" element={<CourseDetails />} />

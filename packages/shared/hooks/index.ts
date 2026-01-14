@@ -17,6 +17,7 @@ export { useClassVault, useClassVaultDetail } from './useClassVault';
 export { default as useTutorReviews } from './useTutorReviews';
 export { default as useUploadClassVault } from './useUploadClassVault';
 export { default as useAppQuery } from './useAppQuery';
+export * from './useCv';
 export { default as useTheme, ThemeProvider, useThemeProvider } from './useTheme';
 export * from './useAchievements';
 export * from './useCertificates';
