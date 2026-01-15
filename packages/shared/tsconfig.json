@@ -16,12 +16,12 @@
     "outDir": "dist"
   },
   "include": [
+    "index.ts",
     "api/**/*",
     "hooks/**/*",
     "utils/**/*",
     "context/**/*",
-    "types/**/*.d.ts",
-    "types",
+    "types/**/*",
     "scripts/**/*"
   ]
 }

@@ -5,8 +5,7 @@ import CvTopNav from '../components/cv/CvTopNav';
 
 export const metadata: Metadata = {
   title: 'CVPro | Premium CV Builder',
-  description:
-    'Build premium, ATS-ready CVs with templates, live previews, and AI assistance.',
+  description: 'Build premium, ATS-ready CVs with templates, live previews, and AI assistance.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

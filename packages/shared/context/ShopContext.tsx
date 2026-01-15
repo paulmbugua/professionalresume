@@ -1,4 +1,6 @@
 /* eslint-disable no-console */
+'use client';
+
 import React, {
   createContext,
   useContext,
@@ -10,7 +12,6 @@ import React, {
   useRef,
 } from 'react';
 import axios, { AxiosError, AxiosInstance } from 'axios';
-import { useQueryClient } from '@tanstack/react-query';
 import useAppQuery from '../hooks/useAppQuery';
 import type {
   ShopContextValue as BaseShopContextValue,
@@ -27,6 +28,15 @@ interface ShopContextProviderProps {
     removeItem: (key: string) => Promise<void>;
   };
   navigateFn?: (destination: string) => void;
+
+  /**
+   * Optional react-query client passed from the app layer.
+   * This avoids importing react-query hooks inside shared.
+   */
+  queryClient?: {
+    cancelQueries?: (...args: any[]) => Promise<any> | any;
+    clear?: () => void;
+  };
 }
 
 interface ApiProfileMeResponse {
@@ -89,7 +99,7 @@ function attachAuthGuards(
   getTokens: () => { token: string; orgToken: string; adminToken: string },
   onUserAuthFail: () => Promise<void>,
   onOrgAuthFail: () => Promise<void>,
-  onAdminAuthFail: () => Promise<void>
+  onAdminAuthFail: () => Promise<void>,
 ) {
   http.interceptors.request.use((cfg) => {
     const { token, orgToken, adminToken } = getTokens();
@@ -98,14 +108,14 @@ function attachAuthGuards(
     let path = '';
     try {
       const full = axios.getUri(cfg);
-      path = full.startsWith('http') ? new URL(full).pathname : (cfg.url ?? '') as string;
+      path = full.startsWith('http') ? new URL(full).pathname : ((cfg.url ?? '') as string);
     } catch {
       path = (cfg.url ?? '') as string;
     }
 
     const wantsAdmin = path.startsWith('/api/admin');
-    const wantsOrg   = path.startsWith('/api/org'); // matches /api/org and /api/orgs
-    const session    = wantsAdmin ? 'admin' : (wantsOrg ? 'org' : 'user');
+    const wantsOrg = path.startsWith('/api/org'); // matches /api/org and /api/orgs
+    const session = wantsAdmin ? 'admin' : wantsOrg ? 'org' : 'user';
 
     const useToken = wantsAdmin ? adminToken : wantsOrg ? orgToken : token;
 
@@ -129,24 +139,26 @@ function attachAuthGuards(
       let path = '';
       try {
         const full = axios.getUri(error?.config || {});
-        path = full.startsWith('http') ? new URL(full).pathname : (error?.config?.url ?? '') as string;
+        path = full.startsWith('http')
+          ? new URL(full).pathname
+          : ((error?.config?.url ?? '') as string);
       } catch {
         path = (error?.config?.url ?? '') as string;
       }
 
-      const session = (error?.config as any)?.__session as 'user'|'org'|'admin'|undefined;
+      const session = (error?.config as any)?.__session as 'user' | 'org' | 'admin' | undefined;
 
       // Admin token will 401 on user endpoints; ignore those 401s.
       const ignoreUserHydrate401 =
         session === 'admin' && (path === '/api/user/me' || path === '/api/profile/me');
 
       if ((status === 401 || status === 403) && !ignoreUserHydrate401) {
-        if (session === 'admin')      await onAdminAuthFail();
-        else if (session === 'org')   await onOrgAuthFail();
-        else                          await onUserAuthFail();
+        if (session === 'admin') await onAdminAuthFail();
+        else if (session === 'org') await onOrgAuthFail();
+        else await onUserAuthFail();
       }
       return Promise.reject(error);
-    }
+    },
   );
 }
 
@@ -155,11 +167,10 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
   backendUrl,
   storage,
   navigateFn,
+  queryClient,
 }) => {
-  const queryClient = useQueryClient();
-
   // ── Local state ───────────────────────────────────────────────────────────
-  const [token, setTokenState] = useState<string>('');       // user (student/tutor) token
+  const [token, setTokenState] = useState<string>(''); // user (student/tutor) token
   const [orgToken, setOrgTokenState] = useState<string>(''); // institution token
   const [adminToken, setAdminTokenState] = useState<string>(''); // admin token
   const [initializing, setInitializing] = useState<boolean>(true);
@@ -175,7 +186,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     axios.create({
       baseURL: backendUrl,
       timeout: 20000,
-    })
+    }),
   );
 
   // Keep baseURL updated if prop changes (rare)
@@ -189,25 +200,35 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     orgToken: '',
     adminToken: '',
   });
-  useEffect(() => { tokensRef.current.token = token; }, [token]);
-  useEffect(() => { tokensRef.current.orgToken = orgToken; }, [orgToken]);
-  useEffect(() => { tokensRef.current.adminToken = adminToken; }, [adminToken]);
+  useEffect(() => {
+    tokensRef.current.token = token;
+  }, [token]);
+  useEffect(() => {
+    tokensRef.current.orgToken = orgToken;
+  }, [orgToken]);
+  useEffect(() => {
+    tokensRef.current.adminToken = adminToken;
+  }, [adminToken]);
 
   // ── Logout helpers ────────────────────────────────────────────────────────
   const doAutoUserLogout = useCallback(async () => {
     try {
-      await queryClient.cancelQueries();
-      queryClient.clear();
+      await queryClient?.cancelQueries?.();
+      queryClient?.clear?.();
     } catch {}
+
     setTokenState('');
     setUserEmail(null);
     setUserId(null);
     setRole(null);
+
     try {
       await storage?.removeItem('token');
       await storage?.removeItem('role');
     } catch {}
+
     delete httpRef.current.defaults.headers.common.Authorization;
+
     if (navigateFn) navigateFn('/login');
   }, [navigateFn, queryClient, storage]);
 
@@ -260,7 +281,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
 
         if (t && t.split('.').length === 3) {
           setTokenState(t);
-          // default Authorization should be user token only
+          // default Authorization should be user token only (interceptor will override as needed)
           httpRef.current.defaults.headers.common.Authorization = `Bearer ${t}`;
         } else if (t) {
           await storage?.removeItem('token');
@@ -298,21 +319,31 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
         await storage?.removeItem('role');
       }
     },
-    [storage]
+    [storage],
   );
 
   // ── Set / clear institution token (writes to storage) ─────────────────────
   const setOrgToken = useCallback(
     async (newOrgToken: string): Promise<void> => {
+      // ✅ allow clear
+      if (!newOrgToken) {
+        setOrgTokenState('');
+        await storage?.removeItem('orgToken');
+        await storage?.removeItem('auth:mode');
+        return;
+      }
+
+      // validate JWT-ish
       if (typeof newOrgToken !== 'string' || newOrgToken.split('.').length !== 3) {
         console.warn('[ShopContext] setOrgToken ignored non-JWT value');
         return;
       }
+
       setOrgTokenState(newOrgToken);
       await storage?.setItem('orgToken', newOrgToken);
       await storage?.setItem('auth:mode', 'org').catch(() => {});
     },
-    [storage]
+    [storage],
   );
 
   // ── Set / clear admin token (writes to storage) ───────────────────────────
@@ -325,7 +356,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
         await storage?.removeItem('adminToken');
       }
     },
-    [storage]
+    [storage],
   );
 
   // Public user logout (does not touch org or admin sessions)
@@ -338,11 +369,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
   }, []);
 
   // ── React Query: fetch /api/profile/me (user profile) ─────────────────────
-  const {
-    data: queryData,
-    isLoading: loadingProfile,
-    refetch,
-  } = useAppQuery<Profile | null, Error>(
+  const { data: queryData, isLoading: loadingProfile, refetch } = useAppQuery<Profile | null, Error>(
     ['profile', token, adminToken],
     async () => {
       const res = await httpRef.current.get<ApiProfileMeResponse>('/api/profile/me');
@@ -351,7 +378,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     {
       enabled: Boolean(token) && !adminToken, // skip in admin session
       retry: false,
-    }
+    },
   );
 
   const profile: Profile | null = queryData ?? null;
@@ -378,11 +405,8 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
 
     // persist role for reloads
     if (storage) {
-      if (incomingRole) {
-        await storage.setItem('role', incomingRole);
-      } else {
-        await storage.removeItem('role');
-      }
+      if (incomingRole) await storage.setItem('role', incomingRole);
+      else await storage.removeItem('role');
     }
   }, [userEmail, tokens, userId, role, storage]);
 
@@ -396,66 +420,65 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
   }, [fetchUserDetails]);
 
   // ── Compose and provide context value ─────────────────────────────────────
-  const value = useMemo<ShopContextValue>(() => ({
-    // existing
-    backendUrl,
-    token,
-    initializing,
-    userId,
-    language,
-    setToken,
-    toggleLanguage,
-    logout,
-    userEmail,
-    tokens,
-    setTokens,
-    loadingProfile,
-    profile,
-    refreshProfile,
-    refreshUserDetails,
-    role,
+  const value = useMemo<ShopContextValue>(
+    () => ({
+      // existing
+      backendUrl,
+      token,
+      initializing,
+      userId,
+      language,
+      setToken,
+      toggleLanguage,
+      logout,
+      userEmail,
+      tokens,
+      setTokens,
+      loadingProfile,
+      profile,
+      refreshProfile,
+      refreshUserDetails,
+      role,
 
-    // org
-    orgToken,
-    setOrgToken,
-    orgLogout,
+      // org
+      orgToken,
+      setOrgToken,
+      orgLogout,
 
-    // axios
-    http: httpRef.current,
+      // axios
+      http: httpRef.current,
 
-    // admin
-    adminToken,
-    setAdminToken,
-    adminLogout,
-  }), [
-    backendUrl,
-    token,
-    initializing,
-    userId,
-    language,
-    setToken,
-    toggleLanguage,
-    logout,
-    userEmail,
-    tokens,
-    loadingProfile,
-    profile,
-    refreshProfile,
-    refreshUserDetails,
-    role,
-    orgToken,
-    setOrgToken,
-    orgLogout,
-    adminToken,
-    setAdminToken,
-    adminLogout,
-  ]);
-
-  return (
-    <ShopContext.Provider value={value}>
-      {initializing ? null : children}
-    </ShopContext.Provider>
+      // admin
+      adminToken,
+      setAdminToken,
+      adminLogout,
+    }),
+    [
+      backendUrl,
+      token,
+      initializing,
+      userId,
+      language,
+      setToken,
+      toggleLanguage,
+      logout,
+      userEmail,
+      tokens,
+      loadingProfile,
+      profile,
+      refreshProfile,
+      refreshUserDetails,
+      role,
+      orgToken,
+      setOrgToken,
+      orgLogout,
+      adminToken,
+      setAdminToken,
+      adminLogout,
+    ],
   );
+
+  return <ShopContext.Provider value={value}>{initializing ? null : children}</ShopContext.Provider>;
 };
 
 export const useShopContext = (): ShopContextValue => {
