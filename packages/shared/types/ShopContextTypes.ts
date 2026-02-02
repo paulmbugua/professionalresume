@@ -2,7 +2,7 @@
 import { Dispatch, SetStateAction } from 'react';
 
 /** All supported user roles across apps */
-export type UserRole = 'student' | 'tutor' | 'admin' | 'superadmin' | null;
+export type UserRole = 'user' | 'admin' | 'superadmin' | null;
 
 /** Core user profile metadata */
 export interface Profile {

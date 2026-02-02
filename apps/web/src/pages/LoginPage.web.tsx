@@ -4,11 +4,6 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import useAuth from '@mytutorapp/shared/hooks/useAuth';
 import { useShopContext } from '@mytutorapp/shared/context';
 import CustomGoogleLoginButton from '../components/CustomGoogleLoginButton';
-import { COUNTRIES } from '@mytutorapp/shared/utils/countries';
-import CountrySelect from '../components/CountrySelect';
-// For Cancel in the role modal
-import { signOut } from 'firebase/auth';
-import { auth } from '@mytutorapp/shared/utils/firebaseConfig';
 
 type AuthMode = 'Login' | 'Sign Up';
 type ResetMode = 'idle' | 'requesting' | 'verifying';
@@ -16,8 +11,6 @@ type ResetMode = 'idle' | 'requesting' | 'verifying';
 const LOGIN_BG =
   'https://images.unsplash.com/photo-1513258496099-48168024aec0?q=80&w=2000&auto=format&fit=crop';
 
-const NEED_ROLE_FLAG = 'auth:needsRole';
-const GOOGLE_NAME_KEY = 'auth:googleName';
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -69,10 +62,6 @@ const LoginPage: React.FC = () => {
     registerWithEmail,
     sendResetOTP,
     resetPasswordWithOTP,
-    // Role modal
-    isRoleModalNeeded,
-    completeRole,
-    clearAuthFlags,
   } = useAuth({
     alertFn: (msg) => console.log('[auth]', msg),
     navigateFn: (dest) => {
@@ -96,12 +85,8 @@ const LoginPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  // Sign-up & Role modal fields
+  // Sign-up fields
   const [name, setName] = useState('');
-  const [role, setRole] = useState<'' | 'student' | 'tutor'>('');
-  const [age, setAge] = useState<string>('');
-  const [languages, setLanguages] = useState<string[]>([]);
-  const [country, setCountry] = useState<string>('');
 
   // OTP/reset fields
   const [otp, setOtp] = useState('');
@@ -111,39 +96,8 @@ const LoginPage: React.FC = () => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ─────────────────────────────────────────────────────────
-  // FAST MODAL OPEN (Change #3)
-  // - open instantly if NEED_ROLE_FLAG is set or URL has ?roleFlow=1
-  // - react to storage events (no polling)
-  // ─────────────────────────────────────────────────────────
   const query = new URLSearchParams(location.search);
   const switchToIndividual = query.get('switch') === '1';
-  const roleFlowParam = query.get('roleFlow');
-  const initialShouldOpen =
-    isRoleModalNeeded() || roleFlowParam === '1' || localStorage.getItem(NEED_ROLE_FLAG) === '1';
-  const [showRoleModal, setShowRoleModal] = useState<boolean>(initialShouldOpen);
-
-  // Prefill name/language defaults on first mount (Change #2)
-  useEffect(() => {
-    const gName = sessionStorage.getItem(GOOGLE_NAME_KEY);
-    if (gName && !name) setName(gName);
-
-    if (!languages.length) setLanguages(['English']);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // React to NEED_ROLE_FLAG changes
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.storageArea !== localStorage) return;
-      if (e.key === NEED_ROLE_FLAG) {
-        const needed = localStorage.getItem(NEED_ROLE_FLAG) === '1';
-        setShowRoleModal(needed);
-      }
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
 
   useEffect(() => {
     if (switchToIndividual) return;
@@ -155,10 +109,6 @@ const LoginPage: React.FC = () => {
   }, [token, userRole, navigate, switchToIndividual]);
 
   const clearErrors = () => setError(null);
-
-  const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setLanguages([e.target.value]);
-  };
 
   // ─────────────────────────────────────────────────────────
   // Email login / signup submit
@@ -184,8 +134,7 @@ const LoginPage: React.FC = () => {
 
       // Sign Up
       if (authMode === 'Sign Up') {
-        const needsCountry = role === 'student';
-        if (!name || !email || !password || !role || (needsCountry && !country)) {
+        if (!name || !email || !password) {
           setError('Please fill all required fields.');
           return;
         }
@@ -198,10 +147,7 @@ const LoginPage: React.FC = () => {
           name: name.trim(),
           email: email.trim(),
           password,
-          role,
-          country: role === 'student' ? country : (undefined as any),
-          age: role === 'student' ? Number(age) : (undefined as any),
-          languages: role === 'student' ? languages : (undefined as any),
+          role: 'user',
         });
 
         // Successful sign-up
@@ -261,92 +207,6 @@ const LoginPage: React.FC = () => {
       setError(err?.message || 'Failed to reset password');
     } finally {
       setBusy(false);
-    }
-  };
-
-  // ─────────────────────────────────────────────────────────
-  // Role modal logic
-  // ─────────────────────────────────────────────────────────
-  const isStudent = role === 'student';
-  const trimmedName = (name || '').trim();
-  const numericAge = Number(age);
-
-  const isStudentValid =
-    isStudent &&
-    trimmedName.length >= 2 &&
-    trimmedName.length <= 80 &&
-    Number.isFinite(numericAge) &&
-    numericAge > 0 &&
-    Array.isArray(languages) &&
-    languages.length > 0 &&
-    (languages[0] || '').trim().length > 0 &&
-    country !== '';
-
-  const canContinue = role === 'tutor' ? true : isStudentValid;
-  const ctaText = role === 'tutor' ? 'Create account' : 'Create profile';
-
-  // ⬇️ NEW: close modal + clear artifacts instantly so Cancel feels responsive
-  const closeRoleFlowInstant = () => {
-    setShowRoleModal(false);
-    localStorage.removeItem(NEED_ROLE_FLAG);
-    sessionStorage.removeItem(GOOGLE_NAME_KEY);
-    sessionStorage.removeItem('auth:busy');
-    const url = new URL(window.location.href);
-    url.searchParams.delete('roleFlow');
-    window.history.replaceState({}, '', url.toString());
-  };
-
-  const submitRoleFromModal = async () => {
-    clearErrors();
-
-    if (!role) {
-      setError('Please select a role.');
-      return;
-    }
-
-    try {
-      setBusy(true);
-      if (role === 'tutor') {
-        // Tutors create user only (no country here)
-        await completeRole({ role: 'tutor' } as any);
-      } else if (isStudentValid) {
-        await completeRole({
-          role: 'student',
-          name: trimmedName,
-          age: numericAge,
-          languages,
-          country,
-        } as any);
-      } else {
-        setError('Please complete all required student fields.');
-        return;
-      }
-
-      // ⬇️ Close UI immediately after success to avoid flicker
-      closeRoleFlowInstant();
-
-      // Go back to original destination if desired
-      const target = getReturnTo();
-      clearReturnTo();
-      navigate(target, { replace: true });
-    } catch (err: any) {
-      setError(err?.message || 'Failed to update role');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // Cancel role modal: fully abort partial Google sign-in
-  const handleCancelRole = async () => {
-    try {
-      setBusy(false);
-      closeRoleFlowInstant(); // close UI now
-      clearAuthFlags(); // clear pending jwt/flags
-      await signOut(auth); // end Firebase session
-    } catch {
-      // ignore
-    } finally {
-      navigate('/login', { replace: true });
     }
   };
 
@@ -511,53 +371,6 @@ const LoginPage: React.FC = () => {
                         placeholder="Full name"
                         required
                       />
-                      <select
-                        value={role}
-                        onChange={(e) => setRole(e.target.value as 'student' | 'tutor')}
-                        className="input"
-                        required
-                      >
-                        <option value="">Select role</option>
-                        <option value="student">Student</option>
-                        <option value="tutor">Tutor</option>
-                      </select>
-
-                      {/* Country (students only) */}
-                      {role === 'student' && (
-                        <CountrySelect
-                          value={country}
-                          onChange={setCountry}
-                          options={COUNTRIES}
-                          className="input"
-                          placeholder="Select your country"
-                        />
-                      )}
-
-                      {role === 'student' && (
-                        <>
-                          <input
-                            type="number"
-                            value={age}
-                            onChange={(e) => setAge(e.target.value)}
-                            className="input"
-                            placeholder="Age"
-                            required
-                          />
-                          <select
-                            value={languages[0] || ''}
-                            onChange={handleLanguageChange}
-                            className="input"
-                            required
-                          >
-                            <option value="" disabled>Select your language</option>
-                            <option value="English">English</option>
-                            <option value="Swahili">Swahili</option>
-                            <option value="French">French</option>
-                            <option value="Spanish">Spanish</option>
-                            <option value="German">German</option>
-                          </select>
-                        </>
-                      )}
                     </>
                   )}
 
@@ -660,126 +473,6 @@ const LoginPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Role Modal on the LoginPage (fast & role-aware) */}
-      {showRoleModal && (
-        <div className="fixed inset-0 z-[9998] bg-black/40 backdrop-blur-sm flex items-center justify-center">
-          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-[#0f1821] p-6 shadow-xl ring-1 ring-black/5">
-            <h2 className="text-xl font-display font-semibold text-center mb-4">
-              {role === 'tutor' ? 'Finish creating your account' : 'Create your student profile'}
-            </h2>
-
-            {error && (
-              <div className="mb-4 rounded-lg bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-200 px-3 py-2 text-sm">
-                {error}
-              </div>
-            )}
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void submitRoleFromModal();
-              }}
-              className="space-y-4"
-            >
-              <select
-                value={role}
-                onChange={(e) => {
-                  const next = e.target.value as 'student' | 'tutor';
-                  setRole(next);
-                  if (next === 'student') {
-                    if (!languages.length) setLanguages(['English']);
-
-                    if (!(name || '').trim()) {
-                      const gName = sessionStorage.getItem(GOOGLE_NAME_KEY) || '';
-                      if (gName) setName(gName);
-                    }
-                  } else {
-                    // Tutors do not create a profile
-                    setName('');
-                    setAge('');
-                    setLanguages([]);
-                  }
-                }}
-                className="input"
-                required
-              >
-                <option value="">Select role</option>
-                <option value="student">Student</option>
-                <option value="tutor">Tutor</option>
-              </select>
-
-              {role === 'student' && (
-                <CountrySelect
-                  value={country}
-                  onChange={setCountry}
-                  options={COUNTRIES}
-                  className="input"
-                  placeholder="Select your country"
-                />
-              )}
-
-              {/* Student profile fields */}
-              {role === 'student' && (
-                <>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="input"
-                    placeholder="Full name"
-                    required
-                  />
-                  <input
-                    type="number"
-                    min={1}
-                    value={age}
-                    onChange={(e) => setAge(e.target.value)}
-                    className="input"
-                    placeholder="Age"
-                    required
-                  />
-                  <select
-                    value={languages[0] || ''}
-                    onChange={(e) => setLanguages([e.target.value])}
-                    className="input"
-                    required
-                  >
-                    <option value="" disabled>Select your language</option>
-                    <option value="English">English</option>
-                    <option value="Swahili">Swahili</option>
-                    <option value="French">French</option>
-                    <option value="Spanish">Spanish</option>
-                    <option value="German">German</option>
-                  </select>
-                </>
-              )}
-
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={handleCancelRole}
-                  className="inline-flex items-center justify-center rounded-xl h-11 px-5 w-1/2
-                             border border-gray-300 text-gray-700 bg-white
-                             hover:bg-gray-50 active:translate-y-[1px]
-                             dark:bg-transparent dark:text-darkTextPrimary dark:border-darkCard"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  type="submit"
-                  disabled={busy || !canContinue}
-                  className={`inline-flex items-center justify-center rounded-xl h-11 px-5 w-1/2
-                              bg-primary text-white font-semibold shadow-sm hover:shadow transition
-                              active:translate-y-[1px] ${busy ? 'opacity-60 cursor-not-allowed' : ''}`}
-                >
-                  {busy ? 'Saving…' : ctaText}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

@@ -5,7 +5,7 @@
 // -------------------------------------------------------------
 export type GalleryImage = File | string | null;
 export type LanguageMap = Record<string, boolean>;
-export type Role = 'student' | 'tutor';
+export type Role = 'user' | 'admin' | 'superadmin';
 export type LegacySize = 'micro' | 'short' | 'standard' | 'deep_dive';
 export type DbCourseSize = 'mini' | 'standard' | 'extended' | 'deep_dive' | 'bootcamp';
 export type AnyCourseSize = LegacySize | DbCourseSize;
@@ -365,20 +365,12 @@ export interface RegisterPayload {
   email: string;
   password: string;
   role: Role;
-  age?: string;
-  languages?: string[];
-  country?: string;         // e.g. "ke"
-  gradeBands?: string[];    // e.g. ["Primary (Grades 1–6)"]
 }
 
 export interface UpdateRolePayload {
   userId?: string; 
   role: Role;
-  age?: string;
   name?: string; 
-  languages?: string[];
-   country?: string;       // "ke"
-  gradeBands?: string[];  // labels array
 
 }
 

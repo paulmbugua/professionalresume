@@ -73,7 +73,7 @@ export const ShopContext = createContext<ShopContextValue | undefined>(undefined
 const normalizeRole = (r: unknown): UserRole => {
   if (typeof r !== 'string') return null;
   const v = r.toLowerCase();
-  if (v === 'student' || v === 'tutor' || v === 'admin' || v === 'superadmin') {
+  if (v === 'user' || v === 'admin' || v === 'superadmin') {
     return v as UserRole;
   }
   return null;
@@ -170,7 +170,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
   queryClient,
 }) => {
   // ── Local state ───────────────────────────────────────────────────────────
-  const [token, setTokenState] = useState<string>(''); // user (student/tutor) token
+  const [token, setTokenState] = useState<string>(''); // user token
   const [orgToken, setOrgTokenState] = useState<string>(''); // institution token
   const [adminToken, setAdminTokenState] = useState<string>(''); // admin token
   const [initializing, setInitializing] = useState<boolean>(true);

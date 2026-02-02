@@ -73,7 +73,7 @@ const usePayment = (): UsePaymentResult => {
     ['randomProfile', token],
     async () => {
       const p = await getRandomProfile(backendUrl, token);
-      return (p?.role === 'tutor' ? p : null) as Profile | null;
+      return (p?.role === 'user' ? p : null) as Profile | null;
     },
     { enabled: Boolean(token) }
   );

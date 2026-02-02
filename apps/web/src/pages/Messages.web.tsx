@@ -146,7 +146,7 @@ const Messages: React.FC = () => {
                     <div className="flex items-center space-x-3">
                       <img
                         src={
-                          myProfile.role === 'tutor'
+                          myProfile.role === 'user'
                             ? chatPlaceholder
                             : chatItem.avatar || chatPlaceholder
                         }
@@ -197,7 +197,7 @@ const Messages: React.FC = () => {
               <div className="absolute left-16 md:left-20 flex items-center space-x-3">
                 <img
                   src={
-                    myProfile.role === 'tutor'
+                    myProfile.role === 'user'
                       ? chatPlaceholder
                       : activeChat.avatar || chatPlaceholder
                   }

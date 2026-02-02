@@ -35,11 +35,11 @@ const useHomePage = () => {
       if (!backendUrl) return []; // guest mode safety
       const baseProfiles = await fetchTutorProfiles(backendUrl);
 
-      // Group tutors by SUBJECTS to pick a small sample for rating lookups
+      // Group users by SUBJECTS to pick a small sample for rating lookups
       const bySubject: Record<string, Profile[]> = {};
       SUBJECTS.forEach((s) => (bySubject[s] = []));
       for (const p of baseProfiles) {
-        if ((p as any).role !== 'tutor') continue;
+        if ((p as any).role !== 'user') continue;
         const cat = String((p as any)?.category || '').toLowerCase();
         for (const s of SUBJECTS) {
           if (cat.includes(s.toLowerCase())) {
@@ -82,7 +82,7 @@ const useHomePage = () => {
 
       // Merge ratings back into base list
       return baseProfiles.map((p) => {
-        if ((p as any).role !== 'tutor') return p;
+        if ((p as any).role !== 'user') return p;
         const rid = (p as any).user_id ?? (p as any).id;
         if (candidateIds.has(rid)) {
           const hit = results.get(rid);

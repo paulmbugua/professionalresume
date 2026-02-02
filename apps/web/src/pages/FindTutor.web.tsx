@@ -144,7 +144,7 @@ const FindTutor: React.FC = () => {
 
   // Derived tutors
   const tutors = useMemo(
-    () => (filteredProfiles.filter((p) => p.role === 'tutor') as unknown as Profile[]),
+    () => (filteredProfiles.filter((p) => p.role === 'user') as unknown as Profile[]),
     [filteredProfiles]
   );
 
