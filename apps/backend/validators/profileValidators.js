@@ -80,7 +80,7 @@ const descriptionUpdateSchema = Joi.object({
 // Create schema (full required fields for tutors)
 // -------------------------------------------------------------
 export const profileValidationSchema = Joi.object({
-  role: Joi.string().valid('tutor', 'student').required(),
+  role: Joi.string().valid('user', 'admin', 'superadmin').required(),
 
   // Common
   name: Joi.string().min(2).trim().required(),
@@ -192,7 +192,7 @@ export const profileValidationSchema = Joi.object({
 // Update schema (partial, still constrained)
 // -------------------------------------------------------------
 export const profileUpdateValidationSchema = Joi.object({
-  role: Joi.string().valid('tutor', 'student'),
+  role: Joi.string().valid('user', 'admin', 'superadmin'),
 
   name: Joi.string().min(2).trim(),
   age: Joi.number().integer().min(5),

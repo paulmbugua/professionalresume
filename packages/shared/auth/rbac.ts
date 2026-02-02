@@ -1,10 +1,9 @@
 import type { UserRole } from '@mytutorapp/shared/types/ShopContextTypes';
 
 export const RoleOrder = {
-  student: 0,
-  tutor: 1,
-  admin: 2,
-  superadmin: 3,
+  user: 0,
+  admin: 1,
+  superadmin: 2,
 } as const;
 
 export function hasRoleAtLeast(current: UserRole, required: UserRole): boolean {

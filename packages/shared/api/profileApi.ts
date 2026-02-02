@@ -62,12 +62,12 @@ export const fetchTutorProfiles = async (backendUrl: string): Promise<Profile[]>
 
   const singular = `${base}/api/profile?public=1&limit=48`;
   const first = await tryOnce(singular);
-  if (first.ok) return first.data.filter((p: any) => String(p?.role || '').toLowerCase() === 'tutor');
+  if (first.ok) return first.data.filter((p: any) => String(p?.role || '').toLowerCase() === 'user');
 
   // Fallback to plural only if singular failed (handles future remounts)
   const plural = `${base}/api/profiles?public=1&limit=48`;
   const second = await tryOnce(plural);
-  return second.data.filter((p: any) => String(p?.role || '').toLowerCase() === 'tutor');
+  return second.data.filter((p: any) => String(p?.role || '').toLowerCase() === 'user');
 };
 
 /** Fetch the current user's full profile (404 → null, not an error) */

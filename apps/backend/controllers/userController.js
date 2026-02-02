@@ -7,7 +7,6 @@ import crypto from 'crypto'; // For OTP generation
 import pool from '../config/db.js';
 import { sendOTP } from '../config/emailService.js'; // Email service for OTPs
 import { admin } from '../bootstrap/firebaseAdmin.js';
-import { inferAgeGroup } from '../utils/education.js';
 
 // Initialize your Google client with *one* of your client IDs (the one you want to primarily verify).
 // We'll still pass both in the verify call below.
@@ -68,14 +67,12 @@ export const loginUser = async (req, res) => {
 export const registerUser = async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
-    // new/optional student fields
-    const age        = req.body.age;
-    const languages  = Array.isArray(req.body.languages) ? req.body.languages : (req.body.languages ? [req.body.languages] : []);
-    const country    = (req.body.country || '').toString().trim().toUpperCase();  // e.g. 'KE'
-    const gradeBands = Array.isArray(req.body.gradeBands) ? req.body.gradeBands : (req.body.gradeBands ? [req.body.gradeBands] : []);
+    const normalizedRole = (role || 'user').toString().trim().toLowerCase();
 
-    if (!name || !email?.trim() || !password || !role) {
-      return res.status(400).json({ success: false, message: 'Name, email, password and role are required' });
+    if (!name || !email?.trim() || !password) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'Name, email, and password are required' });
     }
     if (!validator.isEmail(email.trim())) {
       return res.status(400).json({ success: false, message: 'Invalid email format' });
@@ -83,23 +80,9 @@ export const registerUser = async (req, res) => {
     if (password.length < 8) {
       return res.status(400).json({ success: false, message: 'Password must be at least 8 characters' });
     }
-    if (!['student', 'tutor'].includes(role)) {
+    if (!['user', 'admin', 'superadmin'].includes(normalizedRole)) {
       return res.status(400).json({ success: false, message: 'Invalid role' });
     }
-
-    // 🔁 Backward & forward compatible (now fully optional for students):
-// - Old clients may send ageGroup (string or array)
-// - New clients may send age / gradeBands (optional)
-let ageGroupArr = [];
-if (req.body.ageGroup) {
-  ageGroupArr = Array.isArray(req.body.ageGroup) ? req.body.ageGroup : [req.body.ageGroup];
-} else if (role === 'student' && (age || (gradeBands && gradeBands.length))) {
-  try {
-    const derived = inferAgeGroup({ age, gradeBands });
-    if (derived) ageGroupArr = [derived];
-  } catch { /* best-effort only */ }
-}
-
 
     const exists = await pool.query('SELECT 1 FROM users WHERE email = $1', [email.trim()]);
     if (exists.rows.length) {
@@ -109,61 +92,9 @@ if (req.body.ageGroup) {
     const hashed = await bcrypt.hash(password, 10);
     const insertUser = await pool.query(
       'INSERT INTO users (name, email, password, role) VALUES ($1,$2,$3,$4) RETURNING id',
-      [name, email.trim(), hashed, role]
+      [name, email.trim(), hashed, normalizedRole]
     );
     const userId = insertUser.rows[0].id;
-
-   if (role === 'student') {
-  // DB requires age >= 5 → clamp to 5 when missing/too small
-  const ageRaw = req.body.age;
-  const safeAgeStudent =
-    Number.isFinite(Number(ageRaw)) && Number(ageRaw) >= 5
-      ? Number(ageRaw)
-      : 5;
-
-  const languagesIn = Array.isArray(req.body.languages)
-    ? req.body.languages
-    : (req.body.languages ? [req.body.languages] : []);
-  const safeLanguages = languagesIn.filter(Boolean);
-
-  const gradeBands = Array.isArray(req.body.gradeBands)
-    ? req.body.gradeBands
-    : (req.body.gradeBands ? [req.body.gradeBands] : []);
-
-  let ageGroupArr = null;
-  try {
-    if (req.body.ageGroup) {
-      ageGroupArr = Array.isArray(req.body.ageGroup) ? req.body.ageGroup : [req.body.ageGroup];
-    } else if (safeAgeStudent > 0 || (gradeBands && gradeBands.length)) {
-      ageGroupArr = [inferAgeGroup({ age: safeAgeStudent, gradeBands })];
-    }
-  } catch {
-    ageGroupArr = null;
-  }
-
-  const description = JSON.stringify({
-    region: null,
-    country: (country || null),
-    gradeBandKey: (gradeBands[0] || null),
-  });
-
-  await pool.query(
-    `INSERT INTO profiles (user_id, role, name, age, languages, age_group, description, country)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-    [
-      userId,
-      role,
-      name,
-      safeAgeStudent,                                  // ← 5 instead of 0/NULL
-      (safeLanguages.length ? safeLanguages : null),
-      (ageGroupArr && ageGroupArr.length ? ageGroupArr : null),
-      description,
-      country || null,
-    ]
-  );
-}
-
-
 
     const token = createToken(userId);
     return res.status(201).json({ success: true, token, message: 'Sign up successful' });
@@ -479,12 +410,13 @@ export const googleLogin = async (req, res) => {
     // ⚡ Single UPSERT (fill empty name; set google_id if missing)
     const { rows } = await pool.query(
       `
-      INSERT INTO users (name, email, google_id)
-      VALUES ($1, $2, $3)
+      INSERT INTO users (name, email, google_id, role)
+      VALUES ($1, $2, $3, 'user')
       ON CONFLICT (email) DO UPDATE
       SET
         name      = CASE WHEN COALESCE(users.name, '') = '' THEN EXCLUDED.name ELSE users.name END,
-        google_id = COALESCE(users.google_id, EXCLUDED.google_id)
+        google_id = COALESCE(users.google_id, EXCLUDED.google_id),
+        role      = COALESCE(users.role, 'user')
       RETURNING id, email, name, role
       `,
       [displayName || email, email, googleId]
@@ -523,7 +455,8 @@ export const updateUserRole = async (req, res) => {
     }
 
     const { role } = req.body || {};
-    if (!role || !['student', 'tutor'].includes(role)) {
+    const normalizedRole = (role || '').toString().trim().toLowerCase();
+    if (!normalizedRole || !['user', 'admin', 'superadmin'].includes(normalizedRole)) {
       return res.status(400).json({ success: false, message: 'Invalid role' });
     }
 
@@ -535,95 +468,23 @@ export const updateUserRole = async (req, res) => {
     if (!u0.length) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
-    const currentUser = u0[0];
-
-    // Normalize optional student fields
-    const cleanName = (req.body.name ?? '').toString().trim();
-    const ageRaw = Number(req.body.age);
-    const safeAge = Number.isFinite(ageRaw) && ageRaw >= 5 ? ageRaw : 5;
-
-    const langsIn = Array.isArray(req.body.languages)
-      ? req.body.languages
-      : (req.body.languages ? [req.body.languages] : []);
-    const langs = langsIn.map(s => String(s || '').trim()).filter(Boolean);
-
-    const gradeBands = Array.isArray(req.body.gradeBands)
-      ? req.body.gradeBands
-      : (req.body.gradeBands ? [req.body.gradeBands] : []);
-
-    let ageGroupArr = [];
-    if (req.body.ageGroup) {
-      ageGroupArr = Array.isArray(req.body.ageGroup) ? req.body.ageGroup : [req.body.ageGroup];
-    } else if (role === 'student' && (Number.isFinite(ageRaw) || gradeBands.length)) {
-      try {
-        const derived = inferAgeGroup({ age: Number.isFinite(ageRaw) ? ageRaw : undefined, gradeBands });
-        if (derived) ageGroupArr = [derived];
-      } catch { /* best-effort */ }
-    }
-
-    const country = (req.body.country || '').toString().trim().toUpperCase() || null;
-    const description = JSON.stringify({
-      region: null,
-      country,
-      gradeBandKey: gradeBands[0] || null,
-    });
 
     await client.query('BEGIN');
 
-    // Update users.role (and name if student provided one)
+    // Update users.role (and name if provided)
+    const cleanName = (req.body.name ?? '').toString().trim();
     const { rows: u1 } = await client.query(
       `
       UPDATE users
          SET role = $1,
-             name = CASE WHEN $1 = 'student' AND $2 <> '' THEN $2 ELSE name END,
+             name = CASE WHEN $2 <> '' THEN $2 ELSE name END,
              updated_at = NOW()
        WHERE id = $3
        RETURNING id, email, role, name, tokens
       `,
-      [role, cleanName, userId]
+      [normalizedRole, cleanName, userId]
     );
     const updatedUser = u1[0];
-
-    // Only students get/need a profile
-    let profile = null;
-    if (role === 'student') {
-      const finalName = (cleanName || updatedUser.name || currentUser.name || '').trim();
-      if (finalName.length < 2) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({ success: false, message: 'Name is required for student role' });
-      }
-
-      // Idempotent UPSERT
-      const { rows: p1 } = await client.query(
-        `
-        INSERT INTO profiles
-          (user_id, role, name, age, languages, age_group, description, country, created_at, updated_at)
-        VALUES
-          ($1,     $2,   $3,  $4,  $5,        $6,       $7,         $8,      NOW(),     NOW())
-        ON CONFLICT (user_id) DO UPDATE
-          SET role       = EXCLUDED.role,
-              name       = EXCLUDED.name,
-              age        = EXCLUDED.age,
-              languages  = EXCLUDED.languages,
-              age_group  = EXCLUDED.age_group,
-              description= EXCLUDED.description,
-              country    = EXCLUDED.country,
-              updated_at = NOW()
-        RETURNING id, user_id, name, country, age, languages, age_group, created_at, updated_at
-        `,
-        [
-          userId,
-          role,
-          finalName,
-          safeAge,
-          langs.length ? langs : null,
-          ageGroupArr.length ? ageGroupArr : null,
-          description,
-          country,
-        ]
-      );
-      profile = p1[0];
-    }
 
     await client.query('COMMIT');
 
@@ -637,12 +498,11 @@ export const updateUserRole = async (req, res) => {
         name: updatedUser.name,
         tokens: updatedUser.tokens || 0,
       },
-      profile, // null for tutors
+      profile: null,
     });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch {}
     if (err?.code === '23505') {
-      // Still here would imply a different unique collision (not user_id), but surface cleanly.
       return res.status(409).json({
         success: false,
         message: 'Conflicting record already exists.',
@@ -655,9 +515,6 @@ export const updateUserRole = async (req, res) => {
     client.release();
   }
 };
-
-
-
 export async function deleteUser(req, res) {
   const userId = req.user?.id;
   if (!userId) return res.status(401).json({ message: 'Unauthorized' });

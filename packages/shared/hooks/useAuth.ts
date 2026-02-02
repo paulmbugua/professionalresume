@@ -222,9 +222,10 @@ const useAuth = (options?: UseLoginOptions) => {
           return;
         }
 
-        setPendingJwt(jwt);
-        setNeedRoleFlag(true);
-        nav('/profile/me'); // -> 'Account' on native
+        await api.updateRole(backendUrl, { role: 'user' }, jwt);
+        setToken(jwt);
+        clearAuthFlags();
+        nav(nextAfterAuth('/home'));
       } catch (e: unknown) {
         clearAuthFlags();
         const msg = e instanceof Error ? e.message : 'Google authentication failed';
