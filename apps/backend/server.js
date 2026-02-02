@@ -1,75 +1,32 @@
 // apps/backend/server.js
 import 'dotenv/config';
-
-if (process.env.NODE_ENV === 'production' && process.env.START_PAYOUT_WORKER === 'true') {
-  await import('./cronJobs/payoutWorker.js');
-}
-
 import pool from './config/db.js'; // loads .env variables
 import express from 'express';
 import cors from 'cors';
 import http from 'http';
 import { runWebhookTickSingleton as runWebhookTick } from './cronJobs/webhookWorkerSingleton.js';
-import attemptsRoutes from './routes/attemptsRoutes.js';
-import oerRoutes from './routes/oerRoutes.js';
 import { Server } from 'socket.io';
 import bodyParser from 'body-parser';
-import refundRoutes from './routes/refundRoutes.js';
-import emailUnsubscribeRoutes from './routes/emailUnsubscribe.js';
+
 import connectCloudinary from './config/cloudinary.js';
-import { normalizeCourseSize } from './middleware/normalizeCourseSize.js';
-import { ensureSeedSuperadmin } from './controllers/sessionController.js';
-import progressWatchRoutes from './routes/progressWatchRoutes.js';
-import progressReadRoutes from './routes/progressReadRoutes.js';
-import openstaxIngestRoutes from './routes/openstaxIngestRoutes.js';
-import youtubeIngestRoutes from './routes/youtubeIngestRoutes.js';
-// Routes
-import ttsAvatarRoutes from './routes/ttsAvatarRoutes.js';
-import transcriptsRoutes from './routes/transcripts.js';
-import adminRoutes from './routes/adminRoutes.js';
-import authRoutes from './routes/authRoutes.js';
-import adminStaffRoutes from './routes/adminStaffRoutes.js';
-import institutionAuthRoutes from './routes/institutionAuthRoutes.js';
-import aiRoutes from './routes/ai.js';
-import orgRoutes from './routes/orgRoutes.js';
+
+import paymentRoutes from './routes/paymentRoutes.js';
+import aiCvRoutes from './routes/aiCvRoutes.js';
+import mpesaUrlsRoutes from './routes/mpesaUrlsRoutes.js';
+import { inflightLimiter } from './middleware/inflightLimiter.js';
+import cvRoutes from './routes/cvRoutes.js';
 import cloudinaryRoutes from './routes/cloudinaryRoutes.js';
 import earningsRoutes from './routes/earningsRoutes.js';
-import './cronJobs/scheduler.js';
-import paymentRoutes from './routes/paymentRoutes.js';
-import aiCourseRoutes from './routes/aiCourseRoutes.js';
-import aiCvRoutes from './routes/aiCvRoutes.js';
-import profileRoutes from './routes/profileRoutes.js';
-import userRouter from './routes/userRoute.js';
-import profileActionsRoutes from './routes/profileActionsRoutes.js';
-import webhookRoutes from './routes/webhookRoutes.js';
-import tutorSessionRoutes from './routes/tutorSessionRoutes.js';
-import classVaultRoutes from './routes/classVaultRoutes.js';
-import mpesaUrlsRoutes from './routes/mpesaUrlsRoutes.js';
-import reviewRouter from './routes/reviewRoutes.js';
-import certificationRoutes from './routes/certificationRoutes.js';
-import courseRoutes from './routes/courseRoutes.js';
-import enrollmentRoutes from './routes/enrollmentRoutes.js';
-import paypalRoutes from './routes/paypalRoutes.js';
-import { webhooks } from './controllers/paypalController.js';
-import courseProgressRoutes from './routes/courseProgressRoutes.js';
-import achievementsRoutes from './routes/achievementsRoutes.js';
-import certificateRoutes from './routes/certificateRoutes.js';
-import payoutRoutes from './routes/payoutRoutes.js';
-import { inflightLimiter } from './middleware/inflightLimiter.js';
-import orgExamsRoutes from './routes/orgExamsRoutes.js';
-import cvRoutes from './routes/cvRoutes.js';
+
+
 // Middleware
 import {
   morganMiddleware,
   helmetMiddleware,
   errorLogger,
   limiter,            // global soft limiter
-  userLimiter,
-  reviewsLimiter,
-  progressLimiter,
   aiKeyFn,
-  certificatesLimiter,
-  aiLimiterStrict,    // ⇐ use the new per-user/per-bucket limiter
+ aiLimiterStrict,    // ⇐ use the new per-user/per-bucket limiter
   loginLimiterFactory, 
 } from './middleware/middleware.js';
 
@@ -94,11 +51,11 @@ process.on('unhandledRejection', (err) => {
 
 const app = express();
 const server = http.createServer(app);
-const port = Number(process.env.PORT ?? 4000);
+const port = Number(process.env.PORT ?? 4001);
 const isProduction = process.env.NODE_ENV === 'production';
 
 // ─── 1) Environment vars ────────────────────────────────────────────────────────
-const BACKEND_URL      = process.env.BACKEND_URL      || `http://localhost:${process.env.PORT || 4000}`;
+const BACKEND_URL      = process.env.BACKEND_URL      || `http://localhost:${process.env.PORT || 4001}`;
 const WEB_BACKEND_URL  = process.env.WEB_BACKEND_URL  || 'http://localhost:5173';
 const PROD_BACKEND_URL = process.env.PROD_BACKEND_URL || 'https://server.daybreaklearner.com';
 
@@ -117,9 +74,9 @@ const developmentOrigins = [
   'http://127.0.0.1:5173',
   'http://localhost:5174',
   'http://localhost:5173',
-  'http://localhost:8081',
+  'http://localhost:3001',
   'http://192.168.137.1:8081',
-  'http://192.168.137.1:4000',
+  'http://192.168.137.1:4001',
   'http://localhost:19006',
   'http://localhost:19000', // Expo web
   'https://b743-37-211-202-186.ngrok-free.app',
@@ -164,16 +121,6 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // Same options for preflight
 
-// ─── 7) Webhooks (raw body) must come BEFORE JSON parser for that route only ───
-app.post(
-  '/api/paypal/webhook',
-  bodyParser.raw({ type: 'application/json' }),
-  (req, _res, next) => {
-    req.rawBody = req.body;
-    next();
-  },
-  webhooks
-);
 
 // ─── 4) Global middleware ───────────────────────────────────────────────────────
 app.use(helmetMiddleware);
@@ -188,11 +135,6 @@ app.use(limiter);
 // 🔐 Login-only rate limiting (5 attempts / 15m, skip success)
 const loginLimiter = loginLimiterFactory({ windowMs: 15 * 60_000, limit: 5 });
 
-// Middleware-only routes that pass through to actual routers:
-app.post('/api/auth/admin-env-login',      loginLimiter, (req, _res, next) => next());
-app.post('/api/admin/login',               loginLimiter, (req, _res, next) => next());
-app.post('/api/auth/login',                loginLimiter, (req, _res, next) => next());
-app.post('/api/institutions/auth/login',   loginLimiter, (req, _res, next) => next());
 
 app.get('/healthz', (_req, res) => res.status(200).send('ok'));
 
@@ -235,83 +177,22 @@ if (isProduction) {
 
 
 
-// ─── 8) Mount REST routes (with per-route limiters where needed) ───────────────
-// User & profiles
-app.use('/api/user',              userLimiter,         userRouter);
-app.use('/api/profile',                                profileRoutes);
-app.use('/api/profileActions',                         profileActionsRoutes);
-
-
 // Payments & webhooks
 app.use('/api/payment',                                paymentRoutes);
-app.use('/api',                                        webhookRoutes);
-app.use('/api/paypal',                                 paypalRoutes);
-app.use('/api/payouts',                                payoutRoutes);
-app.use('/api/payment', refundRoutes);
 app.use('/api/cv',                                      cvRoutes);
 
-
-// Tutor sessions / M-Pesa
-app.use('/api/tutor-session',                          tutorSessionRoutes);
 app.use('/api/mpesa',                                  mpesaUrlsRoutes);
 
-// Reviews & public content
-app.use('/api/reviews',           reviewsLimiter,      reviewRouter);
-app.use('/api/profiles',                               certificationRoutes);
-app.use('/api/certificates',      certificatesLimiter, certificateRoutes);
-
-// ClassVault & media
-app.use('/api/classvault',                             classVaultRoutes);
 app.use('/api/cloudinary',                             cloudinaryRoutes);
 
-// Courses (non-AI) & enrollments
-app.use('/api/courses',                                courseRoutes);
-app.use('/api/enrollments',                            enrollmentRoutes);
 app.use('/api/earnings',                               earningsRoutes);
-app.use('/api/achievements',                           achievementsRoutes);
 
-// Auth & Admin
-app.use('/api/institutions/auth',                      institutionAuthRoutes);
-app.use('/api/auth',                                   authRoutes);
-
-
-app.use('/api/admin',                                  adminStaffRoutes);   // /api/admin/staff
-app.use('/api/admin',                                  adminRoutes);
-
-// Organization
-app.use('/api/orgs',                                        orgRoutes);
-app.use('/api/orgs',                                    orgExamsRoutes);
-app.use('/api/orgs/attempts',                          attemptsRoutes);
-// Course progress
-app.use('/api/course-progress',   progressLimiter,     courseProgressRoutes);
-app.use('/api',                 progressLimiter,    progressWatchRoutes);
-app.use('/api',               progressLimiter,      progressReadRoutes);
-app.use('/api',                                              oerRoutes);
-app.use('/api',                                   openstaxIngestRoutes);
-
-app.use('/api',                                     youtubeIngestRoutes);
-
-
-// ✅ Ensure course size normalization runs BEFORE AI handlers that rely on it
-app.use('/api/ai',                                     normalizeCourseSize);
 
 app.use('/api/ai', inflightLimiter({ keyFn: aiKeyFn, max: Number(process.env.AI_MAX_INFLIGHT || 2) }));
 // ✅ Apply strict AI limiter to expensive AI/TTS work (per-user, per-bucket)
-app.use('/api/ai',                aiLimiterStrict,     aiRoutes);          // general AI endpoints
-app.use('/api/ai',                aiLimiterStrict,     aiCourseRoutes);    // AI course generation
+
 app.use('/api/ai',                aiLimiterStrict,     aiCvRoutes);        // AI CV assistant
 
-// TTS avatars also hit Azure—protect them, too
-app.use('/api/ttsAvatar', inflightLimiter({ keyFn: aiKeyFn, max: Number(process.env.AI_MAX_INFLIGHT || 2) }));
-app.use('/api/ttsAvatar',         aiLimiterStrict,     ttsAvatarRoutes);
-
-// Transcripts (if these call AI, consider adding aiLimiterStrict as well)
-app.use('/api/transcripts',                            transcriptsRoutes);
-
-// Legacy / secondary router for /api/courses (kept if intentional)
-
-
-app.use('/api/email',                         emailUnsubscribeRoutes);
 
 // Root ping
 app.get('/', (_req, res) => res.send('API Working'));
@@ -425,9 +306,6 @@ app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
   res.status(500).json({ message: 'Internal Server Error' });
 });
-
-// Seed superadmin (non-blocking)
-await ensureSeedSuperadmin().catch(() => {});
 
 // ─── 11) Start server ──────────────────────────────────────────────────────────
 server.listen(port, '0.0.0.0', () => {

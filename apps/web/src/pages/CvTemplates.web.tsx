@@ -8,6 +8,7 @@ const CvTemplatesPage: React.FC = () => {
   const { backendUrl } = useShopContext() as any;
   const { data: templates = [], isLoading, error } = useCvTemplates({ backendUrl });
   const navigate = useNavigate();
+   console.log('[CvTemplates] backendUrl:', backendUrl);
 
   return (
     <div className="mx-auto w-full max-w-screen-2xl px-4 pb-12 pt-8 lg:px-8">

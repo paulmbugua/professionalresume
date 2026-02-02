@@ -13,7 +13,7 @@ type AsyncStorageLike = {
 
 const Providers = ({ children }: { children: React.ReactNode }) => {
   const backendUrl =
-    process.env.NEXT_PUBLIC_BACKEND_URL?.trim() || 'http://localhost:4000';
+    process.env.NEXT_PUBLIC_BACKEND_URL?.trim() || 'http://localhost:4001';
 
   // Create storage only once; guard window/localStorage just in case.
   const storage: AsyncStorageLike = useMemo(
