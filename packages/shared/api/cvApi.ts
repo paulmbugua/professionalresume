@@ -19,13 +19,19 @@ const toMessage = (err: any) =>
   err?.message ||
   'Request failed';
 
-export const listCvTemplates = async (
-  backendUrl: string
-): Promise<CvTemplate[]> => {
+export const listCvTemplates = async (backendUrl: string): Promise<CvTemplate[]> => {
   try {
     const api = client(backendUrl);
-    const res = await api.get<CvTemplate[]>('/api/cv/templates');
-    return res.data;
+    const res = await api.get<CvTemplate[] | { templates?: CvTemplate[] }>(
+      '/api/cv/templates'
+    );
+    if (Array.isArray(res.data)) {
+      return res.data;
+    }
+    if (Array.isArray(res.data?.templates)) {
+      return res.data.templates;
+    }
+    return [];
   } catch (err: any) {
     console.error('🔴 [listCvTemplates] status/data:', err.response?.status, err.response?.data);
     throw new Error(toMessage(err));
