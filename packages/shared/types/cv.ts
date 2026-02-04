@@ -80,3 +80,9 @@ export type CvTemplate = {
   previewImage?: string;
   componentKey: string;
 };
+
+export type CvTemplateResponse = {
+  templates: CvTemplate[];
+  source?: 'db' | 'local';
+  fallback?: boolean;
+};

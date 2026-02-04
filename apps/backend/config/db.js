@@ -65,6 +65,8 @@ function shouldLogOnce(key, windowMs = 5000) {
 
 pool.on('connect', () => {
   console.log('✅ PostgreSQL client connected');
+  dbStatus.ready = true;
+  dbStatus.lastError = null;
 });
 
 pool.on('remove', () => {
@@ -77,24 +79,48 @@ pool.on('error', (err) => {
   if (shouldLogOnce(key)) {
     console.warn('⚠️ PG idle client error:', err.code || err.name, '-', err.message);
   }
+  dbStatus.ready = false;
+  dbStatus.lastError = err?.message || String(err);
 });
 
 /* ───────── Robust startup probe (dev/containers) ───────── */
+const dbStatus = {
+  ready: false,
+  lastError: null,
+};
+
+export function getDbStatus() {
+  return { ...dbStatus };
+}
+
 async function waitForPg({
   tries = Number(process.env.DB_STARTUP_TRIES) || 12,
   backoffMs = Number(process.env.DB_STARTUP_BACKOFF_MS) || 1000,
 } = {}) {
+  const requireStartup =
+    process.env.DB_STARTUP_REQUIRED !== undefined
+      ? process.env.DB_STARTUP_REQUIRED === 'true'
+      : isProd;
+
   for (let i = 0; i < tries; i++) {
     try {
       await pool.query('SELECT 1');
       console.log('🔍 Startup test query succeeded.');
+      dbStatus.ready = true;
+      dbStatus.lastError = null;
       return;
     } catch (err) {
       const last = i === tries - 1;
       console.warn(`⏳ Waiting for Postgres (attempt ${i + 1}/${tries}) — ${err.code || err.message}`);
+      dbStatus.ready = false;
+      dbStatus.lastError = err?.message || String(err);
       if (last) {
-        console.error('🚨 Startup test query failed. Exiting.');
-        process.exit(1);
+        if (requireStartup) {
+          console.error('🚨 Startup test query failed. Exiting.');
+          process.exit(1);
+        }
+        console.warn('⚠️ Startup test query failed. Continuing without a DB connection.');
+        return;
       }
       await new Promise((r) => setTimeout(r, backoffMs * Math.min(8, 2 ** i)));
     }
@@ -217,5 +243,3 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGQUIT']) {
 }
 
 export default pool;
-
-

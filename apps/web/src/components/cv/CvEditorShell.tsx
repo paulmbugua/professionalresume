@@ -6,6 +6,10 @@ import CvPreview from './CvPreview';
 import SectionManager from './SectionManager';
 import AiAssistPanel from './AiAssistPanel';
 import PrintExportButton from './PrintExportButton';
+import TemplateErrorBoundary from './TemplateErrorBoundary';
+import TemplateDebugPanel from './TemplateDebugPanel';
+import { resolvePreviewDraft } from '../../templates/demoResume';
+import { templateRegistry, templateRegistryById } from '../../templates/registry';
 
 type Props = {
   draft: CvDraft;
@@ -38,6 +42,9 @@ const CvEditorShell: React.FC<Props> = ({
     const el = document.getElementById('ai-panel');
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
+
+  const { resumeSource } = resolvePreviewDraft(draft);
+  const templateSource = templateRegistryById[draft.templateId] ? 'local' : 'unknown';
 
   return (
     <div className="mx-auto w-full max-w-screen-2xl px-4 pb-12 pt-6 lg:px-8">
@@ -117,7 +124,16 @@ const CvEditorShell: React.FC<Props> = ({
         </div>
         <div className={`${activeTab === 'edit' ? 'hidden' : 'block'} lg:block`}>
           <div className="rounded-2xl border border-gray-200 bg-white/60 p-4 shadow-sm dark:border-white/10 dark:bg-white/5 print:border-none print:bg-transparent print:p-0">
-            <CvPreview draft={draft} />
+            <TemplateErrorBoundary>
+              <CvPreview draft={draft} />
+            </TemplateErrorBoundary>
+            <TemplateDebugPanel
+              draft={draft}
+              templateCount={templateRegistry.length}
+              templateSource={templateSource}
+              resumeSource={resumeSource}
+              apiError={undefined}
+            />
           </div>
         </div>
       </div>

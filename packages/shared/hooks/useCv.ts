@@ -11,7 +11,7 @@ import {
   aiRewriteBullet,
   aiSuggestSkills,
 } from '@mytutorapp/shared/api';
-import type { CvDraft, CvTemplate } from '@mytutorapp/shared/types';
+import type { CvDraft, CvTemplateResponse } from '@mytutorapp/shared/types';
 
 type BaseArgs = {
   backendUrl: string;
@@ -19,7 +19,7 @@ type BaseArgs = {
 };
 
 export function useCvTemplates({ backendUrl }: Pick<BaseArgs, 'backendUrl'>) {
-  return useAppQuery<CvTemplate[], Error>(
+  return useAppQuery<CvTemplateResponse, Error>(
     ['cv-templates', backendUrl],
     () => listCvTemplates(backendUrl),
     { enabled: Boolean(backendUrl) }
