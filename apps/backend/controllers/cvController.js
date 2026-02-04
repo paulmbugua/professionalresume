@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { cvTemplates } from '../services/cvTemplates.js';
+import { getDbStatus } from '../config/db.js';
 import {
   listDraftsForUser,
   getDraftById,
@@ -49,7 +50,12 @@ const buildDefaultDraft = ({ userId, templateId, title }) => ({
 });
 
 export async function listTemplates(_req, res) {
-  res.json(cvTemplates);
+  const db = getDbStatus();
+  res.json({
+    templates: cvTemplates,
+    source: db.ready ? 'db' : 'local',
+    fallback: !db.ready,
+  });
 }
 
 export async function listDrafts(req, res) {

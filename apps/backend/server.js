@@ -1,6 +1,6 @@
 // apps/backend/server.js
 import 'dotenv/config';
-import pool from './config/db.js'; // loads .env variables
+import pool, { getDbStatus } from './config/db.js'; // loads .env variables
 import express from 'express';
 import cors from 'cors';
 import http from 'http';
@@ -139,6 +139,17 @@ const loginLimiter = loginLimiterFactory({ windowMs: 15 * 60_000, limit: 5 });
 
 
 app.get('/healthz', (_req, res) => res.status(200).send('ok'));
+app.get('/health', (_req, res) => {
+  const db = getDbStatus();
+  const overall = db.ready ? 'ok' : 'degraded';
+  res.status(db.ready ? 200 : 207).json({
+    status: overall,
+    db: {
+      status: db.ready ? 'up' : 'down',
+      lastError: db.lastError,
+    },
+  });
+});
 
 // ─── 5) Socket.IO setup ─────────────────────────────────────────────────────────
 const io = new Server(server, {

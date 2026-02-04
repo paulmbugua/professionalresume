@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { CvDraft, CvTemplate } from '@mytutorapp/shared/types';
+import type { CvDraft, CvTemplate, CvTemplateResponse } from '@mytutorapp/shared/types';
 
 function client(backendUrl: string, token?: string) {
   return axios.create({
@@ -19,19 +19,23 @@ const toMessage = (err: any) =>
   err?.message ||
   'Request failed';
 
-export const listCvTemplates = async (backendUrl: string): Promise<CvTemplate[]> => {
+export const listCvTemplates = async (backendUrl: string): Promise<CvTemplateResponse> => {
   try {
     const api = client(backendUrl);
-    const res = await api.get<CvTemplate[] | { templates?: CvTemplate[] }>(
-      '/api/cv/templates'
-    );
+    const res = await api.get<
+      CvTemplate[] | CvTemplateResponse | { templates?: CvTemplate[] }
+    >('/api/cv/templates');
     if (Array.isArray(res.data)) {
-      return res.data;
+      return { templates: res.data, source: 'db', fallback: false };
     }
     if (Array.isArray(res.data?.templates)) {
-      return res.data.templates;
+      return {
+        templates: res.data.templates,
+        source: res.data.source ?? 'db',
+        fallback: Boolean(res.data.fallback),
+      };
     }
-    return [];
+    return { templates: [], source: 'db', fallback: false };
   } catch (err: any) {
     console.error('🔴 [listCvTemplates] status/data:', err.response?.status, err.response?.data);
     throw new Error(toMessage(err));
