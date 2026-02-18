@@ -1,26 +1,21 @@
+'use client';
+
 import React, { useMemo, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Eye, EyeOff, FileCheck2, FileText, Sparkles } from 'lucide-react';
 import useAuth from '@mytutorapp/shared/hooks/useAuth';
 import { useShopContext } from '@mytutorapp/shared/context';
-
-const resolveReturnTo = (location: any) => {
-  const params = new URLSearchParams(location.search || '');
-  const fromQuery = params.get('returnTo') || params.get('next');
-  if (fromQuery) return fromQuery;
-  const fromState = location?.state?.from;
-  if (fromState?.pathname) return `${fromState.pathname}${fromState.search || ''}${fromState.hash || ''}`;
-  return '/builder';
-};
+import { getReturnToFromQuery } from '../lib/returnTo';
 
 const LoginPage: React.FC = () => {
-  const navigate = useNavigate();
-  const location = useLocation() as any;
-  const returnTo = useMemo(() => resolveReturnTo(location), [location]);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnTo = useMemo(() => getReturnToFromQuery(searchParams, '/builder'), [searchParams]);
   const { token } = useShopContext() as any;
 
   const { loginWithEmail } = useAuth({
-    navigateFn: (dest) => navigate(dest || returnTo, { replace: true }),
+    navigateFn: (dest) => router.replace(dest || returnTo),
   });
 
   const [email, setEmail] = useState('');
@@ -30,11 +25,11 @@ const LoginPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const env = typeof process !== 'undefined' ? process.env : ({} as any);
-  const hasGoogleConfig = Boolean(env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || (import.meta as any)?.env?.VITE_GOOGLE_CLIENT_ID);
+  const hasGoogleConfig = Boolean(env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || env.VITE_GOOGLE_CLIENT_ID);
 
   React.useEffect(() => {
-    if (token) navigate(returnTo || '/builder', { replace: true });
-  }, [navigate, returnTo, token]);
+    if (token) router.replace(returnTo || '/builder');
+  }, [router, returnTo, token]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,7 +37,7 @@ const LoginPage: React.FC = () => {
     setError(null);
     try {
       await loginWithEmail({ email: email.trim(), password });
-      navigate(returnTo || '/builder', { replace: true });
+      router.replace(returnTo || '/builder');
     } catch (err: any) {
       setError(err?.message || 'Unable to log in.');
     } finally {
@@ -105,7 +100,7 @@ const LoginPage: React.FC = () => {
             </p>
           )}
 
-          <p className="mt-6 text-center text-xs text-gray-500 dark:text-white/50">By continuing, you agree to our <Link to="/terms" className="underline">Terms</Link> and <Link to="/privacy-policy" className="underline">Privacy Policy</Link>.</p>
+          <p className="mt-6 text-center text-xs text-gray-500 dark:text-white/50">By continuing, you agree to our <Link href="/terms" className="underline">Terms</Link> and <Link href="/privacy-policy" className="underline">Privacy Policy</Link>.</p>
         </section>
       </div>
     </div>

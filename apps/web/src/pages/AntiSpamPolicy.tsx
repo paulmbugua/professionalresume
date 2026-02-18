@@ -1,6 +1,6 @@
 // apps/web/src/pages/AntiSpamPolicy.tsx
 import React from "react";
-import { Link } from "react-router-dom";
+import Link from 'next/link';
 
 export default function AntiSpamPolicy() {
   return (
@@ -47,7 +47,7 @@ export default function AntiSpamPolicy() {
           <p>Email: <a className="text-primary" href="mailto:support@daybreaklearner.com">support@daybreaklearner.com</a></p>
         </div>
 
-        <p className="text-xs text-gray-500">See also: <Link to="/privacy-policy" className="text-primary">Privacy Policy</Link> • <Link to="/terms" className="text-primary">Terms of Service</Link></p>
+        <p className="text-xs text-gray-500">See also: <Link href="/privacy-policy" className="text-primary">Privacy Policy</Link> • <Link href="/terms" className="text-primary">Terms of Service</Link></p>
       </section>
     </main>
   );

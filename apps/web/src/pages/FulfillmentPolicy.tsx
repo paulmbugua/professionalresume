@@ -1,6 +1,6 @@
 // apps/web/src/pages/FulfillmentPolicy.tsx
 import React from 'react';
-import { Link } from 'react-router-dom';
+import Link from 'next/link';
 
 export default function FulfillmentPolicy() {
   return (
@@ -47,11 +47,11 @@ export default function FulfillmentPolicy() {
         <p>Receipts live in your account. For company invoices, email <a className="text-primary" href="mailto:billing@daybreaklearner.com">billing@daybreaklearner.com</a>.</p>
 
         <div className="rounded-md p-4 bg-gray-50 dark:bg-[#121927] text-xs">
-          <strong>Note:</strong> Tokens are non-transferable and not redeemable for cash. See our <Link to="/refunds" className="text-primary">Refund & Cancellation Policy</Link>.
+          <strong>Note:</strong> Tokens are non-transferable and not redeemable for cash. See our <Link href="/refunds" className="text-primary">Refund & Cancellation Policy</Link>.
         </div>
 
         <div className="mt-6 text-xs text-gray-500">
-          See also: <Link to="/payment-flow" className="text-primary">How Payments Work</Link>
+          See also: <Link href="/payment-flow" className="text-primary">How Payments Work</Link>
         </div>
       </section>
     </main>

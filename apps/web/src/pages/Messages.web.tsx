@@ -1,5 +1,8 @@
+'use client';
+
 import React, { useEffect, useRef } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faPaperPlane,
@@ -13,7 +16,7 @@ import type { ChatMessage } from '@mytutorapp/shared/types/ShopContextTypes';
 import chatPlaceholder from '../assets/chat.png';
 
 const Messages: React.FC = () => {
-  const location = useLocation();
+  const searchParams = useSearchParams();
   const {
     activeChat,
     setActiveChat,
@@ -38,7 +41,7 @@ const Messages: React.FC = () => {
 
   // Auto-open chat if ?studentId=...
   useEffect(() => {
-    const params    = new URLSearchParams(location.search);
+    const params    = new URLSearchParams(searchParams?.toString() || "");
     const studentId = params.get('studentId');
     if (studentId && !activeChat && chats.length > 0) {
       const chatToOpen = chats.find(
@@ -46,7 +49,7 @@ const Messages: React.FC = () => {
       );
       if (chatToOpen) openChat(chatToOpen);
     }
-  }, [location.search, chats, activeChat, openChat]);
+  }, [searchParams, chats, activeChat, openChat]);
 
   // Auto-focus on input
   useEffect(() => {
@@ -89,7 +92,7 @@ const Messages: React.FC = () => {
     >
       {/* Home Link (theme-aware) */}
       <Link
-        to="/"
+        href="/"
         className="absolute top-6 left-1/2 -translate-x-1/2 text-mutedGray hover:text-primary transition-colors"
         aria-label="Go home"
       >

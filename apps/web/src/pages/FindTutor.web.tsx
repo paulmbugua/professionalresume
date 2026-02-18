@@ -1,5 +1,7 @@
+'use client';
+
 import React, { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import Link from 'next/link';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconProp } from '@fortawesome/fontawesome-svg-core';
 import { faMagnifyingGlass, faChevronLeft, faChevronRight } from '@fortawesome/free-solid-svg-icons';
@@ -129,7 +131,7 @@ const COUNTRY_OPTIONS: string[] = Array.isArray(COUNTRIES)
 
 const FindTutor: React.FC = () => {
   const { filteredProfiles, loading, handleSearch } = useHomePage();
-  const backendUrl = import.meta.env.VITE_BACKEND_URL as string | undefined;
+  const backendUrl = (typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_BACKEND_URL : undefined) as string | undefined;
 
   // Filters
   const [query, setQuery] = useState('');
