@@ -1,478 +1,113 @@
-// apps/web/src/pages/LoginPage.web.tsx
-import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import React, { useMemo, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Eye, EyeOff, FileCheck2, FileText, Sparkles } from 'lucide-react';
 import useAuth from '@mytutorapp/shared/hooks/useAuth';
 import { useShopContext } from '@mytutorapp/shared/context';
-import CustomGoogleLoginButton from '../components/CustomGoogleLoginButton';
 
-type AuthMode = 'Login' | 'Sign Up';
-type ResetMode = 'idle' | 'requesting' | 'verifying';
-
-const LOGIN_BG =
-  'https://images.unsplash.com/photo-1513258496099-48168024aec0?q=80&w=2000&auto=format&fit=crop';
-
+const resolveReturnTo = (location: any) => {
+  const params = new URLSearchParams(location.search || '');
+  const fromQuery = params.get('returnTo') || params.get('next');
+  if (fromQuery) return fromQuery;
+  const fromState = location?.state?.from;
+  if (fromState?.pathname) return `${fromState.pathname}${fromState.search || ''}${fromState.hash || ''}`;
+  return '/builder';
+};
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation() as any;
+  const returnTo = useMemo(() => resolveReturnTo(location), [location]);
+  const { token } = useShopContext() as any;
 
-  // -- Return-to handling -------------------------------------------------------
-  const RETURN_TO_SS_KEY = 'auth:returnTo';
-
-  const computeNextFromLocation = (loc: any) => {
-    // Prefer explicit RobotTeacher redirection:
-    const stateNext: string | undefined = loc?.state?.next;
-    if (stateNext && typeof stateNext === 'string') return stateNext;
-
-    // Fallback: ProtectedRoute put { from: location }
-    const from = loc?.state?.from;
-    if (from && typeof from?.pathname === 'string') {
-      const p = from.pathname ?? '';
-      const s = from.search ?? '';
-      const h = from.hash ?? '';
-      return `${p}${s}${h}`;
-    }
-
-    // Fallback: ?next=/some/path
-    const qs = new URLSearchParams(loc?.search || '');
-    const qNext = qs.get('next');
-    if (qNext) return qNext;
-
-    // Default
-    return '/home';
-  };
-
-  // Resolve once, then persist in sessionStorage so refresh on /login doesn't lose it
-  const initialReturnTo = computeNextFromLocation(location);
-  useEffect(() => {
-    if (initialReturnTo) sessionStorage.setItem(RETURN_TO_SS_KEY, initialReturnTo);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const getReturnTo = () => sessionStorage.getItem(RETURN_TO_SS_KEY) || '/home';
-  const clearReturnTo = () => sessionStorage.removeItem(RETURN_TO_SS_KEY);
-
-  const { token, role: userRole } = useShopContext();
-
-  const {
-    // Google
-    handleGoogleLoginSuccess,
-    handleGoogleLoginFailure,
-    // Email/password
-    loginWithEmail,
-    registerWithEmail,
-    sendResetOTP,
-    resetPasswordWithOTP,
-  } = useAuth({
-    alertFn: (msg) => console.log('[auth]', msg),
-    navigateFn: (dest) => {
-      const target = dest || getReturnTo();
-      clearReturnTo();
-      navigate(target, { replace: true });
-    },
+  const { loginWithEmail } = useAuth({
+    navigateFn: (dest) => navigate(dest || returnTo, { replace: true }),
   });
 
-  // ─────────────────────────────────────────────────────────
-  // Local UI state
-  // ─────────────────────────────────────────────────────────
-  const [authMode, setAuthMode] = useState<AuthMode>('Login');
-
-  // Forgot/reset password
-  const [resetMode, setResetMode] = useState<ResetMode>('idle');
-  const [otpSent, setOtpSent] = useState(false);
-
-  // Basic fields
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-
-  // Sign-up fields
-  const [name, setName] = useState('');
-
-  // OTP/reset fields
-  const [otp, setOtp] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-
-  // UX
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const query = new URLSearchParams(location.search);
-  const switchToIndividual = query.get('switch') === '1';
+  const env = typeof process !== 'undefined' ? process.env : ({} as any);
+  const hasGoogleConfig = Boolean(env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || (import.meta as any)?.env?.VITE_GOOGLE_CLIENT_ID);
 
-  useEffect(() => {
-    if (switchToIndividual) return;
-    if (token && userRole) {
-      const target = getReturnTo();
-      clearReturnTo();
-      navigate(target, { replace: true });
-    }
-  }, [token, userRole, navigate, switchToIndividual]);
+  React.useEffect(() => {
+    if (token) navigate(returnTo || '/builder', { replace: true });
+  }, [navigate, returnTo, token]);
 
-  const clearErrors = () => setError(null);
-
-  // ─────────────────────────────────────────────────────────
-  // Email login / signup submit
-  // ─────────────────────────────────────────────────────────
-  const onSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    clearErrors();
-
+    setBusy(true);
+    setError(null);
     try {
-      setBusy(true);
-
-      if (authMode === 'Login') {
-        if (!email || !password) {
-          setError('Please enter email and password.');
-          return;
-        }
-        await loginWithEmail({ email: email.trim(), password });
-        const target = getReturnTo();
-        clearReturnTo();
-        navigate(target, { replace: true });
-        return;
-      }
-
-      // Sign Up
-      if (authMode === 'Sign Up') {
-        if (!name || !email || !password) {
-          setError('Please fill all required fields.');
-          return;
-        }
-        if (password !== confirmPassword) {
-          setError('Passwords do not match.');
-          return;
-        }
-
-        await registerWithEmail({
-          name: name.trim(),
-          email: email.trim(),
-          password,
-          role: 'user',
-        });
-
-        // Successful sign-up
-        const target = getReturnTo();
-        clearReturnTo();
-        navigate(target, { replace: true });
-      }
+      await loginWithEmail({ email: email.trim(), password });
+      navigate(returnTo || '/builder', { replace: true });
     } catch (err: any) {
-      setError(err?.message || 'Authentication failed');
+      setError(err?.message || 'Unable to log in.');
     } finally {
       setBusy(false);
     }
   };
-
-  // ─────────────────────────────────────────────────────────
-  // Password reset flow
-  // ─────────────────────────────────────────────────────────
-  const handleSendOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    clearErrors();
-
-    if (!email) {
-      setError('Please enter your account email.');
-      return;
-    }
-    try {
-      setBusy(true);
-      await sendResetOTP(email.trim());
-      setOtpSent(true);
-      setResetMode('verifying');
-    } catch (err: any) {
-      setError(err?.message || 'Failed to send OTP');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleResetPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    clearErrors();
-
-    if (!email || !otp || !newPassword) {
-      setError('Please fill all fields.');
-      return;
-    }
-    try {
-      setBusy(true);
-      await resetPasswordWithOTP(email.trim(), otp.trim(), newPassword);
-      // back to login
-      setResetMode('idle');
-      setOtpSent(false);
-      setAuthMode('Login');
-      setPassword('');
-      setOtp('');
-      setNewPassword('');
-    } catch (err: any) {
-      setError(err?.message || 'Failed to reset password');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // Primary button style shared with "Explore Tutors"
-  const primaryBtn =
-    'inline-flex items-center justify-center rounded-xl h-11 px-5 bg-primary text-white font-semibold shadow-sm hover:shadow transition active:translate-y-[1px]';
-
-  const emailFormTitle = useMemo(
-    () =>
-      authMode === 'Login' ? 'Login to DayBreak' : 'Create your DayBreak account',
-    [authMode]
-  );
 
   return (
-    // ⬇️ overflow-x-hidden prevents decorative elements from creating horizontal scroll
-    <div className="relative min-h-screen overflow-x-hidden text-darkText dark:text-darkTextPrimary">
-      {/* Background image */}
-      <div
-        className="absolute inset-0 bg-cover bg-center"
-        style={{
-          backgroundImage: `linear-gradient(rgba(16,26,35,0.35), rgba(16,26,35,0.65)), url("${LOGIN_BG}")`,
-        }}
-      />
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4 py-10 text-white">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_#3b82f655,_transparent_40%),radial-gradient(circle_at_bottom_right,_#9333ea44,_transparent_35%)]" />
+      <div className="absolute -left-10 top-8 h-56 w-56 rounded-full bg-primary/20 blur-3xl" />
+      <div className="absolute -right-10 bottom-8 h-64 w-64 rounded-full bg-fuchsia-500/20 blur-3xl" />
 
-      {/* Decorative blobs are clipped within the viewport to avoid horizontal scroll */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-primary/25 blur-3xl dark:bg-secondary/25" />
-        <div className="absolute -bottom-24 -left-24 h-80 w-80 rounded-full bg-softPink/20 blur-3xl" />
-      </div>
+      <div className="relative z-10 grid w-full max-w-5xl gap-8 rounded-3xl border border-white/10 bg-white/10 p-4 shadow-2xl backdrop-blur-xl md:grid-cols-2 md:p-8 dark:bg-black/30">
+        <section className="hidden flex-col justify-between rounded-2xl bg-black/20 p-8 md:flex">
+          <div>
+            <p className="text-xs uppercase tracking-[0.3em] text-white/60">CVPro</p>
+            <h1 className="mt-3 text-3xl font-semibold leading-tight">Build an ATS-friendly CV in minutes.</h1>
+            <p className="mt-4 text-sm text-white/75">Log in to access your drafts, premium templates, AI writing help, and one-click PDF export.</p>
+          </div>
+          <ul className="space-y-3 text-sm text-white/80">
+            <li className="flex items-center gap-2"><FileText className="h-4 w-4" /> Professional template library</li>
+            <li className="flex items-center gap-2"><Sparkles className="h-4 w-4" /> AI-assisted content improvements</li>
+            <li className="flex items-center gap-2"><FileCheck2 className="h-4 w-4" /> Print-ready PDF export + cloud storage</li>
+          </ul>
+        </section>
 
-      {/* Content */}
-      <div className="relative mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 py-16 md:py-24">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-stretch">
-          {/* Brand / Benefits panel */}
-          <aside className="hidden md:flex md:col-span-6">
-            <div className="w-full rounded-2xl p-8 lg:p-10 bg-white/70 ring-1 ring-gray-200 shadow-sm backdrop-blur-sm dark:bg-[#0f1821]/70 dark:ring-darkCard">
-              <div className="flex items-center gap-3">
-                <span className="h-10 w-10 text-primary dark:text-darkTextPrimary">
-                  <svg viewBox="0 0 48 48" fill="currentColor" aria-hidden="true" className="h-full w-full">
-                    <path d="M36.7273 44C33.9891 44 31.6043 39.8386 30.3636 33.69C29.123 39.8386 26.7382 44 24 44C21.2618 44 18.877 39.8386 17.6364 33.69C16.3957 39.8386 14.0109 44 11.2727 44C7.25611 44 4 35.0457 4 24C4 12.9543 7.25611 4 11.2727 4C14.0109 4 16.3957 8.16144 17.6364 14.31C18.877 8.16144 21.2618 4 24 4C26.7382 4 29.123 8.16144 30.3636 14.31C31.6043 8.16144 33.9891 4 36.7273 4C40.7439 4 44 12.9543 44 24C44 35.0457 40.7439 44 36.7273 44Z" />
-                  </svg>
-                </span>
-                <h1 className="text-2xl font-display font-bold">Welcome back</h1>
-              </div>
+        <section className="rounded-2xl bg-white p-6 text-gray-900 shadow-xl dark:bg-slate-900 dark:text-white">
+          <p className="text-xs uppercase tracking-[0.26em] text-gray-500 dark:text-white/50">Welcome back</p>
+          <h2 className="mt-2 text-2xl font-semibold">Log in to CVPro</h2>
+          <p className="mt-2 text-sm text-gray-500 dark:text-white/60">Continue building resumes with live preview, drafts, and PDF export.</p>
 
-              <p className="mt-4 max-w-prose text-mutedGray dark:text-darkTextSecondary">
-                Sign in to continue learning with top-rated tutors. Personalized sessions, flexible schedules,
-                and real results—right at your fingertips.
-              </p>
+          {error && <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">{error}</div>}
 
-              <ul className="mt-6 space-y-4">
-                {[
-                  'Live, interactive lessons with experts',
-                  'Tailored recommendations across subjects',
-                  'Secure payments and transparent pricing',
-                ].map((item) => (
-                  <li key={item} className="flex items-center gap-3">
-                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-primary font-bold">✓</span>
-                    <span className="text-sm">{item}</span>
-                  </li>
-                ))}
-              </ul>
-
-              <div className="mt-8 rounded-xl bg-gradient-to-br from-primary/15 to-secondary/20 p-4 ring-1 ring-primary/20 dark:ring-secondary/30">
-                <p className="text-sm">
-                  “I improved my grades within weeks. The sessions are fun and super effective!” —{' '}
-                  <span className="font-semibold">Aisha, Student</span>
-                </p>
-              </div>
-
-              <div className="mt-8">
-                <Link to="/find-tutor" className={primaryBtn}>
-                  Explore Tutors
-                </Link>
+          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-white/60">Email</label>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-primary dark:border-white/20 dark:bg-black/20" placeholder="you@cvpro.com" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-white/60">Password</label>
+              <div className="relative">
+                <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 pr-10 text-sm outline-none focus:border-primary dark:border-white/20 dark:bg-black/20" placeholder="Your password" />
+                <button type="button" onClick={() => setShowPassword((v) => !v)} className="absolute inset-y-0 right-2 my-auto text-gray-500 dark:text-white/70">
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
               </div>
             </div>
-          </aside>
 
-          {/* Auth Card */}
-          <section className="md:col-span-6 flex">
-            <div className="w-full rounded-2xl bg-white ring-1 ring-gray-200 shadow-sm p-6 sm:p-8 lg:p-10 backdrop-blur-sm dark:bg-[#0f1821] dark:ring-darkCard">
-              {/* Error banner */}
-              {error && (
-                <div className="mb-4 rounded-lg bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-200 px-3 py-2 text-sm">
-                  {error}
-                </div>
-              )}
+            <button type="button" onClick={() => setEmail('demo@cvpro.local')} className="text-xs font-semibold text-primary hover:underline">Use demo account email (demo@cvpro.local)</button>
 
-              {/* Forms */}
-              {resetMode !== 'idle' ? (
-                otpSent ? (
-                  <form onSubmit={handleResetPassword} className="space-y-5">
-                    <h2 className="text-xl font-display font-semibold text-center">Enter OTP</h2>
-                    <input
-                      type="text"
-                      value={otp}
-                      onChange={(e) => setOtp(e.target.value)}
-                      className="input"
-                      placeholder="Enter OTP"
-                      required
-                    />
-                    <input
-                      type="password"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      className="input"
-                      placeholder="New Password (min. 8 characters)"
-                      required
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        className="h-11 px-4 rounded-xl border border-black/10 dark:border-white/10"
-                        onClick={() => {
-                          setResetMode('idle');
-                          setOtpSent(false);
-                          setError(null);
-                        }}
-                      >
-                        Back
-                      </button>
-                      <button type="submit" className={`${primaryBtn} flex-1`}>Reset Password</button>
-                    </div>
-                  </form>
-                ) : (
-                  <form onSubmit={handleSendOtp} className="space-y-5">
-                    <h2 className="text-xl font-display font-semibold text-center">Reset Password</h2>
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="input"
-                      placeholder="Enter your email"
-                      required
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        className="h-11 px-4 rounded-xl border border-black/10 dark:border-white/10"
-                        onClick={() => {
-                          setResetMode('idle');
-                          setError(null);
-                        }}
-                      >
-                        Back
-                      </button>
-                      <button type="submit" className={`${primaryBtn} flex-1`}>Send OTP</button>
-                    </div>
-                  </form>
-                )
-              ) : (
-                <form onSubmit={onSubmit} className="space-y-5">
-                  <h2 className="text-xl font-display font-semibold text-center">{emailFormTitle}</h2>
+            <button type="submit" disabled={busy} className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
+              {busy ? 'Signing in...' : 'Sign in'}
+            </button>
+          </form>
 
-                  {authMode === 'Sign Up' && (
-                    <>
-                      <input
-                        type="text"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        className="input"
-                        placeholder="Full name"
-                        required
-                      />
-                    </>
-                  )}
+          {hasGoogleConfig && (
+            <p className="mt-4 rounded-lg border border-dashed border-gray-200 px-3 py-2 text-center text-xs text-gray-500 dark:border-white/20 dark:text-white/60">
+              Google login is available in this environment via configured OAuth provider.
+            </p>
+          )}
 
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="input"
-                    placeholder="Email"
-                    required
-                  />
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="input"
-                    placeholder="Password"
-                    required
-                  />
-
-                  {authMode === 'Sign Up' && (
-                    <input
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="input"
-                      placeholder="Confirm password"
-                      required
-                    />
-                  )}
-
-                  <button
-                    type="submit"
-                    disabled={busy}
-                    className={`${primaryBtn} w-full ${busy ? 'opacity-60 cursor-not-allowed' : ''}`}
-                  >
-                    {authMode === 'Login' ? 'Login' : 'Sign Up'}
-                  </button>
-
-                  <div className="flex justify-between text-sm">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        clearErrors();
-                        setResetMode('requesting');
-                      }}
-                      className="link"
-                    >
-                      Forgot password?
-                    </button>
-                    {authMode === 'Login' ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          clearErrors();
-                          setAuthMode('Sign Up');
-                        }}
-                        className="link"
-                      >
-                        Create account
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          clearErrors();
-                          setAuthMode('Login');
-                        }}
-                        className="link"
-                      >
-                        Already have an account?
-                      </button>
-                    )}
-                  </div>
-                </form>
-              )}
-
-              {/* Divider / Google */}
-              <div className="my-6 flex items-center gap-3">
-                <div className="h-px flex-1 bg-gray-200 dark:bg-darkCard" />
-                <span className="text-xs text-mutedGray dark:text-darkTextSecondary">OR</span>
-                <div className="h-px flex-1 bg-gray-200 dark:bg-darkCard" />
-              </div>
-              <div className="flex justify-center">
-                {/* Popup-first with redirect fallback; GlobalAuthRedirect completes it */}
-                <CustomGoogleLoginButton
-                  onSuccess={handleGoogleLoginSuccess}
-                  onFailure={handleGoogleLoginFailure}
-                />
-              </div>
-
-              {/* Subtle bottom help */}
-              <p className="mt-6 text-center text-xs text-mutedGray dark:text-darkTextSecondary">
-                By continuing, you agree to our{' '}
-                <Link to="/terms" className="underline hover:text-primary">Terms</Link> and{' '}
-                <Link to="/privacy-policy" className="underline hover:text-primary">Privacy Policy</Link>.
-              </p>
-            </div>
-          </section>
-        </div>
+          <p className="mt-6 text-center text-xs text-gray-500 dark:text-white/50">By continuing, you agree to our <Link to="/terms" className="underline">Terms</Link> and <Link to="/privacy-policy" className="underline">Privacy Policy</Link>.</p>
+        </section>
       </div>
-
     </div>
   );
 };

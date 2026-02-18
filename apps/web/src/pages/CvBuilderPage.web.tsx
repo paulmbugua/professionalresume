@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { FormProvider, useForm, useWatch } from 'react-hook-form';
 import debounce from 'lodash.debounce';
 import { useShopContext } from '@mytutorapp/shared/context';
-import { useCvDraft, useUpdateCvDraft } from '@mytutorapp/shared/hooks';
+import { useCvDraft, useSaveCvDraft, useExportCv } from '@mytutorapp/shared/hooks';
 import type { CvDraft } from '@mytutorapp/shared/types';
 import { normalizeDraft } from '../utils/cvDefaults';
 import CvEditorShell from '../components/cv/CvEditorShell';
@@ -22,9 +22,13 @@ const validateDraft = (draft: CvDraft) => {
 
 const CvBuilderPage: React.FC = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { backendUrl, token } = useShopContext() as any;
+  React.useEffect(() => { if (!token) navigate(`/login?returnTo=${encodeURIComponent(`/builder/${id || ''}`)}`, { replace: true }); }, [id, navigate, token]);
   const { data, isLoading, error } = useCvDraft({ backendUrl, token, id });
-  const updateDraft = useUpdateCvDraft({ backendUrl, token });
+  const updateDraft = useSaveCvDraft({ backendUrl, token });
+  const exportCv = useExportCv({ backendUrl, token });
+  const [exportUrl, setExportUrl] = useState<string | undefined>();
   const [lastSavedAt, setLastSavedAt] = useState<string | undefined>();
   const initRef = useRef(true);
 
@@ -90,6 +94,17 @@ const CvBuilderPage: React.FC = () => {
     );
   }
 
+  const handleExport = async () => {
+    if (!id) return;
+    const exported = await exportCv.mutateAsync({ draftId: id, cvJson: getValues() });
+    setExportUrl(exported.signedUrl || exported.url || undefined);
+  };
+
+  const copyExportLink = async () => {
+    if (!exportUrl) return;
+    await navigator.clipboard?.writeText(exportUrl);
+  };
+
   if (error || !data) {
     return (
       <div className="mx-auto flex min-h-[60vh] w-full items-center justify-center">
@@ -107,7 +122,11 @@ const CvBuilderPage: React.FC = () => {
         draft={draft}
         validationErrors={validationErrors}
         onSave={handleManualSave}
+        onExport={handleExport}
+        onCopyExportLink={copyExportLink}
+        exportUrl={exportUrl}
         isSaving={updateDraft.isPending}
+        isExporting={exportCv.isPending}
         lastSavedAt={lastSavedAt}
       />
     </FormProvider>

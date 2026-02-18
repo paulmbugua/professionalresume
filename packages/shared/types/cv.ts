@@ -53,6 +53,8 @@ export type CvDraft = {
   title: string;
   templateId: string;
   updatedAt: string;
+  createdAt?: string;
+  version?: number;
   basics: {
     name: string;
     headline: string;
@@ -79,10 +81,19 @@ export type CvTemplate = {
   isAtsFriendly: boolean;
   previewImage?: string;
   componentKey: string;
+  description?: string;
 };
 
 export type CvTemplateResponse = {
   templates: CvTemplate[];
   source?: 'db' | 'local';
   fallback?: boolean;
+};
+
+export type CvExportResponse = {
+  url: string | null;
+  fileKey: string;
+  signedUrl?: string;
+  bytes?: number;
+  mimeType?: string;
 };

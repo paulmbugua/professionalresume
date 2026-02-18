@@ -2,12 +2,18 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useShopContext } from '@mytutorapp/shared/context';
-import { useMyCvDrafts } from '@mytutorapp/shared/hooks';
+import { useCvDrafts, useDeleteCvDraft } from '@mytutorapp/shared/hooks';
 
 export default function DraftsPage() {
   const { backendUrl, token } = useShopContext() as any;
-  const { data: drafts = [], isLoading, error } = useMyCvDrafts({ backendUrl, token });
+  const router = useRouter();
+  React.useEffect(() => {
+    if (!token) router.replace('/login?returnTo=' + encodeURIComponent('/builder'));
+  }, [router, token]);
+  const { data: drafts = [], isLoading, error } = useCvDrafts({ backendUrl, token });
+  const deleteDraft = useDeleteCvDraft({ backendUrl, token });
 
   return (
     <div className="mx-auto w-full max-w-screen-2xl px-4 pb-12 pt-8 lg:px-8">
@@ -45,19 +51,14 @@ export default function DraftsPage() {
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {drafts.map((draft) => (
-          <Link
-            key={draft.id}
-            href={`/builder/${draft.id}`}
-            className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg dark:border-white/10 dark:bg-white/5"
-          >
-            <p className="text-xs uppercase text-gray-400">{draft.templateId}</p>
-            <h3 className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">
-              {draft.title || 'Untitled CV'}
-            </h3>
-            <p className="text-xs text-gray-500 dark:text-white/60">
-              Updated {new Date(draft.updatedAt).toLocaleString()}
-            </p>
-          </Link>
+          <div key={draft.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg dark:border-white/10 dark:bg-white/5">
+            <Link href={`/builder/${draft.id}`} className="block">
+              <p className="text-xs uppercase text-gray-400">{draft.templateId}</p>
+              <h3 className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">{draft.title || 'Untitled CV'}</h3>
+              <p className="text-xs text-gray-500 dark:text-white/60">Updated {new Date(draft.updatedAt).toLocaleString()}</p>
+            </Link>
+            <button type="button" onClick={() => deleteDraft.mutate(draft.id)} className="mt-3 text-xs font-semibold text-rose-600">Delete</button>
+          </div>
         ))}
       </div>
     </div>

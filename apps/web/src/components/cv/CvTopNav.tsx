@@ -12,17 +12,14 @@ const CvTopNav: React.FC = () => {
           CVPro
         </Link>
         <nav className="flex items-center gap-4 text-sm font-medium">
-          <Link href="/builder" className="text-gray-700 hover:text-primary dark:text-white/80">
-            My Drafts
+          <Link href="/builder/new?templateId=ats-minimal" className="text-gray-700 hover:text-primary dark:text-white/80">
+            CV Builder
           </Link>
           <Link href="/templates" className="text-gray-700 hover:text-primary dark:text-white/80">
             Templates
           </Link>
-          <Link
-            href="/builder/new?templateId=ats-minimal"
-            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white"
-          >
-            New CV
+          <Link href="/builder" className="text-gray-700 hover:text-primary dark:text-white/80">
+            Drafts
           </Link>
         </nav>
       </div>
