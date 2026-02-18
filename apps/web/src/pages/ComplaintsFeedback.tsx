@@ -1,6 +1,6 @@
 // apps/web/src/pages/ComplaintsFeedback.tsx
 import React from "react";
-import { Link } from "react-router-dom";
+import Link from 'next/link';
 
 export default function ComplaintsFeedback() {
   return (
@@ -37,11 +37,11 @@ export default function ComplaintsFeedback() {
 
         <h2 className="text-lg font-semibold">5) Helpful links</h2>
         <ul className="list-disc pl-5 space-y-1">
-          <li><Link to="/refunds" className="text-primary underline">Refund & Cancellation Policy</Link></li>
-          <li><Link to="/fulfillment" className="text-primary underline">Fulfillment & Delivery Policy</Link></li>
-          <li><Link to="/privacy-policy" className="text-primary underline">Privacy Policy</Link></li>
-          <li><Link to="/anti-spam-policy" className="text-primary underline">Anti-Spam Policy</Link></li>
-          <li><Link to="/payment-flow" className="text-primary underline">How Payments Work</Link></li>
+          <li><Link href="/refunds" className="text-primary underline">Refund & Cancellation Policy</Link></li>
+          <li><Link href="/fulfillment" className="text-primary underline">Fulfillment & Delivery Policy</Link></li>
+          <li><Link href="/privacy-policy" className="text-primary underline">Privacy Policy</Link></li>
+          <li><Link href="/anti-spam-policy" className="text-primary underline">Anti-Spam Policy</Link></li>
+          <li><Link href="/payment-flow" className="text-primary underline">How Payments Work</Link></li>
         </ul>
 
         <h2 className="text-lg font-semibold">6) Company & address</h2>

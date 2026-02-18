@@ -1,15 +1,18 @@
+'use client';
+
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useCvDrafts, useDeleteCvDraft } from '@mytutorapp/shared/hooks';
 
 const CvDraftsPage: React.FC = () => {
   const { backendUrl, token } = useShopContext() as any;
-  const navigate = useNavigate();
+  const router = useRouter();
 
   React.useEffect(() => {
-    if (!token) navigate('/login?returnTo=' + encodeURIComponent('/builder'), { replace: true });
-  }, [navigate, token]);
+    if (!token) router.replace(`/login?returnTo=${encodeURIComponent('/builder')}`);
+  }, [router, token]);
 
   const { data: drafts = [], isLoading, error } = useCvDrafts({ backendUrl, token });
   const deleteDraft = useDeleteCvDraft({ backendUrl, token });
@@ -22,9 +25,7 @@ const CvDraftsPage: React.FC = () => {
           <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">Continue editing</h2>
           <p className="text-sm text-gray-500 dark:text-white/60">Access your saved CV drafts.</p>
         </div>
-        <Link to="/templates" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white">
-          New draft
-        </Link>
+        <Link href="/templates" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white">New draft</Link>
       </div>
 
       {isLoading && <p className="text-sm text-gray-500">Loading drafts...</p>}
@@ -33,12 +34,15 @@ const CvDraftsPage: React.FC = () => {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {drafts.map((draft) => (
           <div key={draft.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <Link to={`/builder/${draft.id}`} className="block">
-              <p className="text-xs uppercase text-gray-400">{draft.templateId}</p>
-              <h3 className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">{draft.title || 'Untitled CV'}</h3>
-              <p className="text-xs text-gray-500 dark:text-white/60">Updated {new Date(draft.updatedAt).toLocaleString()}</p>
+            <Link href={`/builder/${draft.id}`} className="block">
+              <h3 className="text-lg font-semibold text-gray-900">{draft.title || 'Untitled CV'}</h3>
+              <p className="mt-2 text-xs text-gray-500">Updated {draft.updatedAt ? new Date(draft.updatedAt).toLocaleString() : 'just now'}</p>
             </Link>
-            <button type="button" onClick={() => deleteDraft.mutate(draft.id)} className="mt-3 text-xs font-semibold text-rose-600">
+            <button
+              type="button"
+              onClick={() => deleteDraft.mutate(draft.id)}
+              className="mt-4 rounded-md border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600"
+            >
               Delete
             </button>
           </div>
