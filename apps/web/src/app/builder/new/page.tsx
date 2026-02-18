@@ -4,6 +4,7 @@ import React, { useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useCreateCvDraft } from '@mytutorapp/shared/hooks';
+import { getReturnToFromQuery } from '../../../lib/returnTo';
 
 export default function NewBuilderPage() {
   const searchParams = useSearchParams();
@@ -18,7 +19,8 @@ export default function NewBuilderPage() {
       return;
     }
     if (!token) {
-      router.replace('/login?returnTo=' + encodeURIComponent(`/builder/new?templateId=${templateId}`));
+      const returnTo = getReturnToFromQuery(new URLSearchParams({ returnTo: `/builder/new?templateId=${templateId}` }), '/builder');
+      router.replace(`/login?returnTo=${encodeURIComponent(returnTo)}`);
       return;
     }
 

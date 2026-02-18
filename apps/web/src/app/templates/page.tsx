@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useCvTemplates } from '@mytutorapp/shared/hooks';
 import TemplateGallery from '../../components/cv/TemplateGallery';
+import { getReturnToFromQuery } from '../../lib/returnTo';
 import { templateRegistryList } from '../../templates/registry';
 
 export default function TemplatesPage() {
@@ -25,7 +26,8 @@ export default function TemplatesPage() {
 
   React.useEffect(() => {
     if (!token) {
-      router.replace('/login?returnTo=' + encodeURIComponent('/templates'));
+      const returnTo = getReturnToFromQuery(new URLSearchParams({ returnTo: '/templates' }), '/templates');
+      router.replace(`/login?returnTo=${encodeURIComponent(returnTo)}`);
     }
   }, [router, token]);
 
