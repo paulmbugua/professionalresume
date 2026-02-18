@@ -1,11 +1,11 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { FormProvider, useForm, useWatch } from 'react-hook-form';
 import debounce from 'lodash.debounce';
 import { useShopContext } from '@mytutorapp/shared/context';
-import { useCvDraft, useUpdateCvDraft } from '@mytutorapp/shared/hooks';
+import { useCvDraft, useSaveCvDraft, useExportCv } from '@mytutorapp/shared/hooks';
 import type { CvDraft } from '@mytutorapp/shared/types';
 import { normalizeDraft } from '../../../utils/cvDefaults';
 import CvEditorShell from '../../../components/cv/CvEditorShell';
@@ -16,19 +16,25 @@ const validateDraft = (draft: CvDraft) => {
   if (!draft.basics?.name?.trim()) errors.push('Add your full name.');
   const hasExperience = draft.experience?.some((exp) => exp.company?.trim() || exp.role?.trim());
   const hasEducation = draft.education?.some((edu) => edu.school?.trim() || edu.program?.trim());
-  if (!hasExperience && !hasEducation) {
-    errors.push('Include at least one experience or education entry.');
-  }
+  if (!hasExperience && !hasEducation) errors.push('Include at least one experience or education entry.');
   return errors;
 };
 
 export default function BuilderPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id;
+  const router = useRouter();
   const { backendUrl, token } = useShopContext() as any;
+
+  useEffect(() => {
+    if (!token) router.replace(`/login?returnTo=${encodeURIComponent(`/builder/${id}`)}`);
+  }, [id, router, token]);
+
   const { data, isLoading, error } = useCvDraft({ backendUrl, token, id });
-  const updateDraft = useUpdateCvDraft({ backendUrl, token });
+  const updateDraft = useSaveCvDraft({ backendUrl, token });
+  const exportCv = useExportCv({ backendUrl, token });
   const [lastSavedAt, setLastSavedAt] = useState<string | undefined>();
+  const [exportUrl, setExportUrl] = useState<string | undefined>();
   const initRef = useRef(true);
 
   const methods = useForm<CvDraft>({
@@ -50,16 +56,10 @@ export default function BuilderPage() {
     () =>
       debounce(async (values: CvDraft) => {
         if (!id) return;
-        try {
-          const updated = await updateDraft.mutateAsync({ id, payload: values });
-          setLastSavedAt(
-            updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined
-          );
-        } catch (err) {
-          console.error('[CvBuilder] autosave failed', err);
-        }
+        const updated = await updateDraft.mutateAsync({ id, payload: values });
+        setLastSavedAt(updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined);
       }, 900),
-    [id, updateDraft]
+    [id, updateDraft],
   );
 
   useEffect(() => {
@@ -74,31 +74,27 @@ export default function BuilderPage() {
 
   const handleManualSave = async () => {
     if (!id) return;
-    try {
-      const payload = getValues();
-      const updated = await updateDraft.mutateAsync({ id, payload });
-      setLastSavedAt(
-        updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined
-      );
-    } catch (err) {
-      console.error('[CvBuilder] manual save failed', err);
-    }
+    const updated = await updateDraft.mutateAsync({ id, payload: getValues() });
+    setLastSavedAt(updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined);
+  };
+
+  const handleExport = async () => {
+    if (!id) return;
+    const exported = await exportCv.mutateAsync({ draftId: id, cvJson: getValues() });
+    setExportUrl(exported.signedUrl || exported.url || undefined);
+  };
+
+  const copyExportLink = async () => {
+    if (!exportUrl) return;
+    await navigator.clipboard?.writeText(exportUrl);
   };
 
   if (isLoading) {
-    return (
-      <div className="mx-auto flex min-h-[60vh] w-full items-center justify-center">
-        <p className="text-sm text-gray-500">Loading your draft...</p>
-      </div>
-    );
+    return <div className="mx-auto flex min-h-[60vh] w-full items-center justify-center"><p className="text-sm text-gray-500">Loading your draft...</p></div>;
   }
 
   if (error || !data) {
-    return (
-      <div className="mx-auto flex min-h-[60vh] w-full items-center justify-center">
-        <p className="text-sm text-rose-500">{error?.message || 'Draft not found.'}</p>
-      </div>
-    );
+    return <div className="mx-auto flex min-h-[60vh] w-full items-center justify-center"><p className="text-sm text-rose-500">{error?.message || 'Draft not found.'}</p></div>;
   }
 
   const draft = formValues ? normalizeDraft(formValues as CvDraft) : normalizeDraft(data);
@@ -110,7 +106,11 @@ export default function BuilderPage() {
         draft={draft}
         validationErrors={validationErrors}
         onSave={handleManualSave}
+        onExport={handleExport}
+        onCopyExportLink={copyExportLink}
+        exportUrl={exportUrl}
         isSaving={updateDraft.isPending}
+        isExporting={exportCv.isPending}
         lastSavedAt={lastSavedAt}
       />
     </FormProvider>

@@ -48,6 +48,7 @@ const certificationSchema = Joi.object({
 export const createDraftSchema = Joi.object({
   templateId: Joi.string().required(),
   title: Joi.string().allow('').optional(),
+  data: Joi.object().optional(),
 });
 
 export const draftPatchSchema = Joi.object({
@@ -74,9 +75,22 @@ export const draftPatchSchema = Joi.object({
   sectionOrder: Joi.array().items(Joi.string().valid(...sectionKeys)),
   sectionVisibility: Joi.object().pattern(
     Joi.string().valid(...sectionKeys),
-    Joi.boolean()
+    Joi.boolean(),
   ),
 }).min(1);
+
+export const cvExportSchema = Joi.object({
+  draftId: Joi.string().guid({ version: ['uuidv4', 'uuidv5'] }).optional(),
+  cvJson: Joi.object().optional(),
+  fileName: Joi.string().allow('').optional(),
+}).or('draftId', 'cvJson');
+
+export const templateUploadSchema = Joi.object({
+  key: Joi.string().required(),
+  name: Joi.string().required(),
+  description: Joi.string().allow('').optional(),
+  previewUrl: Joi.string().uri().allow('').optional(),
+});
 
 export const aiSummarySchema = Joi.object({
   draft: Joi.object().required(),

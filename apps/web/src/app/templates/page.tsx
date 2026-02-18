@@ -8,7 +8,7 @@ import TemplateGallery from '../../components/cv/TemplateGallery';
 import { templateRegistryList } from '../../templates/registry';
 
 export default function TemplatesPage() {
-  const { backendUrl } = useShopContext() as any;
+  const { backendUrl, token } = useShopContext() as any;
   const envBackendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.trim() ?? '';
   const resolvedBackendUrl = envBackendUrl || backendUrl?.trim() || 'http://localhost:4001';
   const { data, isLoading, error } = useCvTemplates({
@@ -22,6 +22,13 @@ export default function TemplatesPage() {
   const usingFallback = !isLoading && (!hasApiTemplates || error);
   const templateSource = data?.source ?? (usingFallback ? 'local' : 'db');
   const showFallbackBanner = usingFallback && templates.length > 0;
+
+  React.useEffect(() => {
+    if (!token) {
+      router.replace('/login?returnTo=' + encodeURIComponent('/templates'));
+    }
+  }, [router, token]);
+
 
   React.useEffect(() => {
     if (isDev && usingFallback) {

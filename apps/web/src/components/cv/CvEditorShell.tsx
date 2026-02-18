@@ -15,7 +15,11 @@ type Props = {
   draft: CvDraft;
   validationErrors: string[];
   onSave: () => void;
+  onExport: () => void;
+  onCopyExportLink: () => void;
+  exportUrl?: string;
   isSaving: boolean;
+  isExporting?: boolean;
   lastSavedAt?: string;
 };
 
@@ -23,7 +27,11 @@ const CvEditorShell: React.FC<Props> = ({
   draft,
   validationErrors,
   onSave,
+  onExport,
+  onCopyExportLink,
+  exportUrl,
   isSaving,
+  isExporting,
   lastSavedAt,
 }) => {
   const { setValue } = useFormContext<CvDraft>();
@@ -44,6 +52,7 @@ const CvEditorShell: React.FC<Props> = ({
   };
 
   const { resumeSource } = resolvePreviewDraft(draft);
+  const debugResumeSource = resumeSource === 'saved' ? 'saved' : 'demo';
   const templateSource = templateRegistryById[draft.templateId] ? 'local' : 'unknown';
 
   return (
@@ -66,7 +75,12 @@ const CvEditorShell: React.FC<Props> = ({
           >
             AI Improve
           </button>
-          <PrintExportButton />
+          <PrintExportButton
+            onExport={onExport}
+            isExporting={isExporting}
+            downloadUrl={exportUrl}
+            onCopyLink={onCopyExportLink}
+          />
           <button
             type="button"
             onClick={onSave}
@@ -131,7 +145,7 @@ const CvEditorShell: React.FC<Props> = ({
               draft={draft}
               templateCount={templateRegistry.length}
               templateSource={templateSource}
-              resumeSource={resumeSource}
+              resumeSource={debugResumeSource}
               apiError={undefined}
             />
           </div>

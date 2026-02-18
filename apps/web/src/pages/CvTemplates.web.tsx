@@ -6,7 +6,7 @@ import TemplateGallery from '../components/cv/TemplateGallery';
 import { templateRegistryList } from '../templates/registry';
 
 const CvTemplatesPage: React.FC = () => {
-  const { backendUrl } = useShopContext() as any;
+  const { backendUrl, token } = useShopContext() as any;
   const processEnv = typeof process !== 'undefined' ? process.env : undefined;
   const importMetaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined;
   const envBackendUrl =
@@ -34,6 +34,10 @@ const CvTemplatesPage: React.FC = () => {
     }
   }, [data?.templates?.length, error, isDev, usingFallback, resolvedBackendUrl]);
   const navigate = useNavigate();
+
+  React.useEffect(() => {
+    if (!token) navigate('/login?returnTo=' + encodeURIComponent('/templates'), { replace: true });
+  }, [navigate, token]);
 
   return (
     <div className="mx-auto w-full max-w-screen-2xl px-4 pb-12 pt-8 lg:px-8">

@@ -7,7 +7,7 @@ import { useCreateCvDraft } from '@mytutorapp/shared/hooks';
 
 export default function NewBuilderPage() {
   const searchParams = useSearchParams();
-  const templateId = searchParams.get('templateId');
+  const templateId = searchParams?.get('templateId');
   const router = useRouter();
   const { backendUrl, token } = useShopContext() as any;
   const createDraft = useCreateCvDraft({ backendUrl, token });
@@ -18,7 +18,7 @@ export default function NewBuilderPage() {
       return;
     }
     if (!token) {
-      router.replace('/login');
+      router.replace('/login?returnTo=' + encodeURIComponent(`/builder/new?templateId=${templateId}`));
       return;
     }
 

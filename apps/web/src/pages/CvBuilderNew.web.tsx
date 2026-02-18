@@ -16,7 +16,7 @@ const CvBuilderNew: React.FC = () => {
       return;
     }
     if (!token) {
-      navigate('/login', { replace: true });
+      navigate('/login?returnTo=' + encodeURIComponent(`/builder/new?templateId=${templateId}`), { replace: true });
       return;
     }
 
