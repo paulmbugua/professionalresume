@@ -9,6 +9,7 @@ import { useCvDraft, useSaveCvDraft, useExportCv } from '@mytutorapp/shared/hook
 import type { CvDraft } from '@mytutorapp/shared/types';
 import { normalizeDraft } from '../../../utils/cvDefaults';
 import CvEditorShell from '../../../components/cv/CvEditorShell';
+import { getReturnToFromQuery } from '../../../lib/returnTo';
 
 const validateDraft = (draft: CvDraft) => {
   const errors: string[] = [];
@@ -27,7 +28,10 @@ export default function BuilderPage() {
   const { backendUrl, token } = useShopContext() as any;
 
   useEffect(() => {
-    if (!token) router.replace(`/login?returnTo=${encodeURIComponent(`/builder/${id}`)}`);
+    if (!token) {
+      const returnTo = getReturnToFromQuery(new URLSearchParams({ returnTo: `/builder/${id}` }), '/builder');
+      router.replace(`/login?returnTo=${encodeURIComponent(returnTo)}`);
+    }
   }, [id, router, token]);
 
   const { data, isLoading, error } = useCvDraft({ backendUrl, token, id });

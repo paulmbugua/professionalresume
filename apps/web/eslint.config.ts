@@ -46,4 +46,21 @@ export default [
       'prettier/prettier': 'warn',
     },
   },
+
+  {
+    files: ['src/app/**/*.ts', 'src/app/**/*.tsx'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'react-router-dom',
+              message: 'apps/web uses Next App Router. Use next/link and next/navigation inside src/app routes.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 ];

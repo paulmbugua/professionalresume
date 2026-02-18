@@ -5,12 +5,16 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useShopContext } from '@mytutorapp/shared/context';
 import { useCvDrafts, useDeleteCvDraft } from '@mytutorapp/shared/hooks';
+import { getReturnToFromQuery } from '../../lib/returnTo';
 
 export default function DraftsPage() {
   const { backendUrl, token } = useShopContext() as any;
   const router = useRouter();
   React.useEffect(() => {
-    if (!token) router.replace('/login?returnTo=' + encodeURIComponent('/builder'));
+    if (!token) {
+      const returnTo = getReturnToFromQuery(new URLSearchParams({ returnTo: '/builder' }), '/builder');
+      router.replace(`/login?returnTo=${encodeURIComponent(returnTo)}`);
+    }
   }, [router, token]);
   const { data: drafts = [], isLoading, error } = useCvDrafts({ backendUrl, token });
   const deleteDraft = useDeleteCvDraft({ backendUrl, token });
