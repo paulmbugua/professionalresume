@@ -1,12 +1,14 @@
 const SCRIPT_TAG_RE = /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi;
 const ON_ATTR_DOUBLE_QUOTE_RE = /\son\w+="[^"]*"/gi;
 const ON_ATTR_SINGLE_QUOTE_RE = /\son\w+='[^']*'/gi;
+const ON_ATTR_UNQUOTED_RE = /\son\w+=([^\s>]+)/gi;
 
 export function stripScripts(html: string): string {
   return html
     .replace(SCRIPT_TAG_RE, '')
     .replace(ON_ATTR_DOUBLE_QUOTE_RE, '')
-    .replace(ON_ATTR_SINGLE_QUOTE_RE, '');
+    .replace(ON_ATTR_SINGLE_QUOTE_RE, '')
+    .replace(ON_ATTR_UNQUOTED_RE, '');
 }
 
 export function logScriptProbe(templateId: string, html: string): void {

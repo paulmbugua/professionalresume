@@ -352,6 +352,7 @@ li{ margin:4px 0; }
 
 const AtsMinimal: React.FC<Props> = ({ draft }) => {
   const html = useMemo(() => renderAtsMinimalHtml(draft), [JSON.stringify(draft)]);
+  const safeHtml = useMemo(() => stripScripts(html), [html]);
 
   return (
     <iframe

@@ -144,7 +144,7 @@ ${sections.join('')}
 const AtsCompact: React.FC<Props> = ({ draft }) => {
   const html = useMemo(() => renderAtsCompactHtml(draft), [JSON.stringify(draft)]);
 
-  const safeHtml = stripScripts(html);
+  const safeHtml = useMemo(() => stripScripts(html), [html]);
 
   if (process.env.NODE_ENV !== 'production') {
     console.log('[cv iframe]', { template: 'AtsCompact' });

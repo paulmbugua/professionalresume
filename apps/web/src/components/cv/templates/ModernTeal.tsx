@@ -229,7 +229,7 @@ body{margin:0;background:#f1f5f9;font-family:Inter,system-ui,Segoe UI,Arial;colo
 const ModernTeal: React.FC<Props> = ({ draft }) => {
   const html = useMemo(() => renderModernTealHtml(draft), [JSON.stringify(draft)]);
 
-  const safeHtml = stripScripts(html);
+  const safeHtml = useMemo(() => stripScripts(html), [html]);
 
   if (process.env.NODE_ENV !== 'production') {
     console.log('[cv iframe]', { template: 'ModernTeal' });
