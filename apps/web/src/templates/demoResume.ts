@@ -61,9 +61,7 @@ export const demoResume: CvDraft = {
       bullets: ['Defined reporting taxonomy across product, sales, and marketing.'],
     },
   ],
-  certifications: [
-    { name: 'NN/g UX Certificate', issuer: 'Nielsen Norman Group', year: '2022' },
-  ],
+  certifications: [{ name: 'NN/g UX Certificate', issuer: 'Nielsen Norman Group', year: '2022' }],
   extras: {
     languages: ['English', 'Spanish'],
     interests: ['Travel photography', 'Community hackathons'],
@@ -88,34 +86,85 @@ export const demoResume: CvDraft = {
   },
 };
 
-export const hasMeaningfulCvContent = (draft?: Partial<CvDraft>) => {
+const hasText = (value?: string | null) => Boolean(value?.trim());
+
+export const hasAnyUserData = (draft?: Partial<CvDraft>) => {
   if (!draft) return false;
-  const basics = draft.basics ?? {};
-  return Boolean(
-    draft.summary?.trim() ||
-      draft.skills?.length ||
-      draft.experience?.some((exp) => exp.company?.trim() || exp.role?.trim()) ||
-      draft.education?.some((edu) => edu.school?.trim() || edu.program?.trim()) ||
-      draft.projects?.some((project) => project.name?.trim()) ||
-      draft.certifications?.some((cert) => cert.name?.trim()) ||
-      basics.name?.trim()
-  );
+  const basics: Partial<CvDraft['basics']> = draft.basics ?? {};
+
+  if (
+    hasText(basics.name) ||
+    hasText(basics.headline) ||
+    hasText(basics.email) ||
+    hasText(basics.phone) ||
+    hasText(basics.location) ||
+    basics.links?.some(
+      (link: { label?: string; url?: string }) => hasText(link?.label) || hasText(link?.url)
+    )
+  ) {
+    return true;
+  }
+
+  if (hasText(draft.summary)) return true;
+  if (draft.skills?.some((skill) => hasText(skill))) return true;
+
+  if (
+    draft.experience?.some(
+      (exp) =>
+        hasText(exp.company) ||
+        hasText(exp.role) ||
+        hasText(exp.location) ||
+        hasText(exp.start) ||
+        hasText(exp.end) ||
+        exp.bullets?.some((bullet) => hasText(bullet))
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    draft.education?.some(
+      (edu) =>
+        hasText(edu.school) ||
+        hasText(edu.program) ||
+        hasText(edu.start) ||
+        hasText(edu.end) ||
+        hasText(edu.details)
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    draft.projects?.some(
+      (project) =>
+        hasText(project.name) ||
+        hasText(project.link) ||
+        hasText(project.description) ||
+        project.bullets?.some((bullet) => hasText(bullet))
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    draft.certifications?.some(
+      (cert) => hasText(cert.name) || hasText(cert.issuer) || hasText(cert.year)
+    )
+  ) {
+    return true;
+  }
+
+  if (draft.extras?.languages?.some((language) => hasText(language))) return true;
+  if (draft.extras?.interests?.some((interest) => hasText(interest))) return true;
+
+  return false;
 };
 
 export const resolvePreviewDraft = (draft: CvDraft) => {
-  const hasContent = hasMeaningfulCvContent(draft);
+  const hasContent = hasAnyUserData(draft);
   const previewDraft = hasContent
-    ? {
-        ...demoResume,
-        ...draft,
-        basics: { ...demoResume.basics, ...(draft.basics || {}) },
-        extras: { ...demoResume.extras, ...(draft.extras || {}) },
-        sectionOrder: draft.sectionOrder?.length ? draft.sectionOrder : demoResume.sectionOrder,
-        sectionVisibility: {
-          ...demoResume.sectionVisibility,
-          ...(draft.sectionVisibility || {}),
-        },
-      }
+    ? draft
     : {
         ...demoResume,
         templateId: draft.templateId || demoResume.templateId,
@@ -124,6 +173,6 @@ export const resolvePreviewDraft = (draft: CvDraft) => {
 
   return {
     draft: previewDraft,
-    resumeSource: hasContent ? 'saved' : 'demo',
+    resumeSource: hasContent ? 'live' : 'demo',
   };
 };

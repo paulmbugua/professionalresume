@@ -1,4 +1,4 @@
-import TemplateDebugPanel from '../../../../../components/cv/TemplateDebugPanel';
+import TemplateDebugPanel from '../../../../components/cv/TemplateDebugPanel';
 import { demoDraft, demoTemplates } from '../demoData';
 
 export default function Page() {

@@ -13,7 +13,7 @@ const esc = (v: any) =>
 
 const safeKey = (s?: string | null) => (s ?? '').toString().trim().toLowerCase();
 
-function renderHtml(draft: CvDraft) {
+export function renderAtsMinimalHtml(draft: CvDraft) {
   const order = draft.sectionOrder?.length ? draft.sectionOrder : defaultSectionOrder;
   const visibility = draft.sectionVisibility || {};
   const isVisible = (k: CvSectionKey) => visibility[k] !== false;
@@ -64,9 +64,8 @@ function renderHtml(draft: CvDraft) {
                   exp.end || ''
                 )}`.trim();
 
-                const bullets =
-                  exp.bullets?.length
-                    ? `<ul>
+                const bullets = exp.bullets?.length
+                  ? `<ul>
                         ${exp.bullets
                           .filter(Boolean)
                           .map(
@@ -77,13 +76,13 @@ function renderHtml(draft: CvDraft) {
                           )
                           .join('')}
                       </ul>`
-                    : '';
+                  : '';
 
                 return `<div class="item" data-k="${esc(expKey)}">
                   <div class="row">
                     <div class="strong">${esc(exp.role || 'Role')} · ${esc(
-                  exp.company || 'Company'
-                )}</div>
+                      exp.company || 'Company'
+                    )}</div>
                     <div class="dates">${esc(dates)}</div>
                   </div>
                   ${exp.location ? `<div class="muted small">${esc(exp.location)}</div>` : ''}
@@ -116,8 +115,8 @@ function renderHtml(draft: CvDraft) {
                 return `<div class="item" data-k="${esc(eduKey)}">
                   <div class="row">
                     <div class="strong">${esc(edu.program || 'Program')} · ${esc(
-                  edu.school || 'School'
-                )}</div>
+                      edu.school || 'School'
+                    )}</div>
                     <div class="dates">${esc(dates)}</div>
                   </div>
                   ${edu.details ? `<div class="muted">${esc(edu.details)}</div>` : ''}
@@ -136,9 +135,8 @@ function renderHtml(draft: CvDraft) {
               .map((p, idx) => {
                 const projKey = [safeKey(p.name), safeKey(p.link), idx].join('|');
 
-                const bullets =
-                  p.bullets?.length
-                    ? `<ul>
+                const bullets = p.bullets?.length
+                  ? `<ul>
                         ${p.bullets
                           .filter(Boolean)
                           .map(
@@ -149,7 +147,7 @@ function renderHtml(draft: CvDraft) {
                           )
                           .join('')}
                       </ul>`
-                    : '';
+                  : '';
 
                 return `<div class="item" data-k="${esc(projKey)}">
                   <div class="row">
@@ -349,14 +347,16 @@ li{ margin:4px 0; }
 }
 
 const AtsMinimal: React.FC<Props> = ({ draft }) => {
-  const html = useMemo(() => renderHtml(draft), [draft]);
+  const html = useMemo(() => renderAtsMinimalHtml(draft), [draft]);
 
   return (
     <iframe
       title="ATS Minimal"
       className="min-h-full h-full w-full rounded-xl border border-gray-200 bg-white"
       sandbox="allow-same-origin"
+      scrolling="yes"
       srcDoc={html}
+      style={{ height: '100%', width: '100%', border: 0 }}
     />
   );
 };

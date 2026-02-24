@@ -1,4 +1,4 @@
-import CreativeTimeline from '../../../../../../components/cv/templates/CreativeTimeline';
+import CreativeTimeline from '../../../../../components/cv/templates/CreativeTimeline';
 import { demoDraft } from '../../demoData';
 
 export default function Page() {

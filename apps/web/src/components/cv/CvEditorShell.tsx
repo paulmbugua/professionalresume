@@ -9,6 +9,7 @@ import PrintExportButton from './PrintExportButton';
 import TemplateErrorBoundary from './TemplateErrorBoundary';
 import TemplateDebugPanel from './TemplateDebugPanel';
 import { templateRegistry, templateRegistryById } from '../../templates/registry';
+import { resolvePreviewDraft } from '../../templates/demoResume';
 
 type Props = {
   draft: CvDraft;
@@ -51,6 +52,7 @@ const CvEditorShell: React.FC<Props> = ({
   };
 
   const templateSource = templateRegistryById[draft.templateId] ? 'local' : 'unknown';
+  const { resumeSource } = resolvePreviewDraft(draft);
 
   return (
     <div className="mx-auto w-full max-w-screen-2xl px-4 pb-12 pt-6 lg:px-8">
@@ -130,7 +132,9 @@ const CvEditorShell: React.FC<Props> = ({
       {/* Main grid */}
       <div className="grid gap-8 lg:grid-cols-[minmax(320px,420px)_1fr] min-h-0">
         {/* Left: Editor */}
-        <div className={`${activeTab === 'preview' ? 'hidden' : 'block'} space-y-6 lg:block print:hidden`}>
+        <div
+          className={`${activeTab === 'preview' ? 'hidden' : 'block'} space-y-6 lg:block print:hidden`}
+        >
           <CvForm />
 
           <SectionManager
@@ -147,20 +151,20 @@ const CvEditorShell: React.FC<Props> = ({
         {/* Right: Preview (sticky + full-height) */}
         <div className={`${activeTab === 'edit' ? 'hidden' : 'block'} lg:block min-h-0`}>
           <div className="sticky top-6 h-[calc(100vh-3rem)] min-h-0">
-            <div className="h-full min-h-0 rounded-2xl border border-gray-200 bg-white/60 p-4 shadow-sm dark:border-white/10 dark:bg-white/5 print:border-none print:bg-transparent print:p-0">
+            <div className="flex h-full min-h-0 flex-col rounded-2xl border border-gray-200 bg-white/70 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5 print:border-none print:bg-transparent print:p-0">
               <TemplateErrorBoundary>
-                <div className="h-full min-h-0">
-                  <CvPreview draft={draft} />
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  <CvPreview draft={draft} showLiveBadge />
                 </div>
               </TemplateErrorBoundary>
 
               {/* Keep debug at bottom (doesn't steal height) */}
-              <div className="mt-4 print:hidden">
+              <div className="mt-3 shrink-0 print:hidden">
                 <TemplateDebugPanel
                   draft={draft}
                   templateCount={templateRegistry.length}
                   templateSource={templateSource}
-                  resumeSource="live"
+                  resumeSource={resumeSource === 'demo' ? 'demo' : 'live'}
                   apiError={undefined}
                 />
               </div>

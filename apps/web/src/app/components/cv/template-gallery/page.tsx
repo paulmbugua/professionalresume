@@ -1,6 +1,6 @@
 'use client';
 
-import TemplateGallery from '../../../../../components/cv/TemplateGallery';
+import TemplateGallery from '../../../../components/cv/TemplateGallery';
 import { demoTemplates } from '../demoData';
 
 export default function Page() {

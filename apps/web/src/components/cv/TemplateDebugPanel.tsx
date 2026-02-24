@@ -7,7 +7,7 @@ type Props = {
   draft: CvDraft;
   templateCount: number;
   templateSource: 'api' | 'local' | 'unknown';
-  resumeSource: 'saved' | 'demo' | 'live'
+  resumeSource: 'saved' | 'demo' | 'live';
   apiError?: string;
 };
 
@@ -42,15 +42,16 @@ const TemplateDebugPanel: React.FC<Props> = ({
         </div>
         <div>
           <span className="font-semibold">Resume keys:</span>{' '}
-          {Object.keys(draft || {}).slice(0, 6).join(', ')}
+          {Object.keys(draft || {})
+            .slice(0, 6)
+            .join(', ')}
         </div>
         <div>
           <span className="font-semibold">Sections:</span>{' '}
           {(draft.sectionOrder || []).join(', ') || 'none'}
         </div>
         <div className="sm:col-span-2">
-          <span className="font-semibold">Last API error:</span>{' '}
-          {apiError || 'none'}
+          <span className="font-semibold">Last API error:</span> {apiError || 'none'}
         </div>
       </div>
     </div>

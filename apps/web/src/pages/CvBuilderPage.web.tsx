@@ -11,13 +11,32 @@ import { normalizeDraft } from '../utils/cvDefaults';
 import CvEditorShell from '../components/cv/CvEditorShell';
 import { getReturnToFromQuery } from '../lib/returnTo';
 
+const EMPTY_DRAFT: CvDraft = normalizeDraft({
+  id: '',
+  userId: '',
+  title: '',
+  templateId: 'ats-minimal',
+  updatedAt: new Date(0).toISOString(),
+  basics: { name: '', headline: '', email: '', phone: '', location: '', links: [] },
+  summary: '',
+  skills: [],
+  experience: [],
+  education: [],
+  projects: [],
+  certifications: [],
+  extras: { languages: [], interests: [] },
+  sectionOrder: [],
+  sectionVisibility: {} as any,
+} as CvDraft);
+
 const validateDraft = (draft: CvDraft) => {
   const errors: string[] = [];
   if (!draft.title?.trim()) errors.push('Add a CV title.');
   if (!draft.basics?.name?.trim()) errors.push('Add your full name.');
   const hasExperience = draft.experience?.some((exp) => exp.company?.trim() || exp.role?.trim());
   const hasEducation = draft.education?.some((edu) => edu.school?.trim() || edu.program?.trim());
-  if (!hasExperience && !hasEducation) errors.push('Include at least one experience or education entry.');
+  if (!hasExperience && !hasEducation)
+    errors.push('Include at least one experience or education entry.');
   return errors;
 };
 
@@ -43,7 +62,7 @@ const CvBuilderPageInner: React.FC<{
   const hydratedDraftIdRef = useRef<string | null>(null);
   const lastSavedSigRef = useRef<string>('');
 
-  const methods = useForm<CvDraft>({ defaultValues: undefined, mode: 'onChange' });
+  const methods = useForm<CvDraft>({ defaultValues: EMPTY_DRAFT, mode: 'onChange' });
   const { reset, getValues, control } = methods;
   const formValues = useWatch({ control });
 
@@ -67,7 +86,9 @@ const CvBuilderPageInner: React.FC<{
       debounce(async (values: CvDraft) => {
         const updated = await updateDraft.mutateAsync({ id, payload: values });
         lastSavedSigRef.current = JSON.stringify(values);
-        setLastSavedAt(updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined);
+        setLastSavedAt(
+          updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined
+        );
       }, 900),
     [id, updateDraft]
   );
@@ -104,44 +125,36 @@ const CvBuilderPageInner: React.FC<{
     await navigator.clipboard?.writeText(exportUrl);
   };
 
-  if (isLoading) {
-    return (
-      <div className="mx-auto flex min-h-[60vh] w-full items-center justify-center">
-        <p className="text-sm text-gray-500">Loading your draft...</p>
-      </div>
-    );
-  }
-
-  if (error || !data) {
-    return (
-      <div className="mx-auto flex min-h-[60vh] w-full items-center justify-center">
-        <p className="text-sm text-rose-500">{(error as any)?.message || 'Draft not found.'}</p>
-      </div>
-    );
-  }
-
   const draft = useMemo(() => {
-    const base = (formValues as CvDraft) || data;
+    const base = ((formValues as CvDraft) || data || EMPTY_DRAFT) as CvDraft;
     return normalizeDraft(base);
   }, [formValues, data]);
 
   const validationErrors = validateDraft(draft);
 
-  return (
-    <FormProvider {...methods}>
-      <CvEditorShell
-        draft={draft}
-        validationErrors={validationErrors}
-        onSave={handleManualSave}
-        onExport={handleExport}
-        onCopyExportLink={copyExportLink}
-        exportUrl={exportUrl}
-        isSaving={updateDraft.isPending}
-        isExporting={exportCv.isPending}
-        lastSavedAt={lastSavedAt}
-      />
-    </FormProvider>
+  const content = isLoading ? (
+    <div className="mx-auto flex min-h-[60vh] w-full items-center justify-center">
+      <p className="text-sm text-gray-500">Loading your draft...</p>
+    </div>
+  ) : error || !data ? (
+    <div className="mx-auto flex min-h-[60vh] w-full items-center justify-center">
+      <p className="text-sm text-rose-500">{(error as any)?.message || 'Draft not found.'}</p>
+    </div>
+  ) : (
+    <CvEditorShell
+      draft={draft}
+      validationErrors={validationErrors}
+      onSave={handleManualSave}
+      onExport={handleExport}
+      onCopyExportLink={copyExportLink}
+      exportUrl={exportUrl}
+      isSaving={updateDraft.isPending}
+      isExporting={exportCv.isPending}
+      lastSavedAt={lastSavedAt}
+    />
   );
+
+  return <FormProvider {...methods}>{content}</FormProvider>;
 };
 
 const CvBuilderPage: React.FC = () => {

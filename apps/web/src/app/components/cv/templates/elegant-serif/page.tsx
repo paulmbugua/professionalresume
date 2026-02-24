@@ -1,4 +1,4 @@
-import ElegantSerif from '../../../../../../components/cv/templates/ElegantSerif';
+import ElegantSerif from '../../../../../components/cv/templates/ElegantSerif';
 import { demoDraft } from '../../demoData';
 
 export default function Page() {

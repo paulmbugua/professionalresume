@@ -1,5 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import type { CvTemplate } from '@cvpro/shared/types';
+import { demoResume } from '../../templates/demoResume';
+import { normalizeDraft } from '../../utils/cvDefaults';
+import TemplateThumbnail from './templates/TemplateThumbnail';
+import { renderTemplateThumbnailHtml } from './templates/thumbnailHtml';
 
 type Props = {
   template: CvTemplate;
@@ -7,27 +11,18 @@ type Props = {
 };
 
 const TemplateCard: React.FC<Props> = ({ template, onSelect }) => {
+  const thumbnailHtml = useMemo(() => {
+    const demoDraft = normalizeDraft({ ...demoResume, templateId: template.id });
+    return renderTemplateThumbnailHtml(template.id, demoDraft);
+  }, [template.id]);
+
   return (
     <button
       type="button"
       onClick={() => onSelect(template)}
       className="group text-left rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg dark:border-white/10 dark:bg-white/5"
     >
-      <div className="aspect-[4/3] rounded-xl border border-dashed border-gray-200 bg-gradient-to-br from-white to-softGray p-3 text-sm text-gray-500 shadow-inner dark:border-white/10 dark:from-white/5 dark:to-darkCard">
-        <div className="flex h-full flex-col justify-between">
-          <span className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-white/60">
-            {template.category}
-          </span>
-          <div className="flex flex-col gap-1">
-            <span className="text-base font-semibold text-gray-900 dark:text-white">
-              {template.name}
-            </span>
-            <span className="text-xs text-gray-500 dark:text-white/60">
-              {template.isAtsFriendly ? 'ATS friendly' : 'Visual-forward layout'}
-            </span>
-          </div>
-        </div>
-      </div>
+      <TemplateThumbnail html={thumbnailHtml} label={template.name} />
       <div className="mt-4 flex items-center justify-between">
         <div>
           <p className="text-sm font-semibold text-gray-900 dark:text-white">{template.name}</p>

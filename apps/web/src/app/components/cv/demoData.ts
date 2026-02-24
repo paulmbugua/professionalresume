@@ -1,6 +1,6 @@
 import type { CvSectionKey } from '@cvpro/shared/types';
-import { demoResume } from '../../../../templates/demoResume';
-import { templateRegistryList } from '../../../../templates/registry';
+import { demoResume } from '../../../templates/demoResume';
+import { templateRegistryList } from '../../../templates/registry';
 
 export const demoDraft = demoResume;
 

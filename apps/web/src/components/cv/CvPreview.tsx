@@ -5,9 +5,10 @@ import { templateRegistryById, templateRegistry } from '../../templates/registry
 
 type Props = {
   draft: CvDraft;
+  showLiveBadge?: boolean;
 };
 
-const CvPreview: React.FC<Props> = ({ draft }) => {
+const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false }) => {
   const importMetaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined;
   const isDev =
     importMetaEnv?.DEV ??
@@ -18,17 +19,35 @@ const CvPreview: React.FC<Props> = ({ draft }) => {
   }
 
   const Template =
-    templateRegistryById[previewDraft.templateId]?.component ||
-    templateRegistry[0]?.component;
+    templateRegistryById[previewDraft.templateId]?.component || templateRegistry[0]?.component;
 
   return (
-    <div className="cv-preview-wrapper mx-auto w-full max-w-[820px]">
-      {resumeSource === 'demo' && (
-        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          Showing demo resume data. Add your details to replace this preview.
-        </div>
-      )}
-      <div className="cv-page min-h-[297mm] w-full rounded-2xl bg-white text-gray-900 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.4)]">
+    <div className="cv-preview-wrapper h-full min-h-0 w-full">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        {showLiveBadge ? (
+          <span
+            className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+              resumeSource === 'demo'
+                ? 'border border-amber-200 bg-amber-50 text-amber-700'
+                : 'border border-emerald-200 bg-emerald-50 text-emerald-700'
+            }`}
+          >
+            <span
+              className={`h-2 w-2 rounded-full ${resumeSource === 'demo' ? 'bg-amber-500' : 'bg-emerald-500'}`}
+            />
+            {resumeSource === 'demo' ? 'DEMO PREVIEW' : 'LIVE PREVIEW'}
+          </span>
+        ) : (
+          <span />
+        )}
+        {resumeSource === 'demo' && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Showing demo resume data. Add your details to replace this preview.
+          </div>
+        )}
+      </div>
+
+      <div className="cv-page h-full min-h-0 w-full overflow-hidden rounded-2xl bg-white text-gray-900 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.4)]">
         {Template ? (
           <Template draft={previewDraft} />
         ) : (
