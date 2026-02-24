@@ -1,6 +1,6 @@
 'use client';
 
-import TemplateCard from '../../../../../components/cv/TemplateCard';
+import TemplateCard from '../../../../components/cv/TemplateCard';
 import { demoTemplate } from '../demoData';
 
 export default function Page() {

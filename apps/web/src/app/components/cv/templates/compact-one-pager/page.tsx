@@ -1,4 +1,4 @@
-import CompactOnePager from '../../../../../../components/cv/templates/CompactOnePager';
+import CompactOnePager from '../../../../../components/cv/templates/CompactOnePager';
 import { demoDraft } from '../../demoData';
 
 export default function Page() {

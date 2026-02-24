@@ -1,4 +1,4 @@
-import CvPreview from '../../../../../components/cv/CvPreview';
+import CvPreview from '../../../../components/cv/CvPreview';
 import { demoDraft } from '../demoData';
 
 export default function Page() {

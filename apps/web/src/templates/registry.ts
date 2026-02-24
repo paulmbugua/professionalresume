@@ -6,6 +6,9 @@ import BoldHeader from '../components/cv/templates/BoldHeader';
 import ElegantSerif from '../components/cv/templates/ElegantSerif';
 import CreativeTimeline from '../components/cv/templates/CreativeTimeline';
 import CompactOnePager from '../components/cv/templates/CompactOnePager';
+import ModernTeal from '../components/cv/templates/ModernTeal';
+import ModernSidebarBlue from '../components/cv/templates/ModernSidebarBlue';
+import AtsCompact from '../components/cv/templates/AtsCompact';
 
 export type TemplateMeta = CvTemplate & {
   description?: string;
@@ -64,6 +67,38 @@ export const templateRegistry: TemplateMeta[] = [
     tags: ['creative', 'timeline'],
     component: CreativeTimeline,
   },
+
+  {
+    id: 'modern-teal',
+    name: 'Modern Teal Two-Column',
+    category: 'Modern',
+    isAtsFriendly: true,
+    componentKey: 'ModernTeal',
+    description: 'Teal-accent two-column layout with a focused contact rail.',
+    tags: ['modern', 'teal', 'two-column'],
+    component: ModernTeal,
+  },
+  {
+    id: 'modern-sidebar-blue',
+    name: 'Modern Blue Sidebar',
+    category: 'Modern',
+    isAtsFriendly: true,
+    componentKey: 'ModernSidebarBlue',
+    description: 'Blue sidebar with initials avatar and strong section blocks.',
+    tags: ['modern', 'sidebar', 'blue'],
+    component: ModernSidebarBlue,
+  },
+  {
+    id: 'ats-compact',
+    name: 'Clean Compact ATS',
+    category: 'ATS',
+    isAtsFriendly: true,
+    componentKey: 'AtsCompact',
+    description: 'Compact single-column layout optimized for ATS parsing.',
+    tags: ['ats', 'compact', 'single-column'],
+    component: AtsCompact,
+  },
+
   {
     id: 'compact-one-pager',
     name: 'Compact One-Pager',

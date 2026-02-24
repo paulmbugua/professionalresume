@@ -1,4 +1,4 @@
-import CvTopNav from '../../../../../components/cv/CvTopNav';
+import CvTopNav from '../../../../components/cv/CvTopNav';
 
 export default function Page() {
   return <CvTopNav />;

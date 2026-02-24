@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { CvSectionKey } from '@cvpro/shared/types';
-import SectionManager from '../../../../../components/cv/SectionManager';
+import SectionManager from '../../../../components/cv/SectionManager';
 import { demoSectionOrder, demoSectionVisibility } from '../demoData';
 
 export default function Page() {

@@ -1,4 +1,4 @@
-import ModernSidebar from '../../../../../../components/cv/templates/ModernSidebar';
+import ModernSidebar from '../../../../../components/cv/templates/ModernSidebar';
 import { demoDraft } from '../../demoData';
 
 export default function Page() {

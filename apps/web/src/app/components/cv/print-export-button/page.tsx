@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import PrintExportButton from '../../../../../components/cv/PrintExportButton';
+import PrintExportButton from '../../../../components/cv/PrintExportButton';
 
 export default function Page() {
   const [isExporting, setIsExporting] = useState(false);

@@ -15,7 +15,18 @@ const CvTemplatesPage: React.FC = () => {
   const { data, isLoading, error } = useCvTemplates({ backendUrl: resolvedBackendUrl });
   const apiTemplates = data?.templates ?? [];
   const hasApiTemplates = Boolean(apiTemplates.length);
-  const templates = hasApiTemplates ? apiTemplates : templateRegistryList;
+  const templates = React.useMemo(() => {
+    if (!hasApiTemplates) return templateRegistryList;
+
+    const apiById = new Map(apiTemplates.map((template) => [template.id, template]));
+    const merged = [...apiTemplates];
+
+    for (const localTemplate of templateRegistryList) {
+      if (!apiById.has(localTemplate.id)) merged.push(localTemplate);
+    }
+
+    return merged;
+  }, [apiTemplates, hasApiTemplates]);
   const usingFallback = !isLoading && (!hasApiTemplates || error);
   const templateSource = data?.source ?? (usingFallback ? 'local' : 'db');
   const isDev = processEnv?.NODE_ENV !== 'production';
@@ -40,14 +51,22 @@ const CvTemplatesPage: React.FC = () => {
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-gray-400">Template Gallery</p>
-          <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">Choose a CV template</h2>
-          <p className="text-sm text-gray-500 dark:text-white/60">ATS-friendly layouts with premium typography.</p>
+          <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">
+            Choose a CV template
+          </h2>
+          <p className="text-sm text-gray-500 dark:text-white/60">
+            ATS-friendly layouts with premium typography.
+          </p>
           {isDev && <p className="mt-2 text-xs text-gray-400">Backend: {resolvedBackendUrl}</p>}
         </div>
       </div>
 
       {isLoading && <p className="text-sm text-gray-500">Loading templates...</p>}
-      {error && <p className="text-sm text-rose-500">{error.message} Showing local templates so you can continue.</p>}
+      {error && (
+        <p className="text-sm text-rose-500">
+          {error.message} Showing local templates so you can continue.
+        </p>
+      )}
       {usingFallback && templates.length > 0 && (
         <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
           Using local templates (API unavailable).
@@ -56,7 +75,10 @@ const CvTemplatesPage: React.FC = () => {
       )}
 
       {templates.length > 0 && (
-        <TemplateGallery templates={templates} onSelect={(template) => router.push(`/builder/new?templateId=${template.id}`)} />
+        <TemplateGallery
+          templates={templates}
+          onSelect={(template) => router.push(`/builder/new?templateId=${template.id}`)}
+        />
       )}
     </div>
   );
