@@ -1,19 +1,22 @@
 import React from 'react';
 import type { CvDraft, CvTemplate } from '@cvpro/shared/types';
-import AtsMinimal from '../components/cv/templates/AtsMinimal';
+import AtsMinimal, { renderAtsMinimalHtml } from '../components/cv/templates/AtsMinimal';
 import ModernSidebar from '../components/cv/templates/ModernSidebar';
 import BoldHeader from '../components/cv/templates/BoldHeader';
 import ElegantSerif from '../components/cv/templates/ElegantSerif';
 import CreativeTimeline from '../components/cv/templates/CreativeTimeline';
 import CompactOnePager from '../components/cv/templates/CompactOnePager';
-import ModernTeal from '../components/cv/templates/ModernTeal';
-import ModernSidebarBlue from '../components/cv/templates/ModernSidebarBlue';
-import AtsCompact from '../components/cv/templates/AtsCompact';
+import ModernTeal, { renderModernTealHtml } from '../components/cv/templates/ModernTeal';
+import ModernSidebarBlue, {
+  renderModernSidebarBlueHtml,
+} from '../components/cv/templates/ModernSidebarBlue';
+import AtsCompact, { renderAtsCompactHtml } from '../components/cv/templates/AtsCompact';
 
 export type TemplateMeta = CvTemplate & {
   description?: string;
   tags?: string[];
   component: React.FC<{ draft: CvDraft }>;
+  renderHtml?: (draft: CvDraft) => string;
 };
 
 export const templateRegistry: TemplateMeta[] = [
@@ -26,6 +29,7 @@ export const templateRegistry: TemplateMeta[] = [
     description: 'Simple, ATS-friendly layout with clean typography.',
     tags: ['ats', 'minimal'],
     component: AtsMinimal,
+    renderHtml: renderAtsMinimalHtml,
   },
   {
     id: 'modern-sidebar',
@@ -77,6 +81,7 @@ export const templateRegistry: TemplateMeta[] = [
     description: 'Teal-accent two-column layout with a focused contact rail.',
     tags: ['modern', 'teal', 'two-column'],
     component: ModernTeal,
+    renderHtml: renderModernTealHtml,
   },
   {
     id: 'modern-sidebar-blue',
@@ -87,6 +92,7 @@ export const templateRegistry: TemplateMeta[] = [
     description: 'Blue sidebar with initials avatar and strong section blocks.',
     tags: ['modern', 'sidebar', 'blue'],
     component: ModernSidebarBlue,
+    renderHtml: renderModernSidebarBlueHtml,
   },
   {
     id: 'ats-compact',
@@ -97,6 +103,7 @@ export const templateRegistry: TemplateMeta[] = [
     description: 'Compact single-column layout optimized for ATS parsing.',
     tags: ['ats', 'compact', 'single-column'],
     component: AtsCompact,
+    renderHtml: renderAtsCompactHtml,
   },
 
   {
@@ -112,7 +119,7 @@ export const templateRegistry: TemplateMeta[] = [
 ];
 
 export const templateRegistryList: CvTemplate[] = templateRegistry.map(
-  ({ component, ...rest }) => rest
+  ({ component, renderHtml, ...rest }) => rest
 );
 
 export const templateRegistryById = templateRegistry.reduce(
