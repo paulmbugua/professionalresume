@@ -65,6 +65,17 @@ const CvBuilderPageInner: React.FC<{
   const methods = useForm<CvDraft>({ defaultValues: EMPTY_DRAFT, mode: 'onChange' });
   const { reset, getValues, control } = methods;
   const formValues = useWatch({ control });
+  const isDev = process.env.NODE_ENV !== 'production';
+
+  useEffect(() => {
+    if (!isDev || !formValues) return;
+    const watched = formValues as CvDraft;
+    console.log('[builder] formValues changed', {
+      name: watched?.basics?.name,
+      title: watched?.title,
+      templateId: watched?.templateId,
+    });
+  }, [formValues, isDev]);
 
   // hydrate once per id
   useEffect(() => {
