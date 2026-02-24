@@ -353,12 +353,6 @@ li{ margin:4px 0; }
 const AtsMinimal: React.FC<Props> = ({ draft }) => {
   const html = useMemo(() => renderAtsMinimalHtml(draft), [JSON.stringify(draft)]);
 
-  const safeHtml = stripScripts(html);
-
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('[cv iframe]', { template: 'AtsMinimal' });
-  }
-
   return (
     <iframe
       title="ATS Minimal"
