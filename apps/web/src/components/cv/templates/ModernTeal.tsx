@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import type { CvDraft, CvSectionKey } from '@cvpro/shared/types';
 import { defaultSectionOrder } from '../../../utils/cvDefaults';
+import { logScriptProbe, stripScripts } from '../../../utils/sanitizeHtmlForIframe';
 
 type Props = { draft: CvDraft };
 
@@ -169,7 +170,7 @@ export function renderModernTealHtml(draft: CvDraft) {
 
   order.forEach(pushSection);
 
-  return `<!doctype html>
+  const html = `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8" />
@@ -220,10 +221,19 @@ body{margin:0;background:#f1f5f9;font-family:Inter,system-ui,Segoe UI,Arial;colo
   </main>
 </body>
 </html>`;
+
+  logScriptProbe('modern-teal', html);
+  return html;
 }
 
 const ModernTeal: React.FC<Props> = ({ draft }) => {
   const html = useMemo(() => renderModernTealHtml(draft), [JSON.stringify(draft)]);
+
+  const safeHtml = stripScripts(html);
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[cv iframe]', { template: 'ModernTeal' });
+  }
 
   return (
     <iframe
@@ -231,7 +241,7 @@ const ModernTeal: React.FC<Props> = ({ draft }) => {
       className="min-h-full h-full w-full rounded-xl border border-gray-200 bg-white"
       sandbox="allow-same-origin"
       scrolling="yes"
-      srcDoc={html}
+      srcDoc={safeHtml}
       style={{ height: '100%', width: '100%', border: 0 }}
     />
   );

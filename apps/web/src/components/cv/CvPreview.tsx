@@ -6,20 +6,33 @@ import { templateRegistryById, templateRegistry } from '../../templates/registry
 type Props = {
   draft: CvDraft;
   showLiveBadge?: boolean;
+  resumeSourceHint?: 'saved' | 'demo' | 'live';
 };
 
-const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false }) => {
+const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSourceHint }) => {
   const importMetaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined;
   const isDev =
     importMetaEnv?.DEV ??
     (typeof process !== 'undefined' ? process.env.NODE_ENV !== 'production' : false);
   const { draft: previewDraft, resumeSource } = resolvePreviewDraft(draft);
+
+  if (isDev) {
+    console.log('[preview] using', {
+      source: resumeSource,
+      sourceHint: resumeSourceHint,
+      name: previewDraft.basics?.name,
+      templateId: previewDraft.templateId,
+    });
+  }
+
   if (isDev && resumeSource === 'demo') {
     console.warn('[CvPreview] draft missing content; rendering demo resume data.');
   }
 
-  const Template =
-    templateRegistryById[previewDraft.templateId]?.component || templateRegistry[0]?.component;
+  const hasKnownTemplate = Boolean(templateRegistryById[previewDraft.templateId]?.component);
+  const Template = hasKnownTemplate
+    ? templateRegistryById[previewDraft.templateId]?.component
+    : templateRegistry[0]?.component;
 
   return (
     <div className="cv-preview-wrapper h-full min-h-0 w-full">
@@ -46,6 +59,13 @@ const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false }) => {
           </div>
         )}
       </div>
+
+      {isDev && !hasKnownTemplate && (
+        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Unknown template id <span className="font-semibold">{previewDraft.templateId}</span>. Falling
+          back to <span className="font-semibold">{templateRegistry[0]?.id ?? 'first template'}</span>.
+        </div>
+      )}
 
       <div className="cv-page h-full min-h-0 w-full overflow-hidden rounded-2xl bg-white text-gray-900 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.4)]">
         {Template ? (

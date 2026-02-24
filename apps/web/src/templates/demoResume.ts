@@ -161,7 +161,7 @@ export const hasAnyUserData = (draft?: Partial<CvDraft>) => {
   return false;
 };
 
-export const resolvePreviewDraft = (draft: CvDraft) => {
+export const resolvePreviewDraft = (draft: CvDraft): { draft: CvDraft; resumeSource: 'demo' | 'live' } => {
   const hasContent = hasAnyUserData(draft);
   const previewDraft = hasContent
     ? draft

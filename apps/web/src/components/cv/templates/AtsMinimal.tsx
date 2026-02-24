@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import type { CvDraft, CvSectionKey } from '@cvpro/shared/types';
 import { defaultSectionOrder } from '../../../utils/cvDefaults';
+import { logScriptProbe, stripScripts } from '../../../utils/sanitizeHtmlForIframe';
 
 type Props = { draft: CvDraft };
 
@@ -212,7 +213,7 @@ export function renderAtsMinimalHtml(draft: CvDraft) {
     .filter(Boolean)
     .join('\n');
 
-  return `<!doctype html>
+  const html = `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8" />
@@ -344,10 +345,19 @@ li{ margin:4px 0; }
   </main>
 </body>
 </html>`;
+
+  logScriptProbe('ats-minimal', html);
+  return html;
 }
 
 const AtsMinimal: React.FC<Props> = ({ draft }) => {
-  const html = useMemo(() => renderAtsMinimalHtml(draft), [draft]);
+  const html = useMemo(() => renderAtsMinimalHtml(draft), [JSON.stringify(draft)]);
+
+  const safeHtml = stripScripts(html);
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[cv iframe]', { template: 'AtsMinimal' });
+  }
 
   return (
     <iframe
@@ -355,7 +365,7 @@ const AtsMinimal: React.FC<Props> = ({ draft }) => {
       className="min-h-full h-full w-full rounded-xl border border-gray-200 bg-white"
       sandbox="allow-same-origin"
       scrolling="yes"
-      srcDoc={html}
+      srcDoc={safeHtml}
       style={{ height: '100%', width: '100%', border: 0 }}
     />
   );

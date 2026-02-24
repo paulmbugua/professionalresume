@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import type { CvDraft, CvSectionKey } from '@cvpro/shared/types';
 import CvForm from './CvForm';
@@ -53,6 +53,12 @@ const CvEditorShell: React.FC<Props> = ({
 
   const templateSource = templateRegistryById[draft.templateId] ? 'local' : 'unknown';
   const { resumeSource } = resolvePreviewDraft(draft);
+  const isDev = process.env.NODE_ENV !== 'production';
+
+  useEffect(() => {
+    if (!isDev) return;
+    console.log('[shell] draft', { name: draft.basics?.name, templateId: draft.templateId });
+  }, [draft, isDev]);
 
   return (
     <div className="mx-auto w-full max-w-screen-2xl px-4 pb-12 pt-6 lg:px-8">
@@ -154,7 +160,7 @@ const CvEditorShell: React.FC<Props> = ({
             <div className="flex h-full min-h-0 flex-col rounded-2xl border border-gray-200 bg-white/70 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5 print:border-none print:bg-transparent print:p-0">
               <TemplateErrorBoundary>
                 <div className="flex-1 min-h-0 overflow-hidden">
-                  <CvPreview draft={draft} showLiveBadge />
+                  <CvPreview draft={draft} showLiveBadge resumeSourceHint={resumeSource} />
                 </div>
               </TemplateErrorBoundary>
 

@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import type { CvDraft, CvSectionKey } from '@cvpro/shared/types';
 import { defaultSectionOrder } from '../../../utils/cvDefaults';
+import { logScriptProbe, stripScripts } from '../../../utils/sanitizeHtmlForIframe';
 
 type Props = { draft: CvDraft };
 
@@ -99,7 +100,7 @@ export function renderAtsCompactHtml(draft: CvDraft) {
     if (k === 'extras') sections.push(sec('Extras', extras));
   });
 
-  return `<!doctype html>
+  const html = `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8" />
@@ -135,10 +136,19 @@ ${sections.join('')}
 </main>
 </body>
 </html>`;
+
+  logScriptProbe('ats-compact', html);
+  return html;
 }
 
 const AtsCompact: React.FC<Props> = ({ draft }) => {
   const html = useMemo(() => renderAtsCompactHtml(draft), [JSON.stringify(draft)]);
+
+  const safeHtml = stripScripts(html);
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[cv iframe]', { template: 'AtsCompact' });
+  }
 
   return (
     <iframe
@@ -146,7 +156,7 @@ const AtsCompact: React.FC<Props> = ({ draft }) => {
       className="min-h-full h-full w-full rounded-xl border border-gray-200 bg-white"
       sandbox="allow-same-origin"
       scrolling="yes"
-      srcDoc={html}
+      srcDoc={safeHtml}
       style={{ height: '100%', width: '100%', border: 0 }}
     />
   );

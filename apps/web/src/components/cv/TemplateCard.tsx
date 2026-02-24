@@ -3,7 +3,7 @@ import type { CvTemplate } from '@cvpro/shared/types';
 import { demoResume } from '../../templates/demoResume';
 import { normalizeDraft } from '../../utils/cvDefaults';
 import TemplateThumbnail from './templates/TemplateThumbnail';
-import { renderTemplateThumbnailHtml } from './templates/thumbnailHtml';
+import { templateRegistryById } from '../../templates/registry';
 
 type Props = {
   template: CvTemplate;
@@ -13,7 +13,7 @@ type Props = {
 const TemplateCard: React.FC<Props> = ({ template, onSelect }) => {
   const thumbnailHtml = useMemo(() => {
     const demoDraft = normalizeDraft({ ...demoResume, templateId: template.id });
-    return renderTemplateThumbnailHtml(template.id, demoDraft);
+    return templateRegistryById[template.id]?.renderHtml?.(demoDraft);
   }, [template.id]);
 
   return (
