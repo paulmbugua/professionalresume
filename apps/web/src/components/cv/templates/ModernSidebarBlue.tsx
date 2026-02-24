@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import type { CvDraft, CvSectionKey } from '@cvpro/shared/types';
 import { defaultSectionOrder } from '../../../utils/cvDefaults';
+import { logScriptProbe, stripScripts } from '../../../utils/sanitizeHtmlForIframe';
 
 type Props = { draft: CvDraft };
 
@@ -114,7 +115,7 @@ export function renderModernSidebarBlueHtml(draft: CvDraft) {
     if (k === 'certifications') mainSections.push(section('Certifications', certs));
   });
 
-  return `<!doctype html>
+  const html = `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8" />
@@ -159,10 +160,19 @@ main{padding:12mm 13mm}.name{margin:0;font-size:30px;letter-spacing:-.02em}.head
 </main>
 </body>
 </html>`;
+
+  logScriptProbe('modern-sidebar-blue', html);
+  return html;
 }
 
 const ModernSidebarBlue: React.FC<Props> = ({ draft }) => {
   const html = useMemo(() => renderModernSidebarBlueHtml(draft), [JSON.stringify(draft)]);
+
+  const safeHtml = stripScripts(html);
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[cv iframe]', { template: 'ModernSidebarBlue' });
+  }
 
   return (
     <iframe
@@ -170,7 +180,7 @@ const ModernSidebarBlue: React.FC<Props> = ({ draft }) => {
       className="min-h-full h-full w-full rounded-xl border border-gray-200 bg-white"
       sandbox="allow-same-origin"
       scrolling="yes"
-      srcDoc={html}
+      srcDoc={safeHtml}
       style={{ height: '100%', width: '100%', border: 0 }}
     />
   );

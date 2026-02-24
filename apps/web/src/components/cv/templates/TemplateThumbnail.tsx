@@ -1,4 +1,5 @@
 import React from 'react';
+import { stripScripts } from '../../../utils/sanitizeHtmlForIframe';
 
 type Props = {
   html?: string;
@@ -14,12 +15,18 @@ const TemplateThumbnail: React.FC<Props> = ({ html, label }) => {
     );
   }
 
+  const safeHtml = stripScripts(html);
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[cv iframe]', { template: `Thumbnail:${label}` });
+  }
+
   return (
     <div className="relative h-[220px] overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/10">
       <div className="absolute left-0 top-0 h-[1130px] w-[820px] origin-top-left scale-[0.27]">
         <iframe
           title={`${label} thumbnail`}
-          srcDoc={html}
+          srcDoc={safeHtml}
           sandbox="allow-same-origin"
           loading="lazy"
           className="h-[1130px] w-[820px]"
