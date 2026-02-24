@@ -1,5 +1,5 @@
 // apps/web/src/utils/subjectImages.ts
-import type { Course } from '@mytutorapp/shared/types'
+import type { Course } from '@cvpro/shared/types'
 
 /** --------------------------------------------------------
  * Canonical subjects → images  (curated for clarity & legibility)

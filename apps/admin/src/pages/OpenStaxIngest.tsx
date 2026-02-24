@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { toast } from 'react-toastify';
 import { Loader2, CheckCircle2 } from 'lucide-react';
-import { useShopContext } from '@mytutorapp/shared/context/ShopContext';
+import { useShopContext } from '@cvpro/shared/context/ShopContext';
 
 type Result = { ok: boolean; collectionId: string; items: number; courseId: string };
 

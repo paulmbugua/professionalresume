@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { CvSectionKey } from '@mytutorapp/shared/types';
+import type { CvSectionKey } from '@cvpro/shared/types';
 import SectionManager from '../../../../../components/cv/SectionManager';
 import { demoSectionOrder, demoSectionVisibility } from '../demoData';
 

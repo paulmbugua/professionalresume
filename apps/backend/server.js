@@ -9,7 +9,7 @@ import { Server } from 'socket.io';
 import bodyParser from 'body-parser';
 
 import connectCloudinary from './config/cloudinary.js';
-
+import userRouter from './routes/userRoute.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import aiCvRoutes from './routes/aiCvRoutes.js';
 import mpesaUrlsRoutes from './routes/mpesaUrlsRoutes.js';
@@ -51,11 +51,11 @@ process.on('unhandledRejection', (err) => {
 
 const app = express();
 const server = http.createServer(app);
-const port = Number(process.env.PORT ?? 4001);
+const port = Number(process.env.PORT ?? 4000);
 const isProduction = process.env.NODE_ENV === 'production';
 
 // ─── 1) Environment vars ────────────────────────────────────────────────────────
-const BACKEND_URL      = process.env.BACKEND_URL      || `http://localhost:${process.env.PORT || 4001}`;
+const BACKEND_URL      = process.env.BACKEND_URL      || `http://localhost:${process.env.PORT || 4000}`;
 const WEB_BACKEND_URL  = process.env.WEB_BACKEND_URL  || 'http://localhost:5173';
 const PROD_BACKEND_URL = process.env.PROD_BACKEND_URL || 'https://server.daybreaklearner.com';
 
@@ -78,7 +78,7 @@ const developmentOrigins = [
   'http://127.0.0.1:3000',
   'http://localhost:3001',
   'http://192.168.137.1:8081',
-  'http://192.168.137.1:4001',
+  'http://192.168.137.1:4000',
   'http://localhost:19006',
   'http://localhost:19000', // Expo web
   'https://b743-37-211-202-186.ngrok-free.app',
@@ -199,7 +199,7 @@ app.use('/api/mpesa',                                  mpesaUrlsRoutes);
 app.use('/api/cloudinary',                             cloudinaryRoutes);
 
 app.use('/api/earnings',                               earningsRoutes);
-
+app.use('/api/user', userRouter);
 
 app.use('/api/ai', inflightLimiter({ keyFn: aiKeyFn, max: Number(process.env.AI_MAX_INFLIGHT || 2) }));
 // ✅ Apply strict AI limiter to expensive AI/TTS work (per-user, per-bucket)

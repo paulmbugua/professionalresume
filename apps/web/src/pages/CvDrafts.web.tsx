@@ -3,8 +3,8 @@
 import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useShopContext } from '@mytutorapp/shared/context';
-import { useCvDrafts, useDeleteCvDraft } from '@mytutorapp/shared/hooks';
+import { useShopContext } from '@cvpro/shared/context';
+import { useCvDrafts, useDeleteCvDraft } from '@cvpro/shared/hooks';
 
 const CvDraftsPage: React.FC = () => {
   const { backendUrl, token } = useShopContext() as any;

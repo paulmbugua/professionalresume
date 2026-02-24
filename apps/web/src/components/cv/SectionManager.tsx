@@ -1,5 +1,5 @@
 import React from 'react';
-import type { CvSectionKey } from '@mytutorapp/shared/types';
+import type { CvSectionKey } from '@cvpro/shared/types';
 
 const sectionLabels: Record<CvSectionKey, string> = {
   summary: 'Summary',

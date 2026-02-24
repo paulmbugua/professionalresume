@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { CvDraft } from '@mytutorapp/shared/types';
+import type { CvDraft } from '@cvpro/shared/types';
 
 function client(backendUrl: string, token?: string) {
   return axios.create({

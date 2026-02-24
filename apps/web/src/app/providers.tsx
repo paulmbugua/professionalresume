@@ -2,8 +2,8 @@
 
 import React, { useMemo, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import ShopContextProvider from '@mytutorapp/shared/context/ShopContext';
-import { ThemeProvider } from '@mytutorapp/shared/hooks';
+import ShopContextProvider from '@cvpro/shared/context/ShopContext';
+import { ThemeProvider } from '@cvpro/shared/hooks';
 
 type AsyncStorageLike = {
   getItem: (k: string) => Promise<string | null>;

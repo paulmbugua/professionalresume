@@ -35,11 +35,11 @@ export default defineConfig({
       // Monorepo shared
       { find: /^@shared$/, replacement: path.resolve(__dirname, '../../packages/shared/index.ts') },
       { find: /^@shared\/(.*)$/, replacement: path.resolve(__dirname, '../../packages/shared/$1') },
-      { find: /^@mytutorapp\/shared$/, replacement: path.resolve(__dirname, '../../packages/shared/index.ts') },
-      { find: /^@mytutorapp\/shared\/(.*)$/, replacement: path.resolve(__dirname, '../../packages/shared/$1') },
+      { find: /^@cvpro\/shared$/, replacement: path.resolve(__dirname, '../../packages/shared/index.ts') },
+      { find: /^@cvpro\/shared\/(.*)$/, replacement: path.resolve(__dirname, '../../packages/shared/$1') },
 
       // explicit types barrel (matches web)
-      { find: /^@mytutorapp\/shared\/types$/, replacement: path.resolve(__dirname, '../../packages/shared/types/index.ts') },
+      { find: /^@cvpro\/shared\/types$/, replacement: path.resolve(__dirname, '../../packages/shared/types/index.ts') },
       { find: /^@shared\/types$/, replacement: path.resolve(__dirname, '../../packages/shared/types/index.ts') },
 
       // pin toastify to app-local (matches web)

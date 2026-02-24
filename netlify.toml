@@ -1,5 +1,5 @@
 [build]
-  command = "yarn workspace @mytutorapp/web build"
+  command = "yarn workspace @cvpro/web build"
   publish = "apps/web/dist"
   # base is optional when building from repo root
   # base = "."
@@ -7,7 +7,7 @@
 # 1) Firebase Auth handler proxy (keeps Google sign-in on your domain)
 [[redirects]]
   from   = "/__/auth/*"
-  to     = "https://mytutorapp-d3c91.firebaseapp.com/__/auth/:splat"
+  to     = "https://cvpro-d3c91.firebaseapp.com/__/auth/:splat"
   status = 200
   force  = true
 

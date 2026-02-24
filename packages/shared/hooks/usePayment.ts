@@ -1,9 +1,9 @@
 // packages/shared/hooks/usePayment.ts
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { useShopContext } from '@mytutorapp/shared/context';
+import { useShopContext } from '@cvpro/shared/context';
 import useAppQuery from './useAppQuery';
 import { useMutation } from '@tanstack/react-query';
-import type { Profile, RatingStats, PaymentPackage } from '@mytutorapp/shared/types';
+import type { Profile, RatingStats, PaymentPackage } from '@cvpro/shared/types';
 import {
   getPaymentPackages,
   getRandomProfile,
@@ -11,7 +11,7 @@ import {
   initiatePayment,
   completePayment as apiCompletePayment,
   updateMpesaReference as apiUpdateMpesaReference,
-} from '@mytutorapp/shared/api';
+} from '@cvpro/shared/api';
 import type { AxiosResponse } from 'axios';
 
 interface InitiateResponse { transactionId?: string }

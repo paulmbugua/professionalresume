@@ -1,134 +1,363 @@
-import React from 'react';
-import type { CvDraft, CvSectionKey } from '@mytutorapp/shared/types';
+import React, { useMemo } from 'react';
+import type { CvDraft, CvSectionKey } from '@cvpro/shared/types';
 import { defaultSectionOrder } from '../../../utils/cvDefaults';
 
-type Props = {
-  draft: CvDraft;
-};
+type Props = { draft: CvDraft };
 
-const AtsMinimal: React.FC<Props> = ({ draft }) => {
+const esc = (v: any) =>
+  String(v ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+const safeKey = (s?: string | null) => (s ?? '').toString().trim().toLowerCase();
+
+function renderHtml(draft: CvDraft) {
   const order = draft.sectionOrder?.length ? draft.sectionOrder : defaultSectionOrder;
-  const visible = draft.sectionVisibility || {};
+  const visibility = draft.sectionVisibility || {};
+  const isVisible = (k: CvSectionKey) => visibility[k] !== false;
 
-  const sectionMap: Record<CvSectionKey, React.ReactNode> = {
-    summary: draft.summary ? (
-      <section>
-        <h3 className="cv-section-title">Summary</h3>
-        <p className="cv-body">{draft.summary}</p>
-      </section>
-    ) : null,
-    skills: draft.skills?.length ? (
-      <section>
-        <h3 className="cv-section-title">Skills</h3>
-        <p className="cv-body">{draft.skills.join(' • ')}</p>
-      </section>
-    ) : null,
-    experience: draft.experience?.length ? (
-      <section>
-        <h3 className="cv-section-title">Experience</h3>
-        <div className="space-y-3">
-          {draft.experience.map((exp, idx) => (
-            <div key={`${exp.company}-${idx}`}>
-              <div className="flex flex-wrap items-center justify-between text-sm font-semibold">
-                <span>{exp.role || 'Role'} · {exp.company || 'Company'}</span>
-                <span className="text-xs text-gray-500">{exp.start} - {exp.end}</span>
-              </div>
-              {exp.location && <p className="text-xs text-gray-500">{exp.location}</p>}
-              <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-gray-700">
-                {exp.bullets?.map((bullet, bulletIdx) => (
-                  <li key={`${exp.company}-${bulletIdx}`}>{bullet}</li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </section>
-    ) : null,
-    education: draft.education?.length ? (
-      <section>
-        <h3 className="cv-section-title">Education</h3>
-        <div className="space-y-3">
-          {draft.education.map((edu, idx) => (
-            <div key={`${edu.school}-${idx}`}>
-              <div className="flex flex-wrap items-center justify-between text-sm font-semibold">
-                <span>{edu.program || 'Program'} · {edu.school || 'School'}</span>
-                <span className="text-xs text-gray-500">{edu.start} - {edu.end}</span>
-              </div>
-              {edu.details && <p className="text-xs text-gray-600">{edu.details}</p>}
-            </div>
-          ))}
-        </div>
-      </section>
-    ) : null,
-    projects: draft.projects?.length ? (
-      <section>
-        <h3 className="cv-section-title">Projects</h3>
-        <div className="space-y-3">
-          {draft.projects.map((project, idx) => (
-            <div key={`${project.name}-${idx}`}>
-              <div className="flex items-center justify-between text-sm font-semibold">
-                <span>{project.name || 'Project'}</span>
-                {project.link && (
-                  <span className="text-xs text-gray-500">{project.link}</span>
-                )}
-              </div>
-              <p className="text-xs text-gray-600">{project.description}</p>
-              <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-gray-700">
-                {project.bullets?.map((bullet, bulletIdx) => (
-                  <li key={`${project.name}-${bulletIdx}`}>{bullet}</li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </section>
-    ) : null,
-    certifications: draft.certifications?.length ? (
-      <section>
-        <h3 className="cv-section-title">Certifications</h3>
-        <div className="space-y-2 text-xs text-gray-700">
-          {draft.certifications.map((cert, idx) => (
-            <div key={`${cert.name}-${idx}`} className="flex items-center justify-between">
-              <span>{cert.name}</span>
-              <span className="text-gray-500">{cert.issuer} {cert.year ? `• ${cert.year}` : ''}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-    ) : null,
-    extras: draft.extras ? (
-      <section>
-        <h3 className="cv-section-title">Extras</h3>
-        <div className="space-y-1 text-xs text-gray-700">
-          {draft.extras.languages?.length ? (
-            <p><strong>Languages:</strong> {draft.extras.languages.join(', ')}</p>
-          ) : null}
-          {draft.extras.interests?.length ? (
-            <p><strong>Interests:</strong> {draft.extras.interests.join(', ')}</p>
-          ) : null}
-        </div>
-      </section>
-    ) : null,
+  const basics = draft.basics || {};
+
+  const contact: string[] = [];
+  if (basics.email) contact.push(`<span>${esc(basics.email)}</span>`);
+  if (basics.phone) contact.push(`<span>${esc(basics.phone)}</span>`);
+  if (basics.location) contact.push(`<span>${esc(basics.location)}</span>`);
+
+  const links = (basics.links || [])
+    .filter((l) => (l?.label || l?.url)?.trim())
+    .map((l, idx) => {
+      const label = (l.label || l.url || '').trim();
+      const url = (l.url || '').trim();
+      const key = `${safeKey(url)}|${safeKey(label)}|${idx}`;
+      // ATS-friendly: show label + url in parentheses
+      return `<span data-k="${esc(key)}">${esc(label)}${
+        url ? ` <span class="muted">(${esc(url)})</span>` : ''
+      }</span>`;
+    });
+
+  const sectionMap: Record<CvSectionKey, string> = {
+    summary: draft.summary?.trim()
+      ? `<section><h2 class="sec">Summary</h2><p>${esc(draft.summary)}</p></section>`
+      : '',
+
+    skills: draft.skills?.length
+      ? `<section><h2 class="sec">Skills</h2><p>${esc(draft.skills.join(' • '))}</p></section>`
+      : '',
+
+    experience: draft.experience?.length
+      ? `<section>
+          <h2 class="sec">Experience</h2>
+          <div class="stack">
+            ${draft.experience
+              .map((exp, idx) => {
+                const expKey = [
+                  safeKey(exp.company),
+                  safeKey(exp.role),
+                  safeKey(exp.start),
+                  safeKey(exp.end),
+                  idx,
+                ].join('|');
+
+                const dates = `${esc(exp.start || '')}${exp.start || exp.end ? ' - ' : ''}${esc(
+                  exp.end || ''
+                )}`.trim();
+
+                const bullets =
+                  exp.bullets?.length
+                    ? `<ul>
+                        ${exp.bullets
+                          .filter(Boolean)
+                          .map(
+                            (b, i) =>
+                              `<li data-k="${esc(
+                                `${expKey}:b:${i}:${safeKey(b).slice(0, 24)}`
+                              )}">${esc(b)}</li>`
+                          )
+                          .join('')}
+                      </ul>`
+                    : '';
+
+                return `<div class="item" data-k="${esc(expKey)}">
+                  <div class="row">
+                    <div class="strong">${esc(exp.role || 'Role')} · ${esc(
+                  exp.company || 'Company'
+                )}</div>
+                    <div class="dates">${esc(dates)}</div>
+                  </div>
+                  ${exp.location ? `<div class="muted small">${esc(exp.location)}</div>` : ''}
+                  ${bullets}
+                </div>`;
+              })
+              .join('')}
+          </div>
+        </section>`
+      : '',
+
+    education: draft.education?.length
+      ? `<section>
+          <h2 class="sec">Education</h2>
+          <div class="stack">
+            ${draft.education
+              .map((edu, idx) => {
+                const eduKey = [
+                  safeKey(edu.school),
+                  safeKey(edu.program),
+                  safeKey(edu.start),
+                  safeKey(edu.end),
+                  idx,
+                ].join('|');
+
+                const dates = `${esc(edu.start || '')}${edu.start || edu.end ? ' - ' : ''}${esc(
+                  edu.end || ''
+                )}`.trim();
+
+                return `<div class="item" data-k="${esc(eduKey)}">
+                  <div class="row">
+                    <div class="strong">${esc(edu.program || 'Program')} · ${esc(
+                  edu.school || 'School'
+                )}</div>
+                    <div class="dates">${esc(dates)}</div>
+                  </div>
+                  ${edu.details ? `<div class="muted">${esc(edu.details)}</div>` : ''}
+                </div>`;
+              })
+              .join('')}
+          </div>
+        </section>`
+      : '',
+
+    projects: draft.projects?.length
+      ? `<section>
+          <h2 class="sec">Projects</h2>
+          <div class="stack">
+            ${draft.projects
+              .map((p, idx) => {
+                const projKey = [safeKey(p.name), safeKey(p.link), idx].join('|');
+
+                const bullets =
+                  p.bullets?.length
+                    ? `<ul>
+                        ${p.bullets
+                          .filter(Boolean)
+                          .map(
+                            (b, i) =>
+                              `<li data-k="${esc(
+                                `${projKey}:b:${i}:${safeKey(b).slice(0, 24)}`
+                              )}">${esc(b)}</li>`
+                          )
+                          .join('')}
+                      </ul>`
+                    : '';
+
+                return `<div class="item" data-k="${esc(projKey)}">
+                  <div class="row">
+                    <div class="strong">${esc(p.name || 'Project')}</div>
+                    <div class="dates">${
+                      p.link ? `<span class="muted">${esc(p.link)}</span>` : ''
+                    }</div>
+                  </div>
+                  ${p.description ? `<div class="muted">${esc(p.description)}</div>` : ''}
+                  ${bullets}
+                </div>`;
+              })
+              .join('')}
+          </div>
+        </section>`
+      : '',
+
+    certifications: draft.certifications?.length
+      ? `<section>
+          <h2 class="sec">Certifications</h2>
+          <div class="stack">
+            ${draft.certifications
+              .map((c, idx) => {
+                const certKey = [safeKey(c.name), safeKey(c.issuer), c.year ?? '', idx].join('|');
+                const rhs = `${esc(c.issuer || '')}${c.year ? ` • ${esc(c.year)}` : ''}`.trim();
+
+                return `<div class="row item" data-k="${esc(certKey)}">
+                  <div>${esc(c.name || '')}</div>
+                  <div class="dates muted">${esc(rhs)}</div>
+                </div>`;
+              })
+              .join('')}
+          </div>
+        </section>`
+      : '',
+
+    extras: draft.extras
+      ? `<section>
+          <h2 class="sec">Extras</h2>
+          <div class="muted">
+            ${
+              draft.extras.languages?.length
+                ? `<div><span class="strong">Languages:</span> ${esc(
+                    draft.extras.languages.join(', ')
+                  )}</div>`
+                : ''
+            }
+            ${
+              draft.extras.interests?.length
+                ? `<div><span class="strong">Interests:</span> ${esc(
+                    draft.extras.interests.join(', ')
+                  )}</div>`
+                : ''
+            }
+          </div>
+        </section>`
+      : '',
   };
 
-  return (
-    <div className="p-10 text-[12px] leading-relaxed">
-      <header className="border-b border-gray-200 pb-4">
-        <h1 className="text-2xl font-semibold tracking-tight">{draft.basics.name || 'Your Name'}</h1>
-        <p className="text-sm text-gray-600">{draft.basics.headline || 'Professional Headline'}</p>
-        <div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-500">
-          <span>{draft.basics.email}</span>
-          <span>{draft.basics.phone}</span>
-          <span>{draft.basics.location}</span>
-          {draft.basics.links?.map((link, idx) => (
-            <span key={`${link.url}-${idx}`}>{link.label || link.url}</span>
-          ))}
-        </div>
-      </header>
-      <div className="mt-5 space-y-5">
-        {order.map((key) => (visible[key] ? sectionMap[key] : null))}
+  const sections = order
+    .map((k) => (isVisible(k) ? sectionMap[k] : ''))
+    .filter(Boolean)
+    .join('\n');
+
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root{
+  --text:#0f172a;
+  --muted:#475569;
+  --hair:#e2e8f0;
+  --paper:#ffffff;
+}
+
+*{ box-sizing:border-box; }
+body{
+  margin:0;
+  background:#f1f5f9;
+  font-family:Inter,system-ui,Segoe UI,Arial;
+  color:var(--text);
+}
+
+.page{
+  width:210mm;
+  min-height:297mm;
+  margin:18px auto;
+  background:var(--paper);
+  padding:18mm 16mm;
+  box-shadow:0 12px 35px rgba(2,6,23,.10);
+}
+
+header{
+  border-bottom:1px solid var(--hair);
+  padding-bottom:12px;
+}
+
+h1{
+  margin:0;
+  font-size:28px;
+  letter-spacing:-.03em;
+  line-height:1.1;
+}
+
+.headline{
+  margin:6px 0 0;
+  color:var(--muted);
+  font-size:13px;
+  font-weight:500;
+}
+
+.contact{
+  margin-top:10px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px 14px;
+  color:var(--muted);
+  font-size:12px;
+}
+
+.contact span{
+  position:relative;
+  padding-left:10px;
+}
+.contact span:before{
+  content:"•";
+  position:absolute;
+  left:0;
+  color:#94a3b8;
+}
+
+.sec{
+  margin:16px 0 8px;
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.12em;
+  font-weight:700;
+  color:#0f172a;
+}
+
+.stack{ display:flex; flex-direction:column; gap:12px; }
+
+.row{
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:12px;
+  align-items:baseline;
+}
+
+.strong{ font-weight:700; }
+.dates{
+  font-size:11px;
+  color:var(--muted);
+  white-space:nowrap;
+  text-align:right;
+}
+
+.muted{ color:var(--muted); }
+.small{ font-size:11px; }
+
+p{ margin:0; font-size:12px; line-height:1.55; }
+
+ul{
+  margin:8px 0 0;
+  padding-left:18px;
+  font-size:12px;
+  line-height:1.5;
+}
+li{ margin:4px 0; }
+
+@page{ size:A4; margin:14mm; }
+@media print{
+  body{ background:#fff; }
+  .page{ margin:0; padding:0; box-shadow:none; width:auto; min-height:auto; }
+}
+</style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <h1>${esc(basics.name || 'Your Name')}</h1>
+      <div class="headline">${esc(basics.headline || 'Professional Headline')}</div>
+      <div class="contact">
+        ${contact.join('')}
+        ${links.join('')}
       </div>
-    </div>
+    </header>
+
+    ${sections}
+  </main>
+</body>
+</html>`;
+}
+
+const AtsMinimal: React.FC<Props> = ({ draft }) => {
+  const html = useMemo(() => renderHtml(draft), [draft]);
+
+  return (
+    <iframe
+      title="ATS Minimal"
+      className="min-h-full h-full w-full rounded-xl border border-gray-200 bg-white"
+      sandbox="allow-same-origin"
+      srcDoc={html}
+    />
   );
 };
 

@@ -17,7 +17,7 @@ import type {
   ShopContextValue as BaseShopContextValue,
   Profile,
   UserRole,
-} from '@mytutorapp/shared/types/ShopContextTypes';
+} from '@cvpro/shared/types/ShopContextTypes';
 
 interface ShopContextProviderProps {
   children: ReactNode;
@@ -150,7 +150,7 @@ function attachAuthGuards(
 
       // Admin token will 401 on user endpoints; ignore those 401s.
       const ignoreUserHydrate401 =
-        session === 'admin' && (path === '/api/user/me' || path === '/api/profile/me');
+        session === 'admin' && (path === '/api/user/me' || path === '/api/user/me');
 
       if ((status === 401 || status === 403) && !ignoreUserHydrate401) {
         if (session === 'admin') await onAdminAuthFail();
@@ -372,7 +372,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
   const { data: queryData, isLoading: loadingProfile, refetch } = useAppQuery<Profile | null, Error>(
     ['profile', token, adminToken],
     async () => {
-      const res = await httpRef.current.get<ApiProfileMeResponse>('/api/profile/me');
+      const res = await httpRef.current.get<ApiProfileMeResponse>('/api/user/me');
       return res.data.profileExists ? res.data.profile : null;
     },
     {

@@ -1,4 +1,4 @@
-import type { CvSectionKey } from '@mytutorapp/shared/types';
+import type { CvSectionKey } from '@cvpro/shared/types';
 import { demoResume } from '../../../../templates/demoResume';
 import { templateRegistryList } from '../../../../templates/registry';
 

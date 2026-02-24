@@ -2,8 +2,8 @@
 
 import React from 'react';
 import { useRouter } from 'next/navigation';
-import { useShopContext } from '@mytutorapp/shared/context';
-import { useCvTemplates } from '@mytutorapp/shared/hooks';
+import { useShopContext } from '@cvpro/shared/context';
+import { useCvTemplates } from '@cvpro/shared/hooks';
 import TemplateGallery from '../components/cv/TemplateGallery';
 import { templateRegistryList } from '../templates/registry';
 

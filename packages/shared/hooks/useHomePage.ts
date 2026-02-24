@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
-import type { Profile } from '@mytutorapp/shared/types';
-import { fetchTutorProfiles, fetchTutorReviews } from '@mytutorapp/shared/api';
-import { useShopContext } from '@mytutorapp/shared/context';
+import type { Profile } from '@cvpro/shared/types';
+import { fetchTutorProfiles, fetchTutorReviews } from '@cvpro/shared/api';
+import { useShopContext } from '@cvpro/shared/context';
 import useAppQuery from './useAppQuery';
 
 type Filters = Record<string, string[]>;

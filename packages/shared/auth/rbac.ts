@@ -1,4 +1,4 @@
-import type { UserRole } from '@mytutorapp/shared/types/ShopContextTypes';
+import type { UserRole } from '@cvpro/shared/types/ShopContextTypes';
 
 export const RoleOrder = {
   user: 0,

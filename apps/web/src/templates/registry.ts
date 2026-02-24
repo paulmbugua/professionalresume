@@ -1,5 +1,5 @@
 import React from 'react';
-import type { CvDraft, CvTemplate } from '@mytutorapp/shared/types';
+import type { CvDraft, CvTemplate } from '@cvpro/shared/types';
 import AtsMinimal from '../components/cv/templates/AtsMinimal';
 import ModernSidebar from '../components/cv/templates/ModernSidebar';
 import BoldHeader from '../components/cv/templates/BoldHeader';

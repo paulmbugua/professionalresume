@@ -54,7 +54,7 @@ const productionOrigins = [
   'https://supatoto.co.ke',
   'https://backend.novagptech.com',
   'https://DayBreak.netlify.app',
-  "https://mytutorapp-production.up.railway.app",
+  "https://cvpro-production.up.railway.app",
   'https://client.supatoto.co.ke',
   'https://DayBreak.co.ke',
   'https://server.DayBreak.co.ke',

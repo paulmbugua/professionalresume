@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
-import { useShopContext } from '@mytutorapp/shared/context/ShopContext';
+import { useShopContext } from '@cvpro/shared/context/ShopContext';
 import { RefreshCw, Shield, Trash2, Key, UserCog } from 'lucide-react';
 
 type Role = 'student' | 'tutor' | 'admin' | 'superadmin' | null;

@@ -1,6 +1,6 @@
 // packages/shared/api/paymentApi.ts
 import axios from 'axios';
-import type { PaymentPackage } from '@mytutorapp/shared/types';
+import type { PaymentPackage } from '@cvpro/shared/types';
 
 export const getPaymentPackages = async (
   backendUrl: string,

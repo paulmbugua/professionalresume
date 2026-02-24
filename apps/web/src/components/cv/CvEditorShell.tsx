@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useFormContext } from 'react-hook-form';
-import type { CvDraft, CvSectionKey } from '@mytutorapp/shared/types';
+import type { CvDraft, CvSectionKey } from '@cvpro/shared/types';
 import CvForm from './CvForm';
 import CvPreview from './CvPreview';
 import SectionManager from './SectionManager';
@@ -8,7 +8,6 @@ import AiAssistPanel from './AiAssistPanel';
 import PrintExportButton from './PrintExportButton';
 import TemplateErrorBoundary from './TemplateErrorBoundary';
 import TemplateDebugPanel from './TemplateDebugPanel';
-import { resolvePreviewDraft } from '../../templates/demoResume';
 import { templateRegistry, templateRegistryById } from '../../templates/registry';
 
 type Props = {
@@ -51,12 +50,11 @@ const CvEditorShell: React.FC<Props> = ({
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const { resumeSource } = resolvePreviewDraft(draft);
-  const debugResumeSource = resumeSource === 'saved' ? 'saved' : 'demo';
   const templateSource = templateRegistryById[draft.templateId] ? 'local' : 'unknown';
 
   return (
     <div className="mx-auto w-full max-w-screen-2xl px-4 pb-12 pt-6 lg:px-8">
+      {/* Header */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4 print:hidden">
         <div>
           <p className="text-xs uppercase tracking-[0.24em] text-gray-400">CV Builder</p>
@@ -67,6 +65,7 @@ const CvEditorShell: React.FC<Props> = ({
             {lastSavedAt ? `Last saved ${lastSavedAt}` : 'Autosaving enabled'}
           </p>
         </div>
+
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -75,12 +74,14 @@ const CvEditorShell: React.FC<Props> = ({
           >
             AI Improve
           </button>
+
           <PrintExportButton
             onExport={onExport}
             isExporting={isExporting}
             downloadUrl={exportUrl}
             onCopyLink={onCopyExportLink}
           />
+
           <button
             type="button"
             onClick={onSave}
@@ -92,6 +93,7 @@ const CvEditorShell: React.FC<Props> = ({
         </div>
       </div>
 
+      {/* Validation */}
       {validationErrors.length > 0 && (
         <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 print:hidden">
           <p className="font-semibold">Please address:</p>
@@ -103,6 +105,7 @@ const CvEditorShell: React.FC<Props> = ({
         </div>
       )}
 
+      {/* Mobile tabs */}
       <div className="mb-4 flex gap-2 lg:hidden print:hidden">
         <button
           type="button"
@@ -124,30 +127,44 @@ const CvEditorShell: React.FC<Props> = ({
         </button>
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-[minmax(320px,420px)_1fr]">
+      {/* Main grid */}
+      <div className="grid gap-8 lg:grid-cols-[minmax(320px,420px)_1fr] min-h-0">
+        {/* Left: Editor */}
         <div className={`${activeTab === 'preview' ? 'hidden' : 'block'} space-y-6 lg:block print:hidden`}>
           <CvForm />
+
           <SectionManager
             sectionOrder={draft.sectionOrder}
             sectionVisibility={draft.sectionVisibility}
             onChange={handleSectionChange}
           />
+
           <div id="ai-panel">
             <AiAssistPanel draft={draft} setValue={setValue} />
           </div>
         </div>
-        <div className={`${activeTab === 'edit' ? 'hidden' : 'block'} lg:block`}>
-          <div className="rounded-2xl border border-gray-200 bg-white/60 p-4 shadow-sm dark:border-white/10 dark:bg-white/5 print:border-none print:bg-transparent print:p-0">
-            <TemplateErrorBoundary>
-              <CvPreview draft={draft} />
-            </TemplateErrorBoundary>
-            <TemplateDebugPanel
-              draft={draft}
-              templateCount={templateRegistry.length}
-              templateSource={templateSource}
-              resumeSource={debugResumeSource}
-              apiError={undefined}
-            />
+
+        {/* Right: Preview (sticky + full-height) */}
+        <div className={`${activeTab === 'edit' ? 'hidden' : 'block'} lg:block min-h-0`}>
+          <div className="sticky top-6 h-[calc(100vh-3rem)] min-h-0">
+            <div className="h-full min-h-0 rounded-2xl border border-gray-200 bg-white/60 p-4 shadow-sm dark:border-white/10 dark:bg-white/5 print:border-none print:bg-transparent print:p-0">
+              <TemplateErrorBoundary>
+                <div className="h-full min-h-0">
+                  <CvPreview draft={draft} />
+                </div>
+              </TemplateErrorBoundary>
+
+              {/* Keep debug at bottom (doesn't steal height) */}
+              <div className="mt-4 print:hidden">
+                <TemplateDebugPanel
+                  draft={draft}
+                  templateCount={templateRegistry.length}
+                  templateSource={templateSource}
+                  resumeSource="live"
+                  apiError={undefined}
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>

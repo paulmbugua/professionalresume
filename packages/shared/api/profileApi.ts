@@ -4,7 +4,7 @@ import type {
   Profile,
   UserProfileResponse,
   ProfilePayload,
-} from '@mytutorapp/shared/types';
+} from '@cvpro/shared/types';
 
 const dev = typeof process !== 'undefined' ? process.env.NODE_ENV !== 'production' : false;
 

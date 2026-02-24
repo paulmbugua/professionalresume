@@ -28,10 +28,11 @@ export const loginUser = async (req, res) => {
         .json({ success: false, message: 'Email and password are required' });
     }
 
-    const result = await pool.query(
-      'SELECT * FROM users WHERE email = $1',
-      [email.trim()]
-    );
+   const emailNorm = email.trim().toLowerCase();
+const result = await pool.query(
+  'SELECT * FROM users WHERE lower(email) = $1 AND deleted_at IS NULL',
+  [emailNorm]
+);
     if (result.rows.length === 0) {
       return res.status(401).json({ success: false, message: 'User not found' });
     }
@@ -84,7 +85,11 @@ export const registerUser = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid role' });
     }
 
-    const exists = await pool.query('SELECT 1 FROM users WHERE email = $1', [email.trim()]);
+   const emailNorm = email.trim().toLowerCase();
+const exists = await pool.query(
+  'SELECT 1 FROM users WHERE lower(email) = $1 AND deleted_at IS NULL',
+  [emailNorm]
+);
     if (exists.rows.length) {
       return res.status(409).json({ success: false, message: 'User already exists' });
     }
@@ -92,7 +97,7 @@ export const registerUser = async (req, res) => {
     const hashed = await bcrypt.hash(password, 10);
     const insertUser = await pool.query(
       'INSERT INTO users (name, email, password, role) VALUES ($1,$2,$3,$4) RETURNING id',
-      [name, email.trim(), hashed, normalizedRole]
+      [name, emailNorm, hashed, normalizedRole]
     );
     const userId = insertUser.rows[0].id;
 
@@ -111,94 +116,32 @@ export const registerUser = async (req, res) => {
 export const getUser = async (req, res) => {
   try {
     const rawId = req.user?.id;
-    if (!rawId) {
-      return res.status(401).json({ success: false, message: 'Unauthorized' });
-    }
+    if (!rawId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
-    // Keep your existing admin token shortcut
+    // admin shortcut stays
     if (typeof rawId === 'string' && rawId.startsWith('admin:')) {
       const email = rawId.slice(6);
-      return res.json({
-        success: true,
-        userId: null,
-        email,
-        tokens: 0,
-        role: 'admin',
-        name: 'Admin', // include a name for admin tokens
-      });
+      return res.json({ success: true, userId: null, email, tokens: 0, role: 'admin', name: 'Admin' });
     }
 
     const userId = Number(rawId);
-    if (!Number.isFinite(userId)) {
-      return res.status(400).json({ success: false, message: 'Invalid user ID' });
-    }
+    if (!Number.isFinite(userId)) return res.status(400).json({ success: false, message: 'Invalid user ID' });
 
-    // 1) Base user info (same as before)
     const { rows } = await pool.query(
-      `
-      SELECT
-        u.id,
-        u.email,
-        u.tokens,
-        u.role,
-        COALESCE(p.name, u.name) AS name
-      FROM users u
-      LEFT JOIN LATERAL (
-        SELECT name
-        FROM profiles
-        WHERE user_id = u.id
-        ORDER BY id DESC
-        LIMIT 1
-      ) p ON TRUE
-      WHERE u.id = $1
-      `,
+      `SELECT id, email, COALESCE(name,'') AS name, COALESCE(role,'user') AS role, COALESCE(tokens,0) AS tokens
+       FROM users WHERE id = $1`,
       [userId]
     );
-    if (!rows.length) {
-      return res.status(404).json({ success: false, message: 'User not found' });
-    }
+
+    if (!rows.length) return res.status(404).json({ success: false, message: 'User not found' });
 
     const u = rows[0];
-
-    // 2) 🟢 NEW: pull latest org_learner_profiles row for this user (photo_url, class_label, etc.)
-    const lpRes = await pool.query(
-      `
-        SELECT *
-        FROM org_learner_profiles
-        WHERE user_id = $1
-        ORDER BY created_at DESC
-        LIMIT 1
-      `,
-      [userId]
-    );
-
-    const orgLearnerProfile = lpRes.rows[0] || null;
-
-    // 3) Build response object (keep existing shape, just extend)
-    const payload = {
-      success: true,
-      userId: u.id,
-      email: u.email,
-      tokens: u.tokens || 0,
-      role: u.role,
-      name: u.name || '',
-    };
-
-    // Expose profile under multiple keys (snake + camel + array),
-    // so all current/future consumers are happy.
-    if (orgLearnerProfile) {
-      payload.org_learner_profile = orgLearnerProfile;
-      payload.orgLearnerProfile = orgLearnerProfile;
-      payload.org_learner_profiles = [orgLearnerProfile];
-    }
-
-    return res.json(payload);
+    return res.json({ success: true, userId: u.id, email: u.email, name: u.name, role: u.role, tokens: u.tokens });
   } catch (err) {
     console.error('getUser Error:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 };
-
 
 /** --------------------
  *  Password Reset Flow
@@ -328,23 +271,30 @@ export const verifyOTPAndResetPassword = async (req, res) => {
 /** --------------------
  *  Google Login
  -------------------- */
+// apps/backend/controllers/userController.js
+
 export const googleLogin = async (req, res) => {
   try {
-    const rawToken = req.body.token || req.body.idToken; // accept either field
+    const rawToken = req.body.token || req.body.idToken; // accept either
     const preferredName = (req.body.name || '').toString().trim().slice(0, 80);
 
     if (!rawToken || typeof rawToken !== 'string') {
       return res.status(400).json({ success: false, message: 'Token missing' });
     }
 
-    // Decode JWT payload safely (base64url)
+    // base64url decode payload (non-verifying)
     const decodePayload = (t) => {
       const parts = t.split('.');
       if (parts.length !== 3) return null;
-      const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+      const b64 = parts[1]
+        .replace(/-/g, '+')
+        .replace(/_/g, '/')
         .padEnd(Math.ceil(parts[1].length / 4) * 4, '=');
-      try { return JSON.parse(Buffer.from(b64, 'base64').toString('utf8')); }
-      catch { return null; }
+      try {
+        return JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
+      } catch {
+        return null;
+      }
     };
 
     const payload = decodePayload(rawToken);
@@ -352,7 +302,8 @@ export const googleLogin = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Malformed token' });
     }
 
-    const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'mytutorapp-d3c91';
+    // Allow either Firebase project ID or Google client ID verification
+    const firebaseProjectId = process.env.FIREBASE_PROJECT_ID; // <-- set this for CVPro if using Firebase ID tokens
     const allowedAudiences = [
       process.env.GOOGLE_CLIENT_ID_WEB,
       process.env.GOOGLE_CLIENT_ID_ANDROID,
@@ -361,21 +312,27 @@ export const googleLogin = async (req, res) => {
 
     let email, googleId, displayName;
 
-    // Path A: Firebase ID token
+    // A) Firebase ID token (issuer securetoken.google.com)
     if (
       typeof payload.iss === 'string' &&
       payload.iss.startsWith('https://securetoken.google.com/')
     ) {
-      if (payload.aud !== PROJECT_ID) {
+      if (!firebaseProjectId) {
+        return res.status(500).json({
+          success: false,
+          message: 'Server misconfigured: FIREBASE_PROJECT_ID missing',
+        });
+      }
+      if (payload.aud !== firebaseProjectId) {
         return res.status(401).json({ success: false, message: 'Token audience mismatch' });
       }
-      // Verify with Firebase Admin (throws if invalid/expired)
+
       const decoded = await admin.auth().verifyIdToken(rawToken);
       email = decoded.email;
       googleId = decoded.uid; // Firebase UID
-      displayName = preferredName || decoded.name || email || '';
+      displayName = preferredName || decoded.name || decoded.email || '';
     }
-    // Path B: Google ID token
+    // B) Google ID token (accounts.google.com)
     else if (
       payload.iss === 'https://accounts.google.com' ||
       payload.iss === 'accounts.google.com'
@@ -385,21 +342,15 @@ export const googleLogin = async (req, res) => {
         audience: allowedAudiences.length ? allowedAudiences : undefined,
       });
       const g = ticket.getPayload();
-      if (!g) {
-        return res.status(401).json({ success: false, message: 'Invalid Google token' });
-      }
-      if (g.aud && allowedAudiences.length && !allowedAudiences.includes(g.aud)) {
-        return res.status(401).json({ success: false, message: 'Google audience mismatch' });
-      }
+      if (!g) return res.status(401).json({ success: false, message: 'Invalid Google token' });
       if (g.email_verified === false) {
         return res.status(401).json({ success: false, message: 'Email not verified' });
       }
+
       email = g.email;
-      googleId = g.sub; // Google subject
-      displayName = preferredName || g.name || email || '';
-    }
-    // Unknown issuer
-    else {
+      googleId = g.sub;
+      displayName = preferredName || g.name || g.email || '';
+    } else {
       return res.status(400).json({ success: false, message: 'Unsupported token issuer' });
     }
 
@@ -407,31 +358,34 @@ export const googleLogin = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid token claims' });
     }
 
-    // ⚡ Single UPSERT (fill empty name; set google_id if missing)
-    const { rows } = await pool.query(
-      `
-      INSERT INTO users (name, email, google_id, role)
-      VALUES ($1, $2, $3, 'user')
-      ON CONFLICT (email) DO UPDATE
-      SET
-        name      = CASE WHEN COALESCE(users.name, '') = '' THEN EXCLUDED.name ELSE users.name END,
-        google_id = COALESCE(users.google_id, EXCLUDED.google_id),
-        role      = COALESCE(users.role, 'user')
-      RETURNING id, email, name, role
-      `,
-      [displayName || email, email, googleId]
-    );
+    // CVPro: always role='user' (no role selection)
+   const emailNorm = String(email).trim().toLowerCase();
 
+const { rows } = await pool.query(
+  `
+  INSERT INTO users (name, email, google_id, role)
+  VALUES ($1, $2, $3, 'user')
+  ON CONFLICT ((lower(email))) WHERE deleted_at IS NULL DO UPDATE
+  SET
+    name       = CASE WHEN COALESCE(users.name, '') = '' THEN EXCLUDED.name ELSE users.name END,
+    google_id  = COALESCE(users.google_id, EXCLUDED.google_id),
+    role       = COALESCE(users.role, 'user'),
+    updated_at = NOW()
+  RETURNING id, email, name, role, COALESCE(tokens,0) AS tokens
+  `,
+  [displayName || emailNorm, emailNorm, googleId]
+);
     const user = rows[0];
     const jwtToken = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '1d' });
 
     return res.status(200).json({
       success: true,
       token: jwtToken,
-      role: user.role || null,
       userId: user.id,
+      email: user.email,
       name: user.name || '',
-      needsRole: !user.role, // helpful hint for clients (optional)
+      role: user.role || 'user',
+      tokens: user.tokens || 0,
     });
   } catch (error) {
     console.error('Google Login Error:', error);

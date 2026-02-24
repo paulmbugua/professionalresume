@@ -1,7 +1,7 @@
 // packages/shared/hooks/useMessages.ts
 import { useState, useEffect, useRef } from 'react';
-import { useShopContext, useChatContext } from '@mytutorapp/shared/context';
-import type { Conversation } from '@mytutorapp/shared/types/ShopContextTypes';
+import { useShopContext, useChatContext } from '@cvpro/shared/context';
+import type { Conversation } from '@cvpro/shared/types/ShopContextTypes';
 
 /* ---------- Optional, platform-supplied notifier ---------- */
 export type Notifier = {

@@ -3,7 +3,7 @@ import admin from 'firebase-admin';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'mytutorapp-d3c91';
+const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'cvpro-d3c91';
 
 function getCredential() {
   // 1) JSON string in env (safe for CI)

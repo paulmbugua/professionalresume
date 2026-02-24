@@ -1,5 +1,5 @@
 import React from 'react';
-import type { CvDraft } from '@mytutorapp/shared/types';
+import type { CvDraft } from '@cvpro/shared/types';
 import { resolvePreviewDraft } from '../../templates/demoResume';
 import { templateRegistryById, templateRegistry } from '../../templates/registry';
 

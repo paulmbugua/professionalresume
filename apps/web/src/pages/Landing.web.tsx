@@ -2,8 +2,8 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { useShopContext } from '@mytutorapp/shared/context';
-import { useMyCvDrafts } from '@mytutorapp/shared/hooks';
+import { useShopContext } from '@cvpro/shared/context';
+import { useMyCvDrafts } from '@cvpro/shared/hooks';
 
 const Landing: React.FC = () => {
   const { token, backendUrl } = useShopContext() as any;

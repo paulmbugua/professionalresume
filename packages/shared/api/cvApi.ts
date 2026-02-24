@@ -4,7 +4,7 @@ import type {
   CvTemplate,
   CvTemplateResponse,
   CvExportResponse,
-} from '@mytutorapp/shared/types';
+} from '@cvpro/shared/types';
 
 function client(backendUrl: string, token?: string) {
   return axios.create({
@@ -90,12 +90,44 @@ export const updateCvDraft = async (
 ): Promise<CvDraft> => {
   try {
     const api = client(backendUrl, token);
-    const res = await api.put<CvDraft>(`/api/cv/drafts/${id}`, payload);
+
+    // ✅ whitelist exactly what the backend allows (draftPatchSchema)
+    const safe: Record<string, any> = {};
+
+    if (typeof (payload as any).title === 'string') safe.title = (payload as any).title;
+    if (typeof (payload as any).templateId === 'string') safe.templateId = (payload as any).templateId;
+
+    if ((payload as any).basics && typeof (payload as any).basics === 'object') safe.basics = (payload as any).basics;
+    if (typeof (payload as any).summary === 'string') safe.summary = (payload as any).summary;
+    if (Array.isArray((payload as any).skills)) safe.skills = (payload as any).skills;
+
+    if (Array.isArray((payload as any).experience)) safe.experience = (payload as any).experience;
+    if (Array.isArray((payload as any).education)) safe.education = (payload as any).education;
+    if (Array.isArray((payload as any).projects)) safe.projects = (payload as any).projects;
+    if (Array.isArray((payload as any).certifications)) safe.certifications = (payload as any).certifications;
+
+    if ((payload as any).extras && typeof (payload as any).extras === 'object') safe.extras = (payload as any).extras;
+
+    if (Array.isArray((payload as any).sectionOrder)) safe.sectionOrder = (payload as any).sectionOrder;
+    if ((payload as any).sectionVisibility && typeof (payload as any).sectionVisibility === 'object') {
+      safe.sectionVisibility = (payload as any).sectionVisibility;
+    }
+
+    // ✅ Don’t send an empty patch (backend requires min(1))
+    if (Object.keys(safe).length === 0) {
+      // return current server version to keep UI stable
+      const res = await api.get<CvDraft>(`/api/cv/drafts/${id}`);
+      return res.data;
+    }
+
+    const res = await api.patch<CvDraft>(`/api/cv/drafts/${id}`, safe); // PATCH makes more semantic sense
     return res.data;
   } catch (err: any) {
     throw new Error(toMessage(err));
   }
 };
+
+
 
 export const deleteCvDraft = async (backendUrl: string, token: string, id: string): Promise<void> => {
   try {

@@ -1,14 +1,9 @@
 // packages/shared/hooks/useAuth.ts
 import { useCallback, useState } from 'react';
-import { useShopContext } from '@mytutorapp/shared/context';
-import * as api from '@mytutorapp/shared/api';
+import { useShopContext } from '@cvpro/shared/context';
+import * as api from '@cvpro/shared/api';
 
-import type {
-  AuthPayload,
-  RegisterPayload,
-  UpdateRolePayload,
-  AuthResponse,
-} from '@mytutorapp/shared/types';
+import type { AuthPayload, RegisterPayload, AuthResponse } from '@cvpro/shared/types';
 
 export interface UseLoginOptions {
   alertFn?: (message: string) => void;
@@ -19,7 +14,7 @@ export interface UseLoginOptions {
 // Detect React Native vs Web; RN needs screen names, Web uses paths.
 const isNative = typeof navigator !== 'undefined' && (navigator as any)?.product === 'ReactNative';
 
-// Map web-style paths to native screen names (extend as your stack grows).
+// Map web-style paths to native screen names (CVPro minimal).
 function routeAlias(input?: string): string | undefined {
   if (!input) return input;
   if (!isNative) return input; // keep raw paths on web
@@ -29,27 +24,22 @@ function routeAlias(input?: string): string | undefined {
     case '/landing':
     case 'landing':
       return 'Landing';
-    case '/home':
-    case 'home':
-      return 'Home';
     case '/login':
     case 'login':
       return 'Login';
-    case '/robot':
-    case '/robot-tutor':
-    case 'robottutor':
-      return 'RobotTutor';
-    case '/find-tutor':
-    case 'findtutor':
-      return 'FindTutor';
-    case '/courses':
-      return 'Courses';
+    case '/builder':
+    case 'builder':
+      return 'Builder';
+    case '/templates':
+    case 'templates':
+      return 'Templates';
     case '/account':
     case '/me':
     case '/profile/me':
       return 'Account';
     default:
-      return 'Home';
+      // CVPro: safest default is Builder
+      return 'Builder';
   }
 }
 
@@ -69,6 +59,7 @@ function storageGet(key: string): string | null {
   } catch {}
   return memStore.get(key) ?? null;
 }
+
 function storageSet(key: string, value: string | null): void {
   try {
     if (
@@ -85,29 +76,7 @@ function storageSet(key: string, value: string | null): void {
   else memStore.set(key, value);
 }
 
-/* ----------------------------- Local flags/keys ----------------------------- */
-
-const NEED_ROLE_FLAG = 'auth:needsRole';
-const PENDING_JWT_KEY = 'auth:pendingJwt';
-
-function setNeedRoleFlag(on: boolean) {
-  storageSet(NEED_ROLE_FLAG, on ? '1' : null);
-}
-function getNeedRoleFlag(): boolean {
-  return storageGet(NEED_ROLE_FLAG) === '1';
-}
-function setPendingJwt(jwt: string | null) {
-  storageSet(PENDING_JWT_KEY, jwt);
-}
-function getPendingJwt(): string | null {
-  return storageGet(PENDING_JWT_KEY);
-}
-function clearAuthFlags() {
-  setNeedRoleFlag(false);
-  setPendingJwt(null);
-}
-
-/* --------------------------- Invite return-to helpers --------------------------- */
+/* --------------------------- Generic return-to helpers --------------------------- */
 
 const RETURN_TO_KEY = 'auth:returnTo';
 
@@ -117,35 +86,24 @@ function normalizeToPath(input?: string | null): string | null {
   const s = String(input).trim();
   if (!s) return null;
   try {
-    // Absolute URL
     if (/^https?:\/\//i.test(s)) {
       const u = new URL(s);
       return `${u.pathname}${u.search || ''}`;
     }
   } catch {
-    /* fall through to treat as path */
+    /* fall through */
   }
   return s;
 }
 
-/** Collapse any invite child route to its base: `/org/join/:code` */
-function inviteBase(pathish?: string | null): string | null {
-  const p = normalizeToPath(pathish);
-  if (!p) return null;
-  // Accept: /org/join/ABC, /org/join/ABC/, /org/join/ABC/login, with optional query
-  const m = p.match(/^\/org\/join\/([^/?#]+)(?:\/(?:login|signup))?(?:\?.*)?$/i);
-  return m ? `/org/join/${m[1]}` : null;
-}
-
 function readReturnTo(): string | null {
-  // sessionStorage first (set by OrgInviteLanding)
+  // sessionStorage first (LoginPage stores it there)
   try {
     if (typeof window !== 'undefined' && window.sessionStorage) {
       const raw = window.sessionStorage.getItem(RETURN_TO_KEY);
       if (raw) return normalizeToPath(raw);
     }
   } catch {}
-  // fallback local store
   return normalizeToPath(storageGet(RETURN_TO_KEY));
 }
 
@@ -158,11 +116,6 @@ function clearReturnTo() {
   storageSet(RETURN_TO_KEY, null);
 }
 
-/** Is the saved returnTo pointing at an org invite (any variant)? */
-function isInviteReturn(path?: string | null): boolean {
-  return inviteBase(path) !== null;
-}
-
 /** Next destination after successful auth, honoring any generic returnTo */
 function nextAfterAuth(defaultPath: string): string {
   const saved = readReturnTo();
@@ -172,119 +125,78 @@ function nextAfterAuth(defaultPath: string): string {
 
 /* --------------------------------- Hook ---------------------------------- */
 
+const DEFAULT_AFTER_AUTH = '/builder';
+
 const useAuth = (options?: UseLoginOptions) => {
   const { alertFn, navigateFn } = options || {};
   const nav = (to?: string) => {
     if (navigateFn) navigateFn(routeAlias(to));
   };
 
-  // Read context once, then safely pluck optional fields (avoids TS error 2339)
+  // Read context once, then safely pluck optional fields
   const shop = useShopContext() as unknown as {
     setToken: (t: string) => void;
     backendUrl: string;
     token?: string;
-    // setProfile might not exist on some builds; treat as optional
     setProfile?: (p: unknown | null) => void;
   };
+
   const { setToken, backendUrl, token } = shop;
   const setProfile = shop.setProfile; // optional
 
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<Error | null>(null);
 
-  /** GOOGLE FLOW */
+  /** GOOGLE FLOW (CVPro) */
   const handleGoogleLoginSuccess = useCallback(
     async (idToken: string) => {
       try {
         const resp: AuthResponse = await api.googleLogin(backendUrl, idToken);
         const jwt = resp?.token;
-        const role = (resp as Partial<{ role: string | null }>).role ?? null;
 
-        if (!jwt) {
-          throw new Error('No JWT returned from googleLogin');
-        }
+        if (!jwt) throw new Error('No JWT returned from googleLogin');
 
-        // Invite-aware: if we came from /org/join/:code[/login], go back there
-        const saved = readReturnTo();
-        const backToInvite = inviteBase(saved);
-
-        if (backToInvite) {
-          setToken(jwt);
-          clearAuthFlags();
-          nav(backToInvite); // back to Accept & Join
-          return;
-        }
-
-        if (role) {
-          setToken(jwt);
-          clearAuthFlags();
-          nav(nextAfterAuth('/home')); // honors any generic returnTo fallback
-          return;
-        }
-
-        await api.updateRole(backendUrl, { role: 'user' }, jwt);
         setToken(jwt);
-        clearAuthFlags();
-        nav(nextAfterAuth('/home'));
-      } catch (e: unknown) {
-        clearAuthFlags();
-        const msg = e instanceof Error ? e.message : 'Google authentication failed';
-        alertFn?.(msg);
-        throw e;
-      }
-    },
-    [backendUrl, setToken, alertFn]
-  );
 
-  const handleGoogleLoginFailure = useCallback(
-    (error?: Error) => {
-      clearAuthFlags();
-      alertFn?.(error?.message || 'Google sign-in failed');
-    },
-    [alertFn]
-  );
-
-  /** Complete role selection using the pending JWT */
-  const completeRole = useCallback(
-    async (payload: UpdateRolePayload) => {
-      const pending = getPendingJwt();
-      if (!pending) throw new Error('Missing pending JWT');
-      await api.updateRole(backendUrl, payload, pending);
-      setToken(pending);
-      clearAuthFlags();
-
-      // If the user arrived via invite (and had to pick a role), return to invite base
-      const saved = readReturnTo();
-      const backToInvite = inviteBase(saved);
-      nav(backToInvite || '/home');
-      clearReturnTo();
-    },
-    [backendUrl, setToken]
-  );
-
-  /** EMAIL/PASSWORD FLOWS */
-  const loginWithEmail = useCallback(
-    async (payload: AuthPayload): Promise<AuthResponse> => {
-      const resp = await api.login(backendUrl, payload);
-      if (resp?.token) {
-        const saved = readReturnTo();
-        const backToInvite = inviteBase(saved);
-
-        setToken(resp.token);
-
-        // Safely persist profile if the API included it (no unsafe Record cast)
+        // optional profile support (if backend ever returns it)
         const maybeProfile = (resp as unknown as { profile?: unknown }).profile;
         if (typeof maybeProfile !== 'undefined') {
           setProfile?.(maybeProfile ?? null);
         }
 
-        clearAuthFlags();
-        if (backToInvite) {
-          nav(backToInvite);
-        } else {
-          nav(nextAfterAuth('/home'));
-        }
+        nav(nextAfterAuth(DEFAULT_AFTER_AUTH));
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : 'Google authentication failed';
+        alertFn?.(msg);
+        throw e;
       }
+    },
+    [backendUrl, setToken, setProfile, alertFn]
+  );
+
+  const handleGoogleLoginFailure = useCallback(
+    (error?: Error) => {
+      alertFn?.(error?.message || 'Google sign-in failed');
+    },
+    [alertFn]
+  );
+
+  /** EMAIL/PASSWORD FLOWS (CVPro) */
+  const loginWithEmail = useCallback(
+    async (payload: AuthPayload): Promise<AuthResponse> => {
+      const resp = await api.login(backendUrl, payload);
+
+      if (resp?.token) {
+        setToken(resp.token);
+
+        const maybeProfile = (resp as unknown as { profile?: unknown }).profile;
+        if (typeof maybeProfile !== 'undefined') {
+          setProfile?.(maybeProfile ?? null);
+        }
+
+        nav(nextAfterAuth(DEFAULT_AFTER_AUTH));
+      }
+
       return resp;
     },
     [backendUrl, setToken, setProfile]
@@ -293,10 +205,8 @@ const useAuth = (options?: UseLoginOptions) => {
   const registerWithEmail = useCallback(
     async (payload: RegisterPayload): Promise<AuthResponse> => {
       const resp = await api.register(backendUrl, payload);
-      if (resp?.token) {
-        const saved = readReturnTo();
-        const backToInvite = inviteBase(saved);
 
+      if (resp?.token) {
         setToken(resp.token);
 
         const maybeProfile = (resp as unknown as { profile?: unknown }).profile;
@@ -304,18 +214,15 @@ const useAuth = (options?: UseLoginOptions) => {
           setProfile?.(maybeProfile ?? null);
         }
 
-        clearAuthFlags();
-        if (backToInvite) {
-          nav(backToInvite);
-        } else {
-          nav(nextAfterAuth('/home'));
-        }
+        nav(nextAfterAuth(DEFAULT_AFTER_AUTH));
       }
+
       return resp;
     },
     [backendUrl, setToken, setProfile]
   );
 
+  /** OTP reset flow (CVPro) */
   const sendResetOTP = useCallback(
     async (email: string): Promise<AuthResponse> => {
       return api.requestOTP(backendUrl, email);
@@ -332,16 +239,11 @@ const useAuth = (options?: UseLoginOptions) => {
 
   /** Logout */
   const logout = useCallback(() => {
-    setToken(''); // ShopContext treats empty as logged out
+    setToken('');
     setProfile?.(null);
-    clearAuthFlags();
     clearReturnTo();
-    nav('/login'); // -> 'Login' on native
+    nav('/login');
   }, [setToken, setProfile]);
-
-  /** Helpers */
-  const isRoleModalNeeded = useCallback(() => getNeedRoleFlag(), []);
-  const getPendingJwtForDebug = useCallback(() => getPendingJwt(), []);
 
   /** DELETE ACCOUNT */
   const handleDeleteAccount = useCallback(async () => {
@@ -374,14 +276,12 @@ const useAuth = (options?: UseLoginOptions) => {
         try {
           const j = (await res.json()) as { message?: string };
           if (typeof j?.message === 'string') message = j.message;
-        } catch {
-          /* ignore */
-        }
+        } catch {}
         throw new Error(message);
       }
 
       logout();
-      nav('/'); // -> 'Landing' on native
+      nav('/'); // Landing
       alertFn?.('Your account was deleted.');
     } catch (e: unknown) {
       setDeleteError(e instanceof Error ? e : new Error('Delete failed'));
@@ -394,7 +294,6 @@ const useAuth = (options?: UseLoginOptions) => {
     // Google
     handleGoogleLoginSuccess,
     handleGoogleLoginFailure,
-    completeRole,
 
     // Email/password
     loginWithEmail,
@@ -404,11 +303,6 @@ const useAuth = (options?: UseLoginOptions) => {
 
     // Session
     logout,
-
-    // UI helpers
-    isRoleModalNeeded,
-    getPendingJwt: getPendingJwtForDebug,
-    clearAuthFlags,
 
     // Deletion
     handleDeleteAccount,

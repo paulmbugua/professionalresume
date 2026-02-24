@@ -8,9 +8,9 @@
     "lib": ["dom", "dom.iterable", "esnext"],
     "paths": {
       "@shared/*": ["./*"],
-      "@mytutorapp/shared": ["./index.ts", "./index.d.ts"],
-      "@mytutorapp/shared/*": ["./*"],
-      "@mytutorapp/shared/types": ["./types/index.ts", "./types/index.d.ts"]
+      "@cvpro/shared": ["./index.ts", "./index.d.ts"],
+      "@cvpro/shared/*": ["./*"],
+      "@cvpro/shared/types": ["./types/index.ts", "./types/index.d.ts"]
     },
     "types": ["node"],
     "outDir": "dist"

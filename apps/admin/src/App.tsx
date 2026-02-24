@@ -19,8 +19,8 @@ import AdminLogin from './pages/AdminLogin';
 import OpenStaxIngest from './pages/OpenStaxIngest';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { ThemeProvider } from '@mytutorapp/shared/hooks';
-import { useShopContext } from '@mytutorapp/shared/context/ShopContext';
+import { ThemeProvider } from '@cvpro/shared/hooks';
+import { useShopContext } from '@cvpro/shared/context/ShopContext';
 import { Loader2 } from 'lucide-react';
 import YouTubeIngest from './pages/YouTubeIngest';
 

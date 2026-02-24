@@ -1,5 +1,5 @@
 import React from 'react';
-import type { CvTemplate } from '@mytutorapp/shared/types';
+import type { CvTemplate } from '@cvpro/shared/types';
 import TemplateCard from './TemplateCard';
 
 type Props = {

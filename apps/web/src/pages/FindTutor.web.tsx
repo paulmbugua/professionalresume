@@ -5,9 +5,9 @@ import Link from 'next/link';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconProp } from '@fortawesome/fontawesome-svg-core';
 import { faMagnifyingGlass, faChevronLeft, faChevronRight } from '@fortawesome/free-solid-svg-icons';
-import { useHomePage } from '@mytutorapp/shared/hooks';
-import type { Profile } from '@mytutorapp/shared/types';
-import { COUNTRIES } from '@mytutorapp/shared/utils/countries';
+import { useHomePage } from '@cvpro/shared/hooks';
+import type { Profile } from '@cvpro/shared/types';
+import { COUNTRIES } from '@cvpro/shared/utils/countries';
 
 const FALLBACK_AVATAR = (name = 'Tutor') =>
   `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=e7edf4&color=0d141c`;

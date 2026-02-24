@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import type { CvDraft } from '@mytutorapp/shared/types';
-import { useAiCvAssist } from '@mytutorapp/shared/hooks';
-import { useShopContext } from '@mytutorapp/shared/context';
+import type { CvDraft } from '@cvpro/shared/types';
+import { useAiCvAssist } from '@cvpro/shared/hooks';
+import { useShopContext } from '@cvpro/shared/context';
 import type { Path } from 'react-hook-form';
 
 type Props = {

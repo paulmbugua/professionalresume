@@ -25,14 +25,14 @@
       "@shared/*": [
         "../../packages/shared/*"
       ],
-      "@mytutorapp/shared": [
+      "@cvpro/shared": [
         "../../packages/shared/index.ts",
         "../../packages/shared/index.d.ts"
       ],
-      "@mytutorapp/shared/*": [
+      "@cvpro/shared/*": [
         "../../packages/shared/*"
       ],
-      "@mytutorapp/shared/types": [
+      "@cvpro/shared/types": [
         "../../packages/shared/types/index.ts",
         "../../packages/shared/types/index.d.ts"
       ]

@@ -1,5 +1,5 @@
 [build]
-  command = "yarn workspace @mytutorapp/admin build"
+  command = "yarn workspace @cvpro/admin build"
   publish = "apps/admin/dist"
 
 [[redirects]]

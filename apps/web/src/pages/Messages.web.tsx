@@ -11,8 +11,8 @@ import {
   faTimes,
   faHome,
 } from '@fortawesome/free-solid-svg-icons';
-import { useMessages } from '@mytutorapp/shared/hooks';
-import type { ChatMessage } from '@mytutorapp/shared/types/ShopContextTypes';
+import { useMessages } from '@cvpro/shared/hooks';
+import type { ChatMessage } from '@cvpro/shared/types/ShopContextTypes';
 import chatPlaceholder from '../assets/chat.png';
 
 const Messages: React.FC = () => {

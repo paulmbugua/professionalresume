@@ -1,5 +1,5 @@
 import React from 'react';
-import type { CvDraft, CvSectionKey } from '@mytutorapp/shared/types';
+import type { CvDraft, CvSectionKey } from '@cvpro/shared/types';
 import { defaultSectionOrder } from '../../../utils/cvDefaults';
 
 type Props = {

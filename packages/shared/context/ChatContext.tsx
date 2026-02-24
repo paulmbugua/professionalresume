@@ -20,7 +20,7 @@ import type {
   Conversation,
   ChatMessage,
   ChatContextValue,
-} from '@mytutorapp/shared/types';
+} from '@cvpro/shared/types';
 
 export const ChatContext = createContext<ChatContextValue | undefined>(undefined);
 

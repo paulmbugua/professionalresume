@@ -1,6 +1,6 @@
 // packages/shared/hooks/useProfileActions.ts
-import { useShopContext } from '@mytutorapp/shared/context';
-import { addToFavorites } from '@mytutorapp/shared/api';
+import { useShopContext } from '@cvpro/shared/context';
+import { addToFavorites } from '@cvpro/shared/api';
 import type { AxiosError } from 'axios';
 
 export type Notifier = {

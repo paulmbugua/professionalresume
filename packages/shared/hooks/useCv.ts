@@ -12,8 +12,8 @@ import {
   aiGenerateSummary,
   aiRewriteBullet,
   aiSuggestSkills,
-} from '@mytutorapp/shared/api';
-import type { CvDraft, CvTemplateResponse, CvExportResponse } from '@mytutorapp/shared/types';
+} from '@cvpro/shared/api';
+import type { CvDraft, CvTemplateResponse, CvExportResponse } from '@cvpro/shared/types';
 
 type BaseArgs = {
   backendUrl: string;

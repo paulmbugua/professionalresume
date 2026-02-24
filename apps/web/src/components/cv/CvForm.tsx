@@ -5,7 +5,7 @@ import {
   Controller,
   useWatch,
 } from 'react-hook-form';
-import type { CvDraft } from '@mytutorapp/shared/types';
+import type { CvDraft } from '@cvpro/shared/types';
 
 const Input = (props: React.InputHTMLAttributes<HTMLInputElement>) => (
   <input

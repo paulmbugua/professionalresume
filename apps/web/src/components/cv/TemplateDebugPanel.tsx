@@ -1,13 +1,13 @@
 'use client';
 
 import React from 'react';
-import type { CvDraft } from '@mytutorapp/shared/types';
+import type { CvDraft } from '@cvpro/shared/types';
 
 type Props = {
   draft: CvDraft;
   templateCount: number;
   templateSource: 'api' | 'local' | 'unknown';
-  resumeSource: 'saved' | 'demo';
+  resumeSource: 'saved' | 'demo' | 'live'
   apiError?: string;
 };
 

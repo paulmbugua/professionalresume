@@ -1,4 +1,4 @@
-import type { CvDraft } from '@mytutorapp/shared/types';
+import type { CvDraft } from '@cvpro/shared/types';
 
 export const demoResume: CvDraft = {
   id: 'demo-cv',

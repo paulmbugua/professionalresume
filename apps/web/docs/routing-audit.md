@@ -32,7 +32,7 @@ This audit standardizes routing on **Next.js App Router** and fixes the missing 
 
 ## Manual test steps
 
-1. Start web app: `yarn workspace @mytutorapp/web dev`.
+1. Start web app: `yarn workspace @cvpro/web dev`.
 2. Open `http://localhost:3000/login` and confirm page renders (no 404).
 3. Open `http://localhost:3000/templates` while logged out; confirm redirect to `/login?returnTo=%2Ftemplates`.
 4. Open `http://localhost:3000/builder/new?templateId=ats-minimal` while logged out; confirm redirect to login with returnTo.
