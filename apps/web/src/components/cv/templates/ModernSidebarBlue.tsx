@@ -168,7 +168,7 @@ main{padding:12mm 13mm}.name{margin:0;font-size:30px;letter-spacing:-.02em}.head
 const ModernSidebarBlue: React.FC<Props> = ({ draft }) => {
   const html = useMemo(() => renderModernSidebarBlueHtml(draft), [JSON.stringify(draft)]);
 
-  const safeHtml = stripScripts(html);
+  const safeHtml = useMemo(() => stripScripts(html), [html]);
 
   if (process.env.NODE_ENV !== 'production') {
     console.log('[cv iframe]', { template: 'ModernSidebarBlue' });

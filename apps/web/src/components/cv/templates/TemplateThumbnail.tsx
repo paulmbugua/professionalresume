@@ -15,7 +15,7 @@ const TemplateThumbnail: React.FC<Props> = ({ html, label }) => {
     );
   }
 
-  const safeHtml = stripScripts(html);
+  const safeHtml = React.useMemo(() => stripScripts(html), [html]);
 
   if (process.env.NODE_ENV !== 'production') {
     console.log('[cv iframe]', { template: `Thumbnail:${label}` });
