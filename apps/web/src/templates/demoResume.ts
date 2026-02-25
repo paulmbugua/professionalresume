@@ -308,6 +308,11 @@ export const resolvePreviewDraft = (
     sectionOrder: (draft.sectionOrder as CvDraft['sectionOrder']) ?? base.sectionOrder,
     sectionVisibility:
       (draft.sectionVisibility as CvDraft['sectionVisibility']) ?? base.sectionVisibility,
+
+    typography: (draft.typography as CvDraft['typography']) ?? (base.typography as CvDraft['typography']),
+    formatting: (draft.formatting as CvDraft['formatting']) ?? (base.formatting as CvDraft['formatting']),
+    templateTheme: (draft.templateTheme as CvDraft['templateTheme']) ?? (base.templateTheme as CvDraft['templateTheme']),
+    richText: (draft.richText as CvDraft['richText']) ?? (base.richText as CvDraft['richText']),
   };
 
   return { draft: merged, resumeSource: hasUser ? 'live' : 'demo' };

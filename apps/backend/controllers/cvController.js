@@ -1,4 +1,3 @@
-import PDFDocument from 'pdfkit';
 import {
   listTemplatesFromDb,
   templateExists,
@@ -14,6 +13,7 @@ import {
   ensureTemplatesSeeded,
 } from '../services/cvService.js';
 import { cvTemplates as localTemplates } from '../services/cvTemplates.js';
+import { buildCvHtml, draftToPdfBuffer } from '../services/cvRenderService.js';
 import { putDocObject, signDocGetUrl, getPublicR2Url } from '../services/r2.js';
 import {
   createDraftSchema,
@@ -27,58 +27,6 @@ function sanitizeObjectKey(input = '') {
     .replace(/\.\./g, '')
     .replace(/^\/+/, '')
     .replace(/[^\w./-]/g, '_');
-}
-
-function draftToPdfBuffer(draft) {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 40 });
-    const chunks = [];
-    doc.on('data', (c) => chunks.push(c));
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
-
-    const basics = draft?.basics || {};
-    doc.fontSize(22).text(basics.name || draft.title || 'Untitled CV');
-    if (basics.headline) doc.moveDown(0.2).fontSize(12).fillColor('#555').text(basics.headline);
-    doc.moveDown().fillColor('black').fontSize(10);
-    const meta = [basics.email, basics.phone, basics.location].filter(Boolean).join(' • ');
-    if (meta) doc.text(meta);
-
-    if (draft.summary) {
-      doc.moveDown().fontSize(14).text('Summary');
-      doc.fontSize(11).text(draft.summary);
-    }
-
-    const sections = [
-      ['Experience', draft.experience || []],
-      ['Education', draft.education || []],
-      ['Projects', draft.projects || []],
-      ['Skills', draft.skills || []],
-      ['Certifications', draft.certifications || []],
-    ];
-
-    for (const [title, rows] of sections) {
-      if (!rows || rows.length === 0) continue;
-      doc.moveDown().fontSize(14).text(title);
-      doc.fontSize(11);
-      if (Array.isArray(rows) && typeof rows[0] === 'string') {
-        doc.text(rows.join(', '));
-      } else {
-        rows.forEach((entry) => {
-          const line = [entry.role || entry.program || entry.name, entry.company || entry.school || entry.issuer]
-            .filter(Boolean)
-            .join(' — ');
-          if (line) doc.text(`• ${line}`);
-          if (entry.description) doc.text(`  ${entry.description}`);
-          if (Array.isArray(entry.bullets)) {
-            entry.bullets.filter(Boolean).forEach((bullet) => doc.text(`  - ${bullet}`));
-          }
-        });
-      }
-    }
-
-    doc.end();
-  });
 }
 
 export async function listTemplates(_req, res) {
@@ -173,7 +121,8 @@ export async function exportCv(req, res) {
       mimeType = upload.mimetype || 'application/pdf';
       buffer = upload.buffer;
     } else {
-      buffer = await draftToPdfBuffer(draft || {});
+      const formattedHtml = buildCvHtml({ draft: draft || {}, templateKey: draft?.templateId });
+      buffer = await draftToPdfBuffer({ ...(draft || {}), __formattedHtml: formattedHtml });
       mimeType = 'application/pdf';
     }
 
@@ -202,6 +151,18 @@ export async function exportCv(req, res) {
   } catch (err) {
     console.error('exportCv error', err);
     return res.status(500).json({ error: err.message || 'Failed to export CV' });
+  }
+}
+
+export async function getPrintHtml(req, res) {
+  try {
+    const draft = await getDraftForUser(req.user.id, req.params.id);
+    if (!draft) return res.status(404).json({ error: 'Draft not found' });
+    const html = buildCvHtml({ draft, templateKey: draft.templateId });
+    return res.json({ html });
+  } catch (err) {
+    console.error('getPrintHtml error', err);
+    return res.status(500).json({ error: 'Failed to build printable CV' });
   }
 }
 

@@ -1,49 +1,44 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import type { CvDraft } from '@cvpro/shared/types';
-import { useFormContext, useWatch } from 'react-hook-form';
 import { resolvePreviewDraft } from '../../templates/demoResume';
 import { templateRegistryById, templateRegistry } from '../../templates/registry';
 import { stripScripts } from '../../utils/sanitizeHtmlForIframe';
 
 type Props = {
-  draft: CvDraft; // keep prop for initial fallback, but prefer watched
+  draft: CvDraft;
   showLiveBadge?: boolean;
   resumeSourceHint?: 'saved' | 'demo' | 'live';
 };
 
 const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSourceHint }) => {
-  const { control } = useFormContext<CvDraft>();
-
-  // Watch the entire draft for live preview updates (CvForm + AiAssistPanel setValue)
-  const watchedDraft = useWatch({ control }) as CvDraft | undefined;
-
-  const effectiveDraft = watchedDraft ?? draft;
-
-  const importMetaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined;
-  const isDev =
-    importMetaEnv?.DEV ??
-    (typeof process !== 'undefined' ? process.env.NODE_ENV !== 'production' : false);
-
-  const { draft: previewDraft, resumeSource } = resolvePreviewDraft(effectiveDraft);
-
-  if (isDev) {
-    console.log('[preview] using', {
-      source: resumeSource,
-      sourceHint: resumeSourceHint,
-      name: previewDraft.basics?.name,
-      templateId: previewDraft.templateId,
-    });
-  }
-
-  if (isDev && resumeSource === 'demo') {
-    console.warn('[CvPreview] draft missing content; rendering demo resume data.');
-  }
+  const { draft: previewDraft, resumeSource } = resolvePreviewDraft(draft);
 
   const meta = templateRegistryById[previewDraft.templateId] || templateRegistry[0];
   const hasKnownTemplate = Boolean(meta?.component);
   const Template = hasKnownTemplate ? meta?.component : templateRegistry[0]?.component;
-  const htmlRenderer = meta?.renderHtml;
-  const html = htmlRenderer ? stripScripts(htmlRenderer(previewDraft)) : null;
+
+  const html = useMemo(() => {
+    const htmlRenderer = meta?.renderHtml;
+    return htmlRenderer ? stripScripts(htmlRenderer(previewDraft)) : null;
+  }, [
+    meta,
+    previewDraft.templateId,
+    previewDraft.title,
+    previewDraft.basics,
+    previewDraft.summary,
+    previewDraft.skills,
+    previewDraft.experience,
+    previewDraft.education,
+    previewDraft.projects,
+    previewDraft.certifications,
+    previewDraft.extras,
+    previewDraft.sectionOrder,
+    previewDraft.sectionVisibility,
+    previewDraft.typography,
+    previewDraft.formatting,
+    previewDraft.templateTheme,
+    previewDraft.richText,
+  ]);
 
   return (
     <div className="cv-preview-wrapper h-full min-h-0 w-full">
@@ -74,7 +69,7 @@ const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSource
         )}
       </div>
 
-      {isDev && !hasKnownTemplate && (
+      {!hasKnownTemplate && (
         <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           Unknown template id <span className="font-semibold">{previewDraft.templateId}</span>. Falling
           back to <span className="font-semibold">{templateRegistry[0]?.id ?? 'first template'}</span>.
@@ -83,7 +78,13 @@ const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSource
 
       <div className="cv-page h-full min-h-0 w-full overflow-hidden rounded-2xl bg-white text-gray-900 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.4)]">
         {html ? (
-          <iframe title="CV preview" srcDoc={html} sandbox="allow-same-origin" className="h-full w-full" style={{ border: 0 }} />
+          <iframe
+            title={`CV preview ${resumeSourceHint || resumeSource}`}
+            srcDoc={html}
+            sandbox="allow-same-origin"
+            className="h-full w-full"
+            style={{ border: 0 }}
+          />
         ) : Template ? (
           <Template draft={previewDraft} />
         ) : (
