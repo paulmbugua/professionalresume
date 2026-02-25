@@ -50,12 +50,13 @@ export function renderBoldHeaderHtml(draft: CvDraft) {
     });
 
   const sectionHtml: Record<CvSectionKey, string> = {
-    summary: (draft.summary?.trim() || draft.richText?.summary?.trim())
-      ? `<section class="card muted">
+    summary:
+      draft.summary?.trim() || draft.richText?.summary?.trim()
+        ? `<section class="card muted">
           <h3 class="title">Summary</h3>
           <p class="body">${renderRichText(draft, 'summary', draft.summary || '')}</p>
         </section>`
-      : '',
+        : '',
 
     skills: draft.skills?.length
       ? `<section class="card muted">
@@ -241,7 +242,7 @@ export function renderBoldHeaderHtml(draft: CvDraft) {
   *{ box-sizing:border-box; }
   body{ margin:0; background:#fff; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; color:var(--text); }
   .wrap{ padding:28px; }
-  .hero{ border-radius:18px; padding:18px 18px 14px; background:#0f172a; color:#fff; }
+  .hero{ border-radius:18px; padding:18px 18px 14px; background:var(--headerBg); color:var(--headerText); }
   .hero h1{ margin:0; font-size:26px; line-height:1.1; letter-spacing:-0.02em; }
   .hero .sub{ margin:6px 0 0; font-size:12px; color:#cbd5e1; }
   .meta{ margin-top:10px; display:flex; flex-wrap:wrap; gap:10px 16px; font-size:11px; color:#94a3b8; }
@@ -288,12 +289,16 @@ const BoldHeader: React.FC<Props> = ({ draft }) => {
   const isVisible = (k: CvSectionKey) => visible[k] !== false;
 
   const sectionMap: Record<CvSectionKey, React.ReactNode> = {
-    summary: (draft.summary || draft.richText?.summary) ? (
-      <section className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-        <h3 className="cv-section-title">Summary</h3>
-        <p className="cv-body" dangerouslySetInnerHTML={renderRichTextReact(draft, 'summary', draft.summary || '')} />
-      </section>
-    ) : null,
+    summary:
+      draft.summary || draft.richText?.summary ? (
+        <section className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+          <h3 className="cv-section-title">Summary</h3>
+          <p
+            className="cv-body"
+            dangerouslySetInnerHTML={renderRichTextReact(draft, 'summary', draft.summary || '')}
+          />
+        </section>
+      ) : null,
 
     skills: draft.skills?.length ? (
       <section className="rounded-xl border border-gray-100 bg-gray-50 p-4">
@@ -325,9 +330,7 @@ const BoldHeader: React.FC<Props> = ({ draft }) => {
                   {exp.start} - {exp.end}
                 </span>
               </div>
-              {exp.location ? (
-                <div className="text-xs text-gray-500">{exp.location}</div>
-              ) : null}
+              {exp.location ? <div className="text-xs text-gray-500">{exp.location}</div> : null}
               <ul className="list-disc space-y-1 pl-4 text-xs text-gray-600">
                 {exp.bullets?.filter(Boolean).map((bullet, bulletIdx) => (
                   <li key={`${exp.company}-${bulletIdx}`}>{bullet}</li>
@@ -416,7 +419,10 @@ const BoldHeader: React.FC<Props> = ({ draft }) => {
 
   return (
     <div className="p-8" style={cssVars as React.CSSProperties}>
-      <header className="rounded-2xl p-6" style={{ backgroundColor: 'var(--headerBg)', color: 'var(--headerText)' }}>
+      <header
+        className="rounded-2xl p-6"
+        style={{ backgroundColor: 'var(--headerBg)', color: 'var(--headerText)' }}
+      >
         <h1 className="text-3xl font-semibold">{draft.basics?.name || 'Your Name'}</h1>
         <p className="text-sm text-slate-200">
           {draft.basics?.headline || 'Professional Headline'}

@@ -39,14 +39,18 @@ const CvEditorShell: React.FC<Props> = ({
   const [activeTab, setActiveTab] = useState<'edit' | 'preview'>('edit');
   const [isDesignOpen, setIsDesignOpen] = useState(false);
 
-  const watchedDraft = useWatch({ control }) as CvDraft | undefined;
-  const liveDraft = useMemo(() => normalizeDraft((watchedDraft ?? draft) as CvDraft), [watchedDraft, draft]);
+  const liveDraft = useWatch({ control }) as CvDraft | undefined;
+  const previewDraft = useMemo(
+    () => normalizeDraft((liveDraft ?? draft) as CvDraft),
+    [liveDraft, draft]
+  );
 
-  const liveTitle = liveDraft.title || '';
-  const liveTemplateId = liveDraft.templateId || draft.templateId;
+  const liveTitle = previewDraft.title || '';
+  const liveTemplateId = previewDraft.templateId || draft.templateId;
 
   const templateMeta: any =
-    templateRegistryById[liveTemplateId] || templateRegistryList.find((t: any) => t.id === liveTemplateId);
+    templateRegistryById[liveTemplateId] ||
+    templateRegistryList.find((t: any) => t.id === liveTemplateId);
 
   const templateDisplayName =
     (templateMeta?.name as string) ||
@@ -91,7 +95,7 @@ const CvEditorShell: React.FC<Props> = ({
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const { resumeSource } = resolvePreviewDraft(liveDraft);
+  const { resumeSource } = resolvePreviewDraft(previewDraft);
 
   return (
     <div className="mx-auto w-full max-w-screen-2xl px-4 pb-12 pt-6 lg:px-8">
@@ -126,7 +130,7 @@ const CvEditorShell: React.FC<Props> = ({
             isExporting={isExporting}
             downloadUrl={exportUrl}
             onCopyLink={onCopyExportLink}
-            draftId={liveDraft.id}
+            draftId={previewDraft.id}
           />
 
           <button
@@ -173,17 +177,19 @@ const CvEditorShell: React.FC<Props> = ({
       </div>
 
       <div className="grid gap-8 lg:grid-cols-[minmax(320px,420px)_1fr] min-h-0">
-        <div className={`${activeTab === 'preview' ? 'hidden' : 'block'} space-y-6 lg:block print:hidden`}>
+        <div
+          className={`${activeTab === 'preview' ? 'hidden' : 'block'} space-y-6 lg:block print:hidden`}
+        >
           <CvForm />
 
           <SectionManager
-            sectionOrder={liveDraft.sectionOrder}
-            sectionVisibility={liveDraft.sectionVisibility}
+            sectionOrder={previewDraft.sectionOrder}
+            sectionVisibility={previewDraft.sectionVisibility}
             onChange={handleSectionChange}
           />
 
           <div id="ai-panel">
-            <AiAssistPanel draft={liveDraft} setValue={setValue} />
+            <AiAssistPanel draft={previewDraft} setValue={setValue} />
           </div>
         </div>
 
@@ -192,7 +198,7 @@ const CvEditorShell: React.FC<Props> = ({
             <div className="flex h-full min-h-0 flex-col rounded-2xl border border-gray-200 bg-white/70 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5 print:border-none print:bg-transparent print:p-0">
               <TemplateErrorBoundary>
                 <div className="flex-1 min-h-0 overflow-hidden">
-                  <CvPreview draft={liveDraft} showLiveBadge resumeSourceHint={resumeSource} />
+                  <CvPreview draft={previewDraft} showLiveBadge resumeSourceHint={resumeSource} />
                 </div>
               </TemplateErrorBoundary>
             </div>
@@ -201,7 +207,12 @@ const CvEditorShell: React.FC<Props> = ({
       </div>
 
       {isDesignOpen && (
-        <div className="fixed inset-0 z-[80] print:hidden" role="dialog" aria-modal="true" aria-label="Design & Style">
+        <div
+          className="fixed inset-0 z-[80] print:hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Design & Style"
+        >
           <button
             type="button"
             aria-label="Close design panel"
@@ -211,7 +222,9 @@ const CvEditorShell: React.FC<Props> = ({
           <div className="absolute inset-y-0 right-0 flex w-full max-w-xl">
             <div className="ml-auto h-full w-full border-l border-gray-200 bg-white shadow-2xl dark:border-white/10 dark:bg-gray-950">
               <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-white/10">
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Design & Style</h3>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                  Design & Style
+                </h3>
                 <button
                   type="button"
                   onClick={() => setIsDesignOpen(false)}

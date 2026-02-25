@@ -29,12 +29,31 @@ const ColorInput = ({
 );
 
 const DesignFormattingPanel: React.FC = () => {
-  const { setValue, control } = useFormContext<CvDraft>();
+  const { setValue, control, getValues } = useFormContext<CvDraft>();
   const draft = useWatch({ control }) as CvDraft;
   const templateId = draft?.templateId || '';
 
-  const patch = (path: any, value: any) =>
-    setValue(path, value, { shouldDirty: true, shouldTouch: true, shouldValidate: false });
+  const setTypography = (key: keyof NonNullable<CvDraft['typography']>, value: string | number) => {
+    const current = getValues('typography') || {};
+    const next = { ...current, [key]: value };
+    setValue('typography', next, { shouldDirty: true, shouldTouch: true, shouldValidate: false });
+  };
+
+  const setFormatting = (key: keyof NonNullable<CvDraft['formatting']>, value: string) => {
+    const current = getValues('formatting') || {};
+    const next = { ...current, [key]: value };
+    setValue('formatting', next, { shouldDirty: true, shouldTouch: true, shouldValidate: false });
+  };
+
+  const setTemplateTheme = (key: keyof NonNullable<CvDraft['templateTheme']>, value: string) => {
+    const current = getValues('templateTheme') || {};
+    const next = { ...current, [key]: value };
+    setValue('templateTheme', next, {
+      shouldDirty: true,
+      shouldTouch: true,
+      shouldValidate: false,
+    });
+  };
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/5">
@@ -47,7 +66,7 @@ const DesignFormattingPanel: React.FC = () => {
             min={10}
             max={16}
             value={draft?.typography?.baseFontSize ?? 12}
-            onChange={(e) => patch('typography.baseFontSize', Number(e.target.value))}
+            onChange={(e) => setTypography('baseFontSize', Number(e.target.value))}
             className="mt-1 w-full"
           />
         </label>
@@ -58,7 +77,7 @@ const DesignFormattingPanel: React.FC = () => {
             min={18}
             max={34}
             value={draft?.typography?.h1Size ?? 28}
-            onChange={(e) => patch('typography.h1Size', Number(e.target.value))}
+            onChange={(e) => setTypography('h1Size', Number(e.target.value))}
             className="mt-1 w-full"
           />
         </label>
@@ -66,22 +85,22 @@ const DesignFormattingPanel: React.FC = () => {
         <ColorInput
           label="Body text"
           value={draft?.formatting?.textColor || '#0f172a'}
-          onChange={(v) => patch('formatting.textColor', v)}
+          onChange={(v) => setFormatting('textColor', v)}
         />
         <ColorInput
           label="Muted text"
           value={draft?.formatting?.mutedTextColor || '#475569'}
-          onChange={(v) => patch('formatting.mutedTextColor', v)}
+          onChange={(v) => setFormatting('mutedTextColor', v)}
         />
         <ColorInput
           label="Accent"
           value={draft?.templateTheme?.accent || '#0f766e'}
-          onChange={(v) => patch('templateTheme.accent', v)}
+          onChange={(v) => setTemplateTheme('accent', v)}
         />
         <ColorInput
           label="Primary"
           value={draft?.templateTheme?.primary || '#0f172a'}
-          onChange={(v) => patch('templateTheme.primary', v)}
+          onChange={(v) => setTemplateTheme('primary', v)}
         />
 
         {(templateId === 'modern-sidebar' || templateId === 'modern-sidebar-blue') && (
@@ -89,12 +108,12 @@ const DesignFormattingPanel: React.FC = () => {
             <ColorInput
               label="Sidebar bg"
               value={draft?.templateTheme?.sidebarBg || '#0f172a'}
-              onChange={(v) => patch('templateTheme.sidebarBg', v)}
+              onChange={(v) => setTemplateTheme('sidebarBg', v)}
             />
             <ColorInput
               label="Sidebar text"
               value={draft?.templateTheme?.sidebarText || '#f8fafc'}
-              onChange={(v) => patch('templateTheme.sidebarText', v)}
+              onChange={(v) => setTemplateTheme('sidebarText', v)}
             />
           </>
         )}
@@ -104,12 +123,12 @@ const DesignFormattingPanel: React.FC = () => {
             <ColorInput
               label="Header bg"
               value={draft?.templateTheme?.headerBg || '#0f172a'}
-              onChange={(v) => patch('templateTheme.headerBg', v)}
+              onChange={(v) => setTemplateTheme('headerBg', v)}
             />
             <ColorInput
               label="Header text"
               value={draft?.templateTheme?.headerText || '#ffffff'}
-              onChange={(v) => patch('templateTheme.headerText', v)}
+              onChange={(v) => setTemplateTheme('headerText', v)}
             />
           </>
         )}
