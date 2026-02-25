@@ -1,6 +1,8 @@
 import React from 'react';
 import type { CvDraft, CvSectionKey } from '@cvpro/shared/types';
 import { defaultSectionOrder } from '../../../utils/cvDefaults';
+import { resolveDraftStyles } from '../../../utils/cvStyleTokens';
+import { renderRichText, renderRichTextReact } from '../../../utils/cvRichText';
 
 type Props = {
   draft: CvDraft;
@@ -22,9 +24,10 @@ export function renderModernSidebarHtml(draft: CvDraft): string {
   const sidebarKeys: CvSectionKey[] = ['summary', 'skills', 'certifications', 'extras'];
   const mainKeys = order.filter((key) => !sidebarKeys.includes(key));
   const b = draft.basics || {};
+  const { cssVarBlock } = resolveDraftStyles(draft);
 
   const sectionMap: Record<CvSectionKey, string> = {
-    summary: draft.summary?.trim() ? `<section><h2>Summary</h2><p>${esc(draft.summary)}</p></section>` : '',
+    summary: (draft.summary?.trim() || draft.richText?.summary?.trim()) ? `<section><h2>Summary</h2><p>${renderRichText(draft, 'summary', draft.summary || '')}</p></section>` : '',
     skills: draft.skills?.length
       ? `<section><h2>Skills</h2><div class="chips">${draft.skills.map((s) => `<span>${esc(s)}</span>`).join('')}</div></section>`
       : '',
@@ -78,23 +81,24 @@ export function renderModernSidebarHtml(draft: CvDraft): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
+  ${cssVarBlock}
   *{box-sizing:border-box}
-  body{margin:0;background:#e2e8f0;font-family:Inter,system-ui,Arial;color:#0f172a}
+  body{margin:0;background:#e2e8f0;font-family:var(--fontFamily);font-size:var(--baseFontSize);color:var(--textColor)}
   .page{width:210mm;min-height:297mm;margin:14px auto;display:grid;grid-template-columns:33% 1fr;background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.14)}
-  aside{background:#0f172a;color:#f8fafc;padding:16mm 9mm}
+  aside{background:var(--sidebarBg);color:var(--sidebarText);padding:16mm 9mm}
   main{padding:16mm 12mm;display:grid;gap:13px;align-content:start}
-  h1{margin:0;font-size:24px;line-height:1.1}
+  h1{margin:0;font-size:var(--h1Size);line-height:1.1}
   .headline{margin-top:4px;font-size:12px;color:#cbd5e1}
   .contact{margin-top:10px;display:grid;gap:3px;font-size:10px;color:#cbd5e1}
   section{margin-top:12px}
-  h2{margin:0 0 6px;font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:inherit;opacity:.9}
+  h2{margin:0 0 6px;font-size:var(--h3Size);text-transform:uppercase;letter-spacing:.12em;color:inherit;opacity:.9}
   aside p, aside li{color:#e2e8f0}
   .chips{display:flex;flex-wrap:wrap;gap:6px}
   .chips span{font-size:10px;padding:3px 7px;border-radius:999px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22)}
   .stack{display:grid;gap:10px}
-  h3{margin:0;font-size:12px}
+  h3{margin:0;font-size:var(--h2Size)}
   .meta{font-size:10px;color:#64748b;margin-top:2px}
-  p{margin:3px 0 0;font-size:11px;color:#475569;line-height:1.45}
+  p{margin:3px 0 0;font-size:var(--bodySize);color:var(--textColor);line-height:1.45}
   ul{margin:5px 0 0;padding-left:16px;font-size:11px;color:#475569}
   li{margin:2px 0}
   @page{size:A4;margin:8mm}
@@ -125,7 +129,7 @@ const ModernSidebar: React.FC<Props> = ({ draft }) => {
     summary: draft.summary ? (
       <section>
         <h3 className="cv-section-title text-gray-800">Summary</h3>
-        <p className="cv-body text-gray-700">{draft.summary}</p>
+        <p className="cv-body" dangerouslySetInnerHTML={renderRichTextReact(draft, 'summary', draft.summary || '')} />
       </section>
     ) : null,
     skills: draft.skills?.length ? (
@@ -226,9 +230,11 @@ const ModernSidebar: React.FC<Props> = ({ draft }) => {
     ) : null,
   };
 
+  const { cssVars } = resolveDraftStyles(draft);
+
   return (
-    <div className="grid min-h-[297mm] grid-cols-[32%_1fr] text-[12px]">
-      <aside className="bg-slate-900 p-6 text-white">
+    <div className="grid min-h-[297mm] grid-cols-[32%_1fr]" style={cssVars as React.CSSProperties}>
+      <aside className="p-6" style={{ backgroundColor: 'var(--sidebarBg)', color: 'var(--sidebarText)', fontSize: 'var(--baseFontSize)' }}>
         <h1 className="text-xl font-semibold">{draft.basics.name || 'Your Name'}</h1>
         <p className="text-xs text-slate-300">{draft.basics.headline || 'Professional Headline'}</p>
         <div className="mt-3 space-y-1 text-[10px] text-slate-200">
@@ -243,7 +249,7 @@ const ModernSidebar: React.FC<Props> = ({ draft }) => {
           {sidebarKeys.map((key) => (visible[key] !== false ? sectionMap[key] : null))}
         </div>
       </aside>
-      <main className="space-y-6 bg-white p-8">
+      <main className="space-y-6 bg-white p-8" style={{ color: 'var(--textColor)', fontSize: 'var(--bodySize)' }}>
         {mainKeys.map((key) => (visible[key] !== false ? sectionMap[key] : null))}
       </main>
     </div>

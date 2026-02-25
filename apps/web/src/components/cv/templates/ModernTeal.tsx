@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import type { CvDraft, CvSectionKey } from '@cvpro/shared/types';
 import { defaultSectionOrder } from '../../../utils/cvDefaults';
 import { logScriptProbe, stripScripts } from '../../../utils/sanitizeHtmlForIframe';
+import { resolveDraftStyles } from '../../../utils/cvStyleTokens';
 
 type Props = { draft: CvDraft };
 
@@ -50,6 +51,7 @@ export function renderModernTealHtml(draft: CvDraft) {
   const isVisible = (k: CvSectionKey) => visibility[k] !== false;
 
   const b = draft.basics || {};
+  const { cssVarBlock } = resolveDraftStyles(draft);
   const contactBits: string[] = [];
   if (b.phone)
     contactBits.push(
@@ -206,10 +208,11 @@ export function renderModernTealHtml(draft: CvDraft) {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
+${cssVarBlock}
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-:root{--text:#0f172a;--muted:#475569;--hair:#e2e8f0;--paper:#fff;--accent:#0ea5a5;--accent2:#0f172a}
+:root{--text:var(--textColor);--muted:var(--mutedTextColor);--hair:var(--borderColor);--paper:#fff;--accent:var(--accent);--accent2:var(--primary)}
 *{box-sizing:border-box}
-body{margin:0;background:#f1f5f9;font-family:Inter,system-ui,Segoe UI,Arial;color:var(--text)}
+body{margin:0;background:#f1f5f9;font-family:var(--fontFamily);font-size:var(--baseFontSize);color:var(--text)}
 .page{width:210mm;min-height:297mm;margin:18px auto;background:var(--paper);padding:14mm;box-shadow:0 12px 35px rgba(2,6,23,.10)}
 .name{font-size:30px;font-weight:800;letter-spacing:-.03em;margin:0}
 .headline{margin:6px 0 0;color:var(--muted);font-size:13px;font-weight:500}

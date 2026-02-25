@@ -107,6 +107,10 @@ export const updateCvDraft = async (
     if (Array.isArray((payload as any).certifications)) safe.certifications = (payload as any).certifications;
 
     if ((payload as any).extras && typeof (payload as any).extras === 'object') safe.extras = (payload as any).extras;
+    if ((payload as any).typography && typeof (payload as any).typography === 'object') safe.typography = (payload as any).typography;
+    if ((payload as any).formatting && typeof (payload as any).formatting === 'object') safe.formatting = (payload as any).formatting;
+    if ((payload as any).templateTheme && typeof (payload as any).templateTheme === 'object') safe.templateTheme = (payload as any).templateTheme;
+    if ((payload as any).richText && typeof (payload as any).richText === 'object') safe.richText = (payload as any).richText;
 
     if (Array.isArray((payload as any).sectionOrder)) safe.sectionOrder = (payload as any).sectionOrder;
     if ((payload as any).sectionVisibility && typeof (payload as any).sectionVisibility === 'object') {

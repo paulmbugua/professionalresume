@@ -7,6 +7,7 @@ import SectionManager from './SectionManager';
 import AiAssistPanel from './AiAssistPanel';
 import PrintExportButton from './PrintExportButton';
 import TemplateErrorBoundary from './TemplateErrorBoundary';
+import DesignFormattingPanel from './DesignFormattingPanel';
 // ❌ removed TemplateDebugPanel
 import { templateRegistryById, templateRegistryList } from '../../templates/registry';
 import { resolvePreviewDraft } from '../../templates/demoResume';
@@ -171,6 +172,8 @@ const CvEditorShell: React.FC<Props> = ({
           className={`${activeTab === 'preview' ? 'hidden' : 'block'} space-y-6 lg:block print:hidden`}
         >
           <CvForm />
+
+          <DesignFormattingPanel />
 
           <SectionManager
             sectionOrder={draft.sectionOrder}

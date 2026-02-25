@@ -5,6 +5,7 @@ const routes = [
   { url: '/builder', wrapper: 'src/app/builder/page.tsx', component: 'src/pages/CvDrafts.web.tsx' },
   { url: '/builder/new', wrapper: 'src/app/builder/new/page.tsx', component: 'src/pages/CvBuilderNew.web.tsx' },
   { url: '/builder/[id]', wrapper: 'src/app/builder/[id]/page.tsx', component: 'src/pages/CvBuilderPage.web.tsx' },
+  { url: '/profile', wrapper: 'src/app/profile/page.tsx', component: 'src/pages/ProfilePage.web.tsx' },
   { url: '/help', wrapper: 'src/app/help/page.tsx', component: 'src/pages/HelpPage.web.tsx' },
   { url: '/find-tutor', wrapper: 'src/app/find-tutor/page.tsx', component: 'src/pages/FindTutor.web.tsx' },
   { url: '/messages', wrapper: 'src/app/messages/page.tsx', component: 'src/pages/Messages.web.tsx' },

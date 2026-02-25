@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useFieldArray, useFormContext, Controller, useWatch } from 'react-hook-form';
 import type { CvDraft, CvSectionKey } from '@cvpro/shared/types';
 import { demoResume, hasAnyUserData } from '../../templates/demoResume';
+import { stripHtml } from '../../utils/cvRichText';
 
 // ✅ forwardRef so react-hook-form can register inputs correctly
 const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
@@ -15,6 +16,41 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttribu
   )
 );
 Textarea.displayName = 'Textarea';
+
+const RichTextField: React.FC<{ name: string; plainName?: keyof CvDraft; placeholder?: string }> = ({
+  name,
+  plainName,
+  placeholder,
+}) => {
+  const { setValue, watch } = useFormContext<CvDraft>();
+  const value = (watch(name as any) as string) || '';
+
+  const applyWrap = (tag: 'strong' | 'em' | 'u') => {
+    const next = `${value}<${tag}>`;
+    setValue(name as any, next, { shouldDirty: true, shouldTouch: true });
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2 text-xs">
+        <button type="button" className="rounded border px-2 py-1" onClick={() => applyWrap('strong')}>Bold</button>
+        <button type="button" className="rounded border px-2 py-1" onClick={() => applyWrap('em')}>Italic</button>
+        <button type="button" className="rounded border px-2 py-1" onClick={() => applyWrap('u')}>Underline</button>
+      </div>
+      <Textarea
+        value={value}
+        onChange={(e) => {
+          const html = e.target.value;
+          setValue(name as any, html, { shouldDirty: true, shouldTouch: true });
+          if (plainName) {
+            setValue(plainName as any, stripHtml(html), { shouldDirty: true, shouldTouch: true });
+          }
+        }}
+        placeholder={placeholder || 'Use simple rich text tags like <strong>bold</strong> or <span style="color:#0ea5a5">color</span>'}
+      />
+    </div>
+  );
+};
 
 const hasText = (v?: string | null) => Boolean(v && v.trim().length > 0);
 
@@ -540,7 +576,7 @@ const CvForm: React.FC = () => {
           </div>
         }
       >
-        <Textarea placeholder="Write a professional summary" {...register('summary')} />
+        <RichTextField name="richText.summary" plainName="summary" placeholder="Write a professional summary (supports <strong>, <em>, <u>, color span)" />
       </SectionCard>
 
       {/* SKILLS */}

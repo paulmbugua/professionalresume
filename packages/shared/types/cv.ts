@@ -38,6 +38,35 @@ export type CvExtras = {
   interests?: string[];
 };
 
+export type CvTypography = {
+  baseFontSize: number;
+  h1Size: number;
+  h2Size: number;
+  h3Size: number;
+  bodySize: number;
+  fontFamily?: string;
+};
+
+export type CvFormattingDefaults = {
+  textColor: string;
+  mutedTextColor: string;
+  linkColor: string;
+};
+
+export type CvTemplateTheme = {
+  primary: string;
+  secondary?: string;
+  accent?: string;
+  headerBg?: string;
+  headerText?: string;
+  sidebarBg?: string;
+  sidebarText?: string;
+  sectionBg?: string;
+  borderColor?: string;
+};
+
+export type CvRichTextMap = Record<string, string>;
+
 export type CvSectionKey =
   | 'summary'
   | 'skills'
@@ -70,6 +99,10 @@ export type CvDraft = {
   projects: CvProject[];
   certifications: CvCertification[];
   extras: CvExtras;
+  typography?: CvTypography;
+  formatting?: CvFormattingDefaults;
+  templateTheme?: CvTemplateTheme;
+  richText?: CvRichTextMap;
   sectionOrder: CvSectionKey[];
   sectionVisibility: Record<CvSectionKey, boolean>;
 };

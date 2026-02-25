@@ -3,6 +3,7 @@ import type { CvDraft } from '@cvpro/shared/types';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { resolvePreviewDraft } from '../../templates/demoResume';
 import { templateRegistryById, templateRegistry } from '../../templates/registry';
+import { stripScripts } from '../../utils/sanitizeHtmlForIframe';
 
 type Props = {
   draft: CvDraft; // keep prop for initial fallback, but prefer watched
@@ -38,10 +39,11 @@ const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSource
     console.warn('[CvPreview] draft missing content; rendering demo resume data.');
   }
 
-  const hasKnownTemplate = Boolean(templateRegistryById[previewDraft.templateId]?.component);
-  const Template = hasKnownTemplate
-    ? templateRegistryById[previewDraft.templateId]?.component
-    : templateRegistry[0]?.component;
+  const meta = templateRegistryById[previewDraft.templateId] || templateRegistry[0];
+  const hasKnownTemplate = Boolean(meta?.component);
+  const Template = hasKnownTemplate ? meta?.component : templateRegistry[0]?.component;
+  const htmlRenderer = meta?.renderHtml;
+  const html = htmlRenderer ? stripScripts(htmlRenderer(previewDraft)) : null;
 
   return (
     <div className="cv-preview-wrapper h-full min-h-0 w-full">
@@ -80,7 +82,9 @@ const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSource
       )}
 
       <div className="cv-page h-full min-h-0 w-full overflow-hidden rounded-2xl bg-white text-gray-900 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.4)]">
-        {Template ? (
+        {html ? (
+          <iframe title="CV preview" srcDoc={html} sandbox="allow-same-origin" className="h-full w-full" style={{ border: 0 }} />
+        ) : Template ? (
           <Template draft={previewDraft} />
         ) : (
           <div className="p-6 text-sm text-rose-500">

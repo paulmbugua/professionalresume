@@ -28,6 +28,27 @@ export const cvTemplates = [
     componentKey: 'ElegantSerif',
   },
   {
+    id: 'modern-teal',
+    name: 'Modern Teal Two-Column',
+    category: 'Modern',
+    isAtsFriendly: true,
+    componentKey: 'ModernTeal',
+  },
+  {
+    id: 'modern-sidebar-blue',
+    name: 'Modern Blue Sidebar',
+    category: 'Modern',
+    isAtsFriendly: true,
+    componentKey: 'ModernSidebarBlue',
+  },
+  {
+    id: 'ats-compact',
+    name: 'Clean Compact ATS',
+    category: 'ATS',
+    isAtsFriendly: true,
+    componentKey: 'AtsCompact',
+  },
+  {
     id: 'creative-timeline',
     name: 'Creative Timeline',
     category: 'Creative',

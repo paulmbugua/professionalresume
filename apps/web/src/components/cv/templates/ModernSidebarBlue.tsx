@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import type { CvDraft, CvSectionKey } from '@cvpro/shared/types';
 import { defaultSectionOrder } from '../../../utils/cvDefaults';
 import { logScriptProbe, stripScripts } from '../../../utils/sanitizeHtmlForIframe';
+import { resolveDraftStyles } from '../../../utils/cvStyleTokens';
 
 type Props = { draft: CvDraft };
 
@@ -56,6 +57,7 @@ export function renderModernSidebarBlueHtml(draft: CvDraft) {
   const isVisible = (k: CvSectionKey) => visibility[k] !== false;
 
   const b = draft.basics || {};
+  const { cssVarBlock } = resolveDraftStyles(draft);
 
   const contact = [
     b.email ? `<div>${esc(b.email)}</div>` : '',
@@ -151,12 +153,13 @@ export function renderModernSidebarBlueHtml(draft: CvDraft) {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
+${cssVarBlock}
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
 :root{--paper:#fff;--ink:#0f172a;--muted:#64748b;--accent:#1d4ed8;--sideText:#dbeafe}
 *{box-sizing:border-box}
 body{margin:0;background:#e2e8f0;font-family:Poppins,system-ui,Segoe UI,Arial;color:var(--ink)}
 .page{width:210mm;min-height:297mm;margin:18px auto;background:var(--paper);display:grid;grid-template-columns:72mm 1fr;box-shadow:0 12px 35px rgba(2,6,23,.12)}
-aside{background:linear-gradient(180deg,#1d4ed8,#1e40af);color:#fff;padding:12mm}
+aside{background:linear-gradient(180deg,var(--sidebarBg),var(--primary));color:var(--sidebarText);padding:12mm}
 .avatar{width:78px;height:78px;border-radius:999px;background:rgba(255,255,255,.2);display:grid;place-items:center;font-size:27px;font-weight:700;margin-bottom:12px}
 .side-name{font-size:22px;line-height:1.15;font-weight:700;margin:0 0 2px}.side-headline{margin:0 0 14px;color:var(--sideText);font-size:11px}
 .s-title{margin:0 0 8px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#bfdbfe;font-weight:700}
