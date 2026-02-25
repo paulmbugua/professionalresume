@@ -14,6 +14,36 @@ const esc = (v: any) =>
 
 const safeKey = (s?: string | null) => (s ?? '').toString().trim().toLowerCase();
 
+const withAutosizeScript = (html: string) => {
+  const autosize = `<script>
+(function(){
+  function send(){
+    try{
+      var h = Math.max(
+        document.body.scrollHeight,
+        document.documentElement.scrollHeight,
+        document.body.offsetHeight,
+        document.documentElement.offsetHeight
+      );
+      parent.postMessage({ __cv_iframe_resize: true, height: h }, '*');
+    }catch(e){}
+  }
+  window.addEventListener('load', send);
+  window.addEventListener('resize', send);
+  try{
+    var obs = new MutationObserver(function(){ send(); });
+    obs.observe(document.documentElement, { childList:true, subtree:true, characterData:true, attributes:true });
+  }catch(e){}
+  setTimeout(send, 0);
+  setInterval(send, 500);
+})();
+</script>`;
+
+  return html.includes('</body>')
+    ? html.replace('</body>', `${autosize}</body>`)
+    : `${html}${autosize}`;
+};
+
 export function renderAtsCompactHtml(draft: CvDraft) {
   const order = draft.sectionOrder?.length ? draft.sectionOrder : defaultSectionOrder;
   const visibility = draft.sectionVisibility || {};
@@ -137,8 +167,9 @@ ${sections.join('')}
 </body>
 </html>`;
 
-  logScriptProbe('ats-compact', html);
-  return html;
+  const htmlWithAutosize = withAutosizeScript(html);
+  logScriptProbe('ats-compact', htmlWithAutosize);
+  return htmlWithAutosize;
 }
 
 const AtsCompact: React.FC<Props> = ({ draft }) => {

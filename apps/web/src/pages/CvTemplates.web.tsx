@@ -54,7 +54,7 @@ const CvTemplatesPage: React.FC = () => {
   const continueWithTemplate = React.useCallback(
     (templateId: string) => {
       setSpotlightOpen(false);
-      router.push(`/builder/new?templateId=${templateId}`);
+      router.push(`/builder/new?templateId=${encodeURIComponent(templateId)}`);
     },
     [router]
   );
@@ -78,7 +78,9 @@ const CvTemplatesPage: React.FC = () => {
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-gray-400">Template Gallery</p>
-          <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">Choose a CV template</h2>
+          <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">
+            Choose a CV template
+          </h2>
           <p className="text-sm text-gray-500 dark:text-white/60">
             ATS-friendly layouts with premium typography.
           </p>

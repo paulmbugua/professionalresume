@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { FormProvider, useForm, useWatch } from 'react-hook-form';
 import debounce from 'lodash.debounce';
 import { useShopContext } from '@cvpro/shared/context';
@@ -50,7 +50,8 @@ const CvBuilderPageInner: React.FC<{
   id: string;
   backendUrl: string;
   token: string;
-}> = ({ id, backendUrl, token }) => {
+  forcedTemplateId?: string;
+}> = ({ id, backendUrl, token, forcedTemplateId }) => {
   const { data, isLoading, error } = useCvDraft({ backendUrl, token, id } as any);
   const updateDraft = useSaveCvDraft({ backendUrl, token });
   const exportCv = useExportCv({ backendUrl, token });
@@ -63,7 +64,7 @@ const CvBuilderPageInner: React.FC<{
   const lastSavedSigRef = useRef<string>('');
 
   const methods = useForm<CvDraft>({ defaultValues: EMPTY_DRAFT, mode: 'onChange' });
-  const { reset, getValues, control } = methods;
+  const { reset, getValues, control, setValue } = methods;
   const formValues = useWatch({ control });
   const isDev = process.env.NODE_ENV !== 'production';
 
@@ -91,6 +92,13 @@ const CvBuilderPageInner: React.FC<{
     lastSavedSigRef.current = JSON.stringify(initial);
     setLastSavedAt(data.updatedAt ? new Date(data.updatedAt).toLocaleString() : undefined);
   }, [data, id, reset]);
+
+  useEffect(() => {
+    if (!forcedTemplateId) return;
+    const current = getValues('templateId');
+    if (current === forcedTemplateId) return;
+    setValue('templateId', forcedTemplateId as any, { shouldDirty: true, shouldTouch: false });
+  }, [forcedTemplateId, getValues, setValue]);
 
   const debouncedSave = useMemo(
     () =>
@@ -172,7 +180,9 @@ const CvBuilderPage: React.FC = () => {
   const params = useParams();
   const id = pickParam((params as any)?.id);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { backendUrl, token } = useShopContext() as any;
+  const forcedTemplateId = searchParams?.get('templateId') ?? undefined;
 
   // If route param missing → go to /builder (notFound-safe)
   useEffect(() => {
@@ -194,7 +204,14 @@ const CvBuilderPage: React.FC = () => {
   if (!token || !backendUrl) return null;
 
   // ✅ only mount the part that calls useCvDraft when we actually can fetch
-  return <CvBuilderPageInner id={id} backendUrl={backendUrl} token={token} />;
+  return (
+    <CvBuilderPageInner
+      id={id}
+      backendUrl={backendUrl}
+      token={token}
+      forcedTemplateId={forcedTemplateId}
+    />
+  );
 };
 
 export default CvBuilderPage;

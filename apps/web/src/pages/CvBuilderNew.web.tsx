@@ -70,8 +70,26 @@ const CvBuilderNew: React.FC = () => {
       } catch (e: any) {
         console.error('[CvBuilderNew] create failed', e);
         if (cancelled) return;
+
+        // Fallback for APIs that don't yet accept newly added template IDs.
+        try {
+          setStatus('Preparing workspace...');
+          const fallbackDraft = await createDraft.mutateAsync({
+            templateId: 'ats-minimal',
+            title: 'Untitled CV',
+            data: { templateId },
+          });
+
+          if (cancelled) return;
+          router.replace(
+            `/builder/${fallbackDraft.id}?templateId=${encodeURIComponent(templateId)}`
+          );
+          return;
+        } catch (fallbackError) {
+          console.error('[CvBuilderNew] fallback create failed', fallbackError);
+        }
+
         setStatus(e?.message ? `Failed: ${e.message}` : 'Failed to create draft. Redirecting...');
-        // fallback
         router.replace('/templates');
       }
     })();
