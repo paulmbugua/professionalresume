@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import type { CvDraft, CvSectionKey } from '@cvpro/shared/types';
 import CvForm from './CvForm';
@@ -7,8 +7,8 @@ import SectionManager from './SectionManager';
 import AiAssistPanel from './AiAssistPanel';
 import PrintExportButton from './PrintExportButton';
 import TemplateErrorBoundary from './TemplateErrorBoundary';
-import TemplateDebugPanel from './TemplateDebugPanel';
-import { templateRegistry, templateRegistryById, templateRegistryList } from '../../templates/registry';
+// ❌ removed TemplateDebugPanel
+import { templateRegistryById, templateRegistryList } from '../../templates/registry';
 import { resolvePreviewDraft } from '../../templates/demoResume';
 
 type Props = {
@@ -42,7 +42,10 @@ const CvEditorShell: React.FC<Props> = ({
   const liveTemplateId = useWatch({ control, name: 'templateId' }) || draft.templateId;
 
   // Resolve template display name like your templates gallery does (local registry fallback)
-  const templateMeta: any = templateRegistryById[liveTemplateId] || templateRegistryList.find((t: any) => t.id === liveTemplateId);
+  const templateMeta: any =
+    templateRegistryById[liveTemplateId] ||
+    templateRegistryList.find((t: any) => t.id === liveTemplateId);
+
   const templateDisplayName =
     (templateMeta?.name as string) ||
     (templateMeta?.label as string) ||
@@ -79,10 +82,10 @@ const CvEditorShell: React.FC<Props> = ({
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const templateSource = templateRegistryById[liveTemplateId] ? 'local' : 'unknown';
   const { resumeSource } = resolvePreviewDraft(draft);
-  const isDev = process.env.NODE_ENV !== 'production';
 
+  // (optional) keep the dev console log if you still want it
+  const isDev = process.env.NODE_ENV !== 'production';
   useEffect(() => {
     if (!isDev) return;
     console.log('[shell] draft', { name: draft.basics?.name, templateId: draft.templateId });
@@ -164,7 +167,9 @@ const CvEditorShell: React.FC<Props> = ({
       {/* Main grid */}
       <div className="grid gap-8 lg:grid-cols-[minmax(320px,420px)_1fr] min-h-0">
         {/* Left: Editor */}
-        <div className={`${activeTab === 'preview' ? 'hidden' : 'block'} space-y-6 lg:block print:hidden`}>
+        <div
+          className={`${activeTab === 'preview' ? 'hidden' : 'block'} space-y-6 lg:block print:hidden`}
+        >
           <CvForm />
 
           <SectionManager
@@ -187,17 +192,7 @@ const CvEditorShell: React.FC<Props> = ({
                   <CvPreview draft={draft} showLiveBadge resumeSourceHint={resumeSource} />
                 </div>
               </TemplateErrorBoundary>
-
-              {/* Keep debug at bottom (doesn't steal height) */}
-              <div className="mt-3 shrink-0 print:hidden">
-                <TemplateDebugPanel
-                  draft={draft}
-                  templateCount={templateRegistry.length}
-                  templateSource={templateSource}
-                  resumeSource={resumeSource === 'demo' ? 'demo' : 'live'}
-                  apiError={undefined}
-                />
-              </div>
+              {/* ✅ debug panel removed */}
             </div>
           </div>
         </div>
