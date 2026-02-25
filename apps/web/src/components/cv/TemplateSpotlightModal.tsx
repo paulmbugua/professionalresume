@@ -18,6 +18,7 @@ const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(mi
 
 const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, onContinue }) => {
   const [scale, setScale] = useState(1);
+  const [iframeHeight, setIframeHeight] = useState<number>(1100);
 
   // Close on ESC
   useEffect(() => {
@@ -31,10 +32,14 @@ const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, on
 
   // Reset zoom each open
   useEffect(() => {
-    if (isOpen) setScale(1);
-  }, [isOpen]);
+    if (isOpen) {
+      setScale(1);
+      setIframeHeight(1100);
+    }
+  }, [isOpen, template?.id]);
 
-  const TemplateComponent = template?.id ? templateRegistryById[template.id]?.component : undefined;
+  const templateMeta = template?.id ? templateRegistryById[template.id] : undefined;
+  const TemplateComponent = templateMeta?.component;
 
   const previewDraft: CvDraft = useMemo(() => {
     return {
@@ -43,6 +48,26 @@ const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, on
       title: demoResume.title,
     };
   }, [template?.id]);
+
+  const previewHtml = useMemo(() => {
+    if (!templateMeta?.renderHtml) return null;
+    return templateMeta.renderHtml(previewDraft);
+  }, [templateMeta, previewDraft]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const onMsg = (e: MessageEvent) => {
+      const data: any = e.data;
+      if (!data || data.__cv_iframe_resize !== true) return;
+      const next = Number(data.height);
+      if (!Number.isFinite(next) || next <= 0) return;
+      setIframeHeight(Math.min(Math.max(next + 24, 900), 5000));
+    };
+
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, [isOpen]);
 
   if (!isOpen || !template) return null;
 
@@ -117,24 +142,23 @@ const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, on
           {/* Content */}
           <div className="grid h-[calc(92vh-56px-34px)] min-h-0 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px]">
             {/* Big preview */}
-            <div className="h-full min-h-0 overflow-x-auto overflow-y-auto bg-gradient-to-b from-gray-50 to-white p-3 sm:p-4 dark:from-black/20 dark:to-black/10">
-              {/* 
-                IMPORTANT:
-                - inline-block so width is respected
-                - min-w ensures the content can overflow and trigger a horizontal scrollbar
-                - origin-top-left so scaling feels natural when scrolling horizontally
-              */}
+            <div className="h-full min-h-0 overflow-auto bg-gradient-to-b from-gray-50 to-white p-3 sm:p-4 dark:from-black/20 dark:to-black/10">
               <div
                 className="inline-block origin-top-left pb-10"
                 style={{ transform: `scale(${scale})` }}
               >
-                {/* 
-                  Make the preview naturally wider than the container (A4-ish canvas).
-                  794px ≈ A4 width at ~96dpi; give it a little extra so scrollbar is always meaningful.
-                */}
                 <div className="min-w-[860px]">
                   <div className="overflow-hidden rounded-2xl bg-white shadow-[0_20px_60px_-40px_rgba(15,23,42,0.35)]">
-                    {TemplateComponent ? (
+                    {previewHtml ? (
+                      <iframe
+                        title={`${template.name ?? template.id} preview`}
+                        srcDoc={previewHtml}
+                        sandbox="allow-same-origin allow-scripts"
+                        scrolling="no"
+                        className="w-full bg-white"
+                        style={{ height: iframeHeight, width: '100%', border: 0 }}
+                      />
+                    ) : TemplateComponent ? (
                       <TemplateComponent draft={previewDraft} />
                     ) : (
                       <div className="p-6 text-sm text-rose-500">
@@ -154,8 +178,8 @@ const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, on
                     What you’re seeing
                   </p>
                   <p className="mt-2 text-sm text-gray-700 dark:text-white/80">
-                    This is a full-size preview using our demo resume. When you continue, you’ll start
-                    editing and your details will replace the demo content in real time.
+                    This is a full-size preview using our demo resume. When you continue, you’ll
+                    start editing and your details will replace the demo content in real time.
                   </p>
                 </div>
 
@@ -192,7 +216,8 @@ const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, on
 
           {/* Bottom hint (mobile) */}
           <div className="border-t border-gray-200 bg-white/70 px-4 py-2 text-[11px] text-gray-500 dark:border-white/10 dark:bg-white/5 dark:text-white/60 lg:hidden">
-            Tip: Use the bottom scrollbar to pan horizontally and see the full layout. Tap Continue to start editing.
+            Tip: Use the bottom scrollbar to pan horizontally and see the full layout. Tap Continue
+            to start editing.
           </div>
         </div>
       </div>

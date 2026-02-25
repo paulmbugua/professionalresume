@@ -14,6 +14,36 @@ const esc = (v: any) =>
 
 const safeKey = (s?: string | null) => (s ?? '').toString().trim().toLowerCase();
 
+const withAutosizeScript = (html: string) => {
+  const autosize = `<script>
+(function(){
+  function send(){
+    try{
+      var h = Math.max(
+        document.body.scrollHeight,
+        document.documentElement.scrollHeight,
+        document.body.offsetHeight,
+        document.documentElement.offsetHeight
+      );
+      parent.postMessage({ __cv_iframe_resize: true, height: h }, '*');
+    }catch(e){}
+  }
+  window.addEventListener('load', send);
+  window.addEventListener('resize', send);
+  try{
+    var obs = new MutationObserver(function(){ send(); });
+    obs.observe(document.documentElement, { childList:true, subtree:true, characterData:true, attributes:true });
+  }catch(e){}
+  setTimeout(send, 0);
+  setInterval(send, 500);
+})();
+</script>`;
+
+  return html.includes('</body>')
+    ? html.replace('</body>', `${autosize}</body>`)
+    : `${html}${autosize}`;
+};
+
 function initials(name?: string) {
   const parts = (name || '').trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return 'YN';
@@ -161,8 +191,9 @@ main{padding:12mm 13mm}.name{margin:0;font-size:30px;letter-spacing:-.02em}.head
 </body>
 </html>`;
 
-  logScriptProbe('modern-sidebar-blue', html);
-  return html;
+  const htmlWithAutosize = withAutosizeScript(html);
+  logScriptProbe('modern-sidebar-blue', htmlWithAutosize);
+  return htmlWithAutosize;
 }
 
 const ModernSidebarBlue: React.FC<Props> = ({ draft }) => {
