@@ -155,17 +155,17 @@ export function renderModernSidebarBlueHtml(draft: CvDraft) {
 <style>
 ${cssVarBlock}
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
-:root{--paper:#fff;--ink:#0f172a;--muted:#64748b;--accent:#1d4ed8;--sideText:#dbeafe}
+:root{--paper:#fff;--ink:var(--textColor);--muted:var(--mutedTextColor);--accent:var(--accent);--sideText:var(--sidebarText)}
 *{box-sizing:border-box}
 body{margin:0;background:#e2e8f0;font-family:Poppins,system-ui,Segoe UI,Arial;color:var(--ink)}
 .page{width:210mm;min-height:297mm;margin:18px auto;background:var(--paper);display:grid;grid-template-columns:72mm 1fr;box-shadow:0 12px 35px rgba(2,6,23,.12)}
 aside{background:linear-gradient(180deg,var(--sidebarBg),var(--primary));color:var(--sidebarText);padding:12mm}
 .avatar{width:78px;height:78px;border-radius:999px;background:rgba(255,255,255,.2);display:grid;place-items:center;font-size:27px;font-weight:700;margin-bottom:12px}
 .side-name{font-size:22px;line-height:1.15;font-weight:700;margin:0 0 2px}.side-headline{margin:0 0 14px;color:var(--sideText);font-size:11px}
-.s-title{margin:0 0 8px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#bfdbfe;font-weight:700}
-.s-block{margin:0 0 14px}.s-block div,.s-block li{font-size:11px;line-height:1.5;color:#eff6ff}
+.s-title{margin:0 0 8px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:color-mix(in srgb, var(--sidebarText) 78%, white 22%);font-weight:700}
+.s-block{margin:0 0 14px}.s-block div,.s-block li{font-size:11px;line-height:1.5;color:var(--sidebarText)}
 main{padding:12mm 13mm}.name{margin:0;font-size:30px;letter-spacing:-.02em}.headline{margin:6px 0 0;color:var(--muted);font-size:13px}
-.sec{margin:0 0 12px}h3{margin:0 0 6px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;border-bottom:1px solid #dbeafe;padding-bottom:5px;color:#1e3a8a}
+.sec{margin:0 0 12px}h3{margin:0 0 6px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;border-bottom:1px solid color-mix(in srgb, var(--accent) 22%, white 78%);padding-bottom:5px;color:var(--accent)}
 .p{margin:0;font-size:12px;line-height:1.6}
 .item{margin-bottom:9px}.item h4{margin:0;font-size:13px}.meta{font-size:11px;color:var(--muted)}.small{margin:4px 0 0;color:#334155;font-size:12px;line-height:1.5}
 .bullets{margin:6px 0 0;padding-left:18px}.bullets li{font-size:12px;line-height:1.5;margin:3px 0}

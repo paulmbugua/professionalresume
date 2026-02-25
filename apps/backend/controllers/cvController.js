@@ -13,7 +13,7 @@ import {
   ensureTemplatesSeeded,
 } from '../services/cvService.js';
 import { cvTemplates as localTemplates } from '../services/cvTemplates.js';
-import { buildCvHtml, draftToPdfBuffer } from '../services/cvRenderService.js';
+import { buildCvHtml, htmlToPdfBuffer } from '../services/cvRenderService.js';
 import { putDocObject, signDocGetUrl, getPublicR2Url } from '../services/r2.js';
 import {
   createDraftSchema,
@@ -36,7 +36,11 @@ export async function listTemplates(_req, res) {
     return res.json({ templates, source: 'db', fallback: false });
   } catch (err) {
     console.warn('listTemplates fallback to local templates:', err.message);
-    return res.json({ templates: localTemplates, source: 'local', fallback: true });
+    return res.json({
+      templates: localTemplates,
+      source: 'local',
+      fallback: true,
+    });
   }
 }
 
@@ -64,7 +68,10 @@ export async function getDraft(req, res) {
 export async function createDraftHandler(req, res) {
   try {
     const { error, value } = createDraftSchema.validate(req.body || {});
-    if (error) return res.status(400).json({ error: error.details?.[0]?.message || error.message });
+    if (error)
+      return res
+        .status(400)
+        .json({ error: error.details?.[0]?.message || error.message });
 
     const exists = await templateExists(value.templateId);
     if (!exists) return res.status(400).json({ error: 'Invalid templateId' });
@@ -80,7 +87,10 @@ export async function createDraftHandler(req, res) {
 export async function updateDraft(req, res) {
   try {
     const { error, value } = draftPatchSchema.validate(req.body || {});
-    if (error) return res.status(400).json({ error: error.details?.[0]?.message || error.message });
+    if (error)
+      return res
+        .status(400)
+        .json({ error: error.details?.[0]?.message || error.message });
 
     const updated = await updateDraftForUser(req.user.id, req.params.id, value);
     if (!updated) return res.status(404).json({ error: 'Draft not found' });
@@ -105,7 +115,10 @@ export async function deleteDraft(req, res) {
 export async function exportCv(req, res) {
   try {
     const { error, value } = cvExportSchema.validate(req.body || {});
-    if (error) return res.status(400).json({ error: error.details?.[0]?.message || error.message });
+    if (error)
+      return res
+        .status(400)
+        .json({ error: error.details?.[0]?.message || error.message });
 
     let draft = value.cvJson || null;
     if (value.draftId) {
@@ -121,8 +134,20 @@ export async function exportCv(req, res) {
       mimeType = upload.mimetype || 'application/pdf';
       buffer = upload.buffer;
     } else {
-      const formattedHtml = buildCvHtml({ draft: draft || {}, templateKey: draft?.templateId });
-      buffer = await draftToPdfBuffer({ ...(draft || {}), __formattedHtml: formattedHtml });
+      const formattedHtml = buildCvHtml({
+        draft: draft || {},
+        templateKey: draft?.templateId,
+      });
+      console.info('exportCv htmlHead=', formattedHtml.slice(0, 200));
+      if (
+        !formattedHtml.includes('<style') ||
+        !formattedHtml.includes('--primary')
+      ) {
+        throw new Error(
+          'Generated export HTML is missing style/theme variables',
+        );
+      }
+      buffer = await htmlToPdfBuffer(formattedHtml);
       mimeType = 'application/pdf';
     }
 
@@ -131,7 +156,11 @@ export async function exportCv(req, res) {
       `cvpro/${req.user.id}/drafts/${draftSegment}/export-${Date.now()}.pdf`,
     );
 
-    const uploaded = await putDocObject({ key: objectKey, body: buffer, contentType: mimeType });
+    const uploaded = await putDocObject({
+      key: objectKey,
+      body: buffer,
+      contentType: mimeType,
+    });
     await createExportRecord({
       draftId: value.draftId || draft?.id || null,
       userId: req.user.id,
@@ -150,7 +179,9 @@ export async function exportCv(req, res) {
     });
   } catch (err) {
     console.error('exportCv error', err);
-    return res.status(500).json({ error: err.message || 'Failed to export CV' });
+    return res
+      .status(500)
+      .json({ error: err.message || 'Failed to export CV' });
   }
 }
 
@@ -159,6 +190,7 @@ export async function getPrintHtml(req, res) {
     const draft = await getDraftForUser(req.user.id, req.params.id);
     if (!draft) return res.status(404).json({ error: 'Draft not found' });
     const html = buildCvHtml({ draft, templateKey: draft.templateId });
+    console.info('getPrintHtml htmlHead=', html.slice(0, 200));
     return res.json({ html });
   } catch (err) {
     console.error('getPrintHtml error', err);
@@ -191,11 +223,16 @@ export async function uploadTemplate(req, res) {
     }
 
     const { error, value } = templateUploadSchema.validate(req.body || {});
-    if (error) return res.status(400).json({ error: error.details?.[0]?.message || error.message });
+    if (error)
+      return res
+        .status(400)
+        .json({ error: error.details?.[0]?.message || error.message });
 
     let manifestUrl = null;
     if (req.file?.buffer) {
-      const key = sanitizeObjectKey(`cvpro/templates/${value.key}/manifest-${Date.now()}.json`);
+      const key = sanitizeObjectKey(
+        `cvpro/templates/${value.key}/manifest-${Date.now()}.json`,
+      );
       const uploaded = await putDocObject({
         key,
         body: req.file.buffer,
@@ -214,6 +251,8 @@ export async function uploadTemplate(req, res) {
     return res.status(201).json(template);
   } catch (err) {
     console.error('uploadTemplate error', err);
-    return res.status(500).json({ error: err.message || 'Failed to upload template' });
+    return res
+      .status(500)
+      .json({ error: err.message || 'Failed to upload template' });
   }
 }
