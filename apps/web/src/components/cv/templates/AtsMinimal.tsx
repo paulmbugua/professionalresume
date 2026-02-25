@@ -1,7 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { CvDraft, CvSectionKey } from '@cvpro/shared/types';
 import { defaultSectionOrder } from '../../../utils/cvDefaults';
-import { logScriptProbe, stripScripts } from '../../../utils/sanitizeHtmlForIframe';
+import { logScriptProbe } from '../../../utils/sanitizeHtmlForIframe';
 
 type Props = { draft: CvDraft };
 
@@ -32,7 +32,6 @@ export function renderAtsMinimalHtml(draft: CvDraft) {
       const label = (l.label || l.url || '').trim();
       const url = (l.url || '').trim();
       const key = `${safeKey(url)}|${safeKey(label)}|${idx}`;
-      // ATS-friendly: show label + url in parentheses
       return `<span data-k="${esc(key)}">${esc(label)}${
         url ? ` <span class="muted">(${esc(url)})</span>` : ''
       }</span>`;
@@ -153,9 +152,7 @@ export function renderAtsMinimalHtml(draft: CvDraft) {
                 return `<div class="item" data-k="${esc(projKey)}">
                   <div class="row">
                     <div class="strong">${esc(p.name || 'Project')}</div>
-                    <div class="dates">${
-                      p.link ? `<span class="muted">${esc(p.link)}</span>` : ''
-                    }</div>
+                    <div class="dates">${p.link ? `<span class="muted">${esc(p.link)}</span>` : ''}</div>
                   </div>
                   ${p.description ? `<div class="muted">${esc(p.description)}</div>` : ''}
                   ${bullets}
@@ -351,18 +348,64 @@ li{ margin:4px 0; }
 }
 
 const AtsMinimal: React.FC<Props> = ({ draft }) => {
-  const html = useMemo(() => renderAtsMinimalHtml(draft), [JSON.stringify(draft)]);
-  const safeHtml = useMemo(() => stripScripts(html), [html]);
+  const [iframeHeight, setIframeHeight] = useState<number>(1100);
+
+  const html = useMemo(() => {
+    const raw = renderAtsMinimalHtml(draft);
+
+    // ✅ add a tiny autosize script so iframe grows to full content height
+    const autosize = `
+<script>
+(function(){
+  function send(){
+    try{
+      var h = Math.max(
+        document.body.scrollHeight,
+        document.documentElement.scrollHeight,
+        document.body.offsetHeight,
+        document.documentElement.offsetHeight
+      );
+      parent.postMessage({ __cv_iframe_resize: true, height: h }, '*');
+    }catch(e){}
+  }
+  window.addEventListener('load', send);
+  window.addEventListener('resize', send);
+  try{
+    var obs = new MutationObserver(function(){ send(); });
+    obs.observe(document.documentElement, { childList:true, subtree:true, characterData:true, attributes:true });
+  }catch(e){}
+  setTimeout(send, 0);
+  setInterval(send, 500);
+})();
+</script>`;
+
+    return raw.replace('</body>', `${autosize}</body>`);
+  }, [draft]);
+
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      const data: any = e.data;
+      if (!data || data.__cv_iframe_resize !== true) return;
+      const next = Number(data.height);
+      if (!Number.isFinite(next) || next <= 0) return;
+      setIframeHeight(Math.min(Math.max(next + 24, 900), 5000));
+    };
+
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
 
   return (
-    <iframe
-      title="ATS Minimal"
-      className="min-h-full h-full w-full rounded-xl border border-gray-200 bg-white"
-      sandbox="allow-same-origin"
-      scrolling="yes"
-      srcDoc={safeHtml}
-      style={{ height: '100%', width: '100%', border: 0 }}
-    />
+    <div className="w-full">
+      <iframe
+        title="ATS Minimal"
+        className="w-full rounded-xl border border-gray-200 bg-white"
+        sandbox="allow-same-origin"
+        scrolling="no"
+        srcDoc={html}
+        style={{ height: iframeHeight, width: '100%', border: 0 }}
+      />
+    </div>
   );
 };
 

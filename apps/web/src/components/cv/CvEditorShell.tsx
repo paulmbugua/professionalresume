@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { useFormContext } from 'react-hook-form';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useFormContext, useWatch } from 'react-hook-form';
 import type { CvDraft, CvSectionKey } from '@cvpro/shared/types';
 import CvForm from './CvForm';
 import CvPreview from './CvPreview';
@@ -8,7 +8,7 @@ import AiAssistPanel from './AiAssistPanel';
 import PrintExportButton from './PrintExportButton';
 import TemplateErrorBoundary from './TemplateErrorBoundary';
 import TemplateDebugPanel from './TemplateDebugPanel';
-import { templateRegistry, templateRegistryById } from '../../templates/registry';
+import { templateRegistry, templateRegistryById, templateRegistryList } from '../../templates/registry';
 import { resolvePreviewDraft } from '../../templates/demoResume';
 
 type Props = {
@@ -34,8 +34,36 @@ const CvEditorShell: React.FC<Props> = ({
   isExporting,
   lastSavedAt,
 }) => {
-  const { setValue } = useFormContext<CvDraft>();
+  const { setValue, control } = useFormContext<CvDraft>();
   const [activeTab, setActiveTab] = useState<'edit' | 'preview'>('edit');
+
+  // ✅ Watch live values so header updates instantly as form changes
+  const liveTitle = useWatch({ control, name: 'title' }) || '';
+  const liveTemplateId = useWatch({ control, name: 'templateId' }) || draft.templateId;
+
+  // Resolve template display name like your templates gallery does (local registry fallback)
+  const templateMeta: any = templateRegistryById[liveTemplateId] || templateRegistryList.find((t: any) => t.id === liveTemplateId);
+  const templateDisplayName =
+    (templateMeta?.name as string) ||
+    (templateMeta?.label as string) ||
+    (templateMeta?.title as string) ||
+    (templateMeta?.displayName as string) ||
+    liveTemplateId;
+
+  const headerTitle = liveTitle.trim() ? liveTitle.trim() : templateDisplayName;
+
+  // ✅ Optionally persist title when empty (so save/export uses a good default)
+  useEffect(() => {
+    if (liveTitle.trim()) return; // user already has a title
+    if (!templateDisplayName) return;
+
+    setValue('title', templateDisplayName, {
+      shouldDirty: true,
+      shouldTouch: false,
+      shouldValidate: false,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveTemplateId, templateDisplayName]);
 
   const handleSectionChange = (next: {
     sectionOrder: CvSectionKey[];
@@ -51,7 +79,7 @@ const CvEditorShell: React.FC<Props> = ({
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const templateSource = templateRegistryById[draft.templateId] ? 'local' : 'unknown';
+  const templateSource = templateRegistryById[liveTemplateId] ? 'local' : 'unknown';
   const { resumeSource } = resolvePreviewDraft(draft);
   const isDev = process.env.NODE_ENV !== 'production';
 
@@ -66,9 +94,7 @@ const CvEditorShell: React.FC<Props> = ({
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4 print:hidden">
         <div>
           <p className="text-xs uppercase tracking-[0.24em] text-gray-400">CV Builder</p>
-          <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">
-            {draft.title || 'Untitled CV'}
-          </h2>
+          <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">{headerTitle}</h2>
           <p className="text-xs text-gray-500 dark:text-white/60">
             {lastSavedAt ? `Last saved ${lastSavedAt}` : 'Autosaving enabled'}
           </p>
@@ -138,9 +164,7 @@ const CvEditorShell: React.FC<Props> = ({
       {/* Main grid */}
       <div className="grid gap-8 lg:grid-cols-[minmax(320px,420px)_1fr] min-h-0">
         {/* Left: Editor */}
-        <div
-          className={`${activeTab === 'preview' ? 'hidden' : 'block'} space-y-6 lg:block print:hidden`}
-        >
+        <div className={`${activeTab === 'preview' ? 'hidden' : 'block'} space-y-6 lg:block print:hidden`}>
           <CvForm />
 
           <SectionManager

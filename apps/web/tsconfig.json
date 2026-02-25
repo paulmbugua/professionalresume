@@ -46,7 +46,6 @@
     "strictNullChecks": true
   },
   "include": [
-    
     "src",
     "*.ts",
     "*.tsx",

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useShopContext } from '@cvpro/shared/context';
 import { useCvTemplates } from '@cvpro/shared/hooks';
 import TemplateGallery from '../components/cv/TemplateGallery';
+import TemplateSpotlightModal from '../components/cv/TemplateSpotlightModal';
 import { templateRegistryList } from '../templates/registry';
 
 const CvTemplatesPage: React.FC = () => {
@@ -12,13 +13,15 @@ const CvTemplatesPage: React.FC = () => {
   const processEnv = typeof process !== 'undefined' ? process.env : undefined;
   const envBackendUrl = processEnv?.NEXT_PUBLIC_BACKEND_URL?.trim() || '';
   const resolvedBackendUrl = envBackendUrl || backendUrl?.trim() || 'http://localhost:4001';
+
   const { data, isLoading, error } = useCvTemplates({ backendUrl: resolvedBackendUrl });
   const apiTemplates = data?.templates ?? [];
   const hasApiTemplates = Boolean(apiTemplates.length);
+
   const templates = React.useMemo(() => {
     if (!hasApiTemplates) return templateRegistryList;
 
-    const apiById = new Map(apiTemplates.map((template) => [template.id, template]));
+    const apiById = new Map(apiTemplates.map((t: any) => [t.id, t]));
     const merged = [...apiTemplates];
 
     for (const localTemplate of templateRegistryList) {
@@ -27,10 +30,34 @@ const CvTemplatesPage: React.FC = () => {
 
     return merged;
   }, [apiTemplates, hasApiTemplates]);
+
   const usingFallback = !isLoading && (!hasApiTemplates || error);
   const templateSource = data?.source ?? (usingFallback ? 'local' : 'db');
   const isDev = processEnv?.NODE_ENV !== 'production';
   const router = useRouter();
+
+  // ✅ Spotlight modal state
+  const [spotlightOpen, setSpotlightOpen] = React.useState(false);
+  const [selectedTemplate, setSelectedTemplate] = React.useState<any>(null);
+
+  const openSpotlight = React.useCallback((template: any) => {
+    setSelectedTemplate(template);
+    setSpotlightOpen(true);
+  }, []);
+
+  const closeSpotlight = React.useCallback(() => {
+    setSpotlightOpen(false);
+    // keep selectedTemplate for a moment (optional). Or clear:
+    // setSelectedTemplate(null);
+  }, []);
+
+  const continueWithTemplate = React.useCallback(
+    (templateId: string) => {
+      setSpotlightOpen(false);
+      router.push(`/builder/new?templateId=${templateId}`);
+    },
+    [router]
+  );
 
   React.useEffect(() => {
     if (isDev && usingFallback) {
@@ -51,9 +78,7 @@ const CvTemplatesPage: React.FC = () => {
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-gray-400">Template Gallery</p>
-          <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">
-            Choose a CV template
-          </h2>
+          <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">Choose a CV template</h2>
           <p className="text-sm text-gray-500 dark:text-white/60">
             ATS-friendly layouts with premium typography.
           </p>
@@ -77,9 +102,17 @@ const CvTemplatesPage: React.FC = () => {
       {templates.length > 0 && (
         <TemplateGallery
           templates={templates}
-          onSelect={(template) => router.push(`/builder/new?templateId=${template.id}`)}
+          // ✅ Instead of direct route, open spotlight
+          onSelect={(template) => openSpotlight(template)}
         />
       )}
+
+      <TemplateSpotlightModal
+        isOpen={spotlightOpen}
+        template={selectedTemplate}
+        onClose={closeSpotlight}
+        onContinue={continueWithTemplate}
+      />
     </div>
   );
 };

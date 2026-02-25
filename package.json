@@ -88,6 +88,7 @@
     "@tanstack/react-query-devtools": "5.89.0",
     "@tanstack/query-core": "5.89.0",
     "expo-constants": "18.0.10",
-    "expo-web-browser": "15.0.8"
+    "expo-web-browser": "15.0.8",
+    "axios": "1.12.2"
   }
 }

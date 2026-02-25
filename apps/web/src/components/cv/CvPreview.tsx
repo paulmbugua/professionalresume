@@ -1,20 +1,29 @@
 import React from 'react';
 import type { CvDraft } from '@cvpro/shared/types';
+import { useFormContext, useWatch } from 'react-hook-form';
 import { resolvePreviewDraft } from '../../templates/demoResume';
 import { templateRegistryById, templateRegistry } from '../../templates/registry';
 
 type Props = {
-  draft: CvDraft;
+  draft: CvDraft; // keep prop for initial fallback, but prefer watched
   showLiveBadge?: boolean;
   resumeSourceHint?: 'saved' | 'demo' | 'live';
 };
 
 const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSourceHint }) => {
+  const { control } = useFormContext<CvDraft>();
+
+  // Watch the entire draft for live preview updates (CvForm + AiAssistPanel setValue)
+  const watchedDraft = useWatch({ control }) as CvDraft | undefined;
+
+  const effectiveDraft = watchedDraft ?? draft;
+
   const importMetaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined;
   const isDev =
     importMetaEnv?.DEV ??
     (typeof process !== 'undefined' ? process.env.NODE_ENV !== 'production' : false);
-  const { draft: previewDraft, resumeSource } = resolvePreviewDraft(draft);
+
+  const { draft: previewDraft, resumeSource } = resolvePreviewDraft(effectiveDraft);
 
   if (isDev) {
     console.log('[preview] using', {
@@ -46,13 +55,16 @@ const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSource
             }`}
           >
             <span
-              className={`h-2 w-2 rounded-full ${resumeSource === 'demo' ? 'bg-amber-500' : 'bg-emerald-500'}`}
+              className={`h-2 w-2 rounded-full ${
+                resumeSource === 'demo' ? 'bg-amber-500' : 'bg-emerald-500'
+              }`}
             />
             {resumeSource === 'demo' ? 'DEMO PREVIEW' : 'LIVE PREVIEW'}
           </span>
         ) : (
           <span />
         )}
+
         {resumeSource === 'demo' && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
             Showing demo resume data. Add your details to replace this preview.
