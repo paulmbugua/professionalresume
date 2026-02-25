@@ -2,6 +2,8 @@
 import React from 'react';
 import type { CvDraft, CvSectionKey } from '@cvpro/shared/types';
 import { defaultSectionOrder } from '../../../utils/cvDefaults';
+import { resolveDraftStyles } from '../../../utils/cvStyleTokens';
+import { renderRichText, renderRichTextReact } from '../../../utils/cvRichText';
 
 type Props = {
   draft: CvDraft;
@@ -26,6 +28,7 @@ export function renderBoldHeaderHtml(draft: CvDraft) {
   const isVisible = (k: CvSectionKey) => visibility[k] !== false;
 
   const b = draft.basics || {};
+  const { cssVarBlock } = resolveDraftStyles(draft);
 
   const name = esc(b.name || 'Your Name');
   const headline = esc(b.headline || 'Professional Headline');
@@ -47,10 +50,10 @@ export function renderBoldHeaderHtml(draft: CvDraft) {
     });
 
   const sectionHtml: Record<CvSectionKey, string> = {
-    summary: draft.summary?.trim()
+    summary: (draft.summary?.trim() || draft.richText?.summary?.trim())
       ? `<section class="card muted">
           <h3 class="title">Summary</h3>
-          <p class="body">${esc(draft.summary)}</p>
+          <p class="body">${renderRichText(draft, 'summary', draft.summary || '')}</p>
         </section>`
       : '',
 
@@ -285,10 +288,10 @@ const BoldHeader: React.FC<Props> = ({ draft }) => {
   const isVisible = (k: CvSectionKey) => visible[k] !== false;
 
   const sectionMap: Record<CvSectionKey, React.ReactNode> = {
-    summary: draft.summary ? (
+    summary: (draft.summary || draft.richText?.summary) ? (
       <section className="rounded-xl border border-gray-100 bg-gray-50 p-4">
         <h3 className="cv-section-title">Summary</h3>
-        <p className="cv-body">{draft.summary}</p>
+        <p className="cv-body" dangerouslySetInnerHTML={renderRichTextReact(draft, 'summary', draft.summary || '')} />
       </section>
     ) : null,
 
@@ -409,9 +412,11 @@ const BoldHeader: React.FC<Props> = ({ draft }) => {
     ) : null,
   };
 
+  const { cssVars } = resolveDraftStyles(draft);
+
   return (
-    <div className="p-8 text-[12px]">
-      <header className="rounded-2xl bg-slate-900 p-6 text-white">
+    <div className="p-8" style={cssVars as React.CSSProperties}>
+      <header className="rounded-2xl p-6" style={{ backgroundColor: 'var(--headerBg)', color: 'var(--headerText)' }}>
         <h1 className="text-3xl font-semibold">{draft.basics?.name || 'Your Name'}</h1>
         <p className="text-sm text-slate-200">
           {draft.basics?.headline || 'Professional Headline'}

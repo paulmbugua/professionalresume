@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-const expectedRoutes = ['/login', '/templates', '/builder', '/builder/new'];
+const expectedRoutes = ['/login', '/templates', '/builder', '/builder/new', '/profile'];
 const APP_DIR = path.join(process.cwd(), 'src', 'app');
 const PAGE_FILE = /^page\.(tsx|ts|jsx|js)$/;
 

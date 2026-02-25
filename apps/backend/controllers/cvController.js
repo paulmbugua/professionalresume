@@ -11,6 +11,7 @@ import {
   userCanAccessFileKey,
   upsertTemplate,
   getUserRole,
+  ensureTemplatesSeeded,
 } from '../services/cvService.js';
 import { cvTemplates as localTemplates } from '../services/cvTemplates.js';
 import { putDocObject, signDocGetUrl, getPublicR2Url } from '../services/r2.js';
@@ -82,6 +83,7 @@ function draftToPdfBuffer(draft) {
 
 export async function listTemplates(_req, res) {
   try {
+    await ensureTemplatesSeeded(localTemplates);
     const templates = await listTemplatesFromDb();
     return res.json({ templates, source: 'db', fallback: false });
   } catch (err) {

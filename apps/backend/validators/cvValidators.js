@@ -45,6 +45,35 @@ const certificationSchema = Joi.object({
   year: Joi.string().allow(''),
 });
 
+const hexColor = Joi.string().pattern(/^#(?:[0-9a-fA-F]{3}){1,2}$/);
+
+const typographySchema = Joi.object({
+  baseFontSize: Joi.number().min(10).max(16),
+  h1Size: Joi.number().min(18).max(34),
+  h2Size: Joi.number().min(10).max(24),
+  h3Size: Joi.number().min(9).max(20),
+  bodySize: Joi.number().min(10).max(16),
+  fontFamily: Joi.string().max(120).allow(''),
+});
+
+const formattingSchema = Joi.object({
+  textColor: hexColor,
+  mutedTextColor: hexColor,
+  linkColor: hexColor,
+});
+
+const templateThemeSchema = Joi.object({
+  primary: hexColor,
+  secondary: hexColor,
+  accent: hexColor,
+  headerBg: hexColor,
+  headerText: hexColor,
+  sidebarBg: hexColor,
+  sidebarText: hexColor,
+  sectionBg: hexColor,
+  borderColor: hexColor,
+});
+
 export const createDraftSchema = Joi.object({
   templateId: Joi.string().required(),
   title: Joi.string().allow('').optional(),
@@ -72,6 +101,10 @@ export const draftPatchSchema = Joi.object({
     languages: Joi.array().items(Joi.string().allow('')),
     interests: Joi.array().items(Joi.string().allow('')),
   }),
+  typography: typographySchema,
+  formatting: formattingSchema,
+  templateTheme: templateThemeSchema,
+  richText: Joi.object().pattern(Joi.string(), Joi.string().allow('')),
   sectionOrder: Joi.array().items(Joi.string().valid(...sectionKeys)),
   sectionVisibility: Joi.object().pattern(
     Joi.string().valid(...sectionKeys),

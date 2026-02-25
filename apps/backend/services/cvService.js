@@ -31,6 +31,10 @@ export function buildDefaultDraft({ userId, templateId, title }) {
     projects: [],
     certifications: [],
     extras: { languages: [], interests: [] },
+    typography: { baseFontSize: 12, h1Size: 28, h2Size: 12, h3Size: 11, bodySize: 11, fontFamily: 'Inter, system-ui, Arial' },
+    formatting: { textColor: '#0f172a', mutedTextColor: '#475569', linkColor: '#0f766e' },
+    templateTheme: { primary: '#0f172a', accent: '#0f766e' },
+    richText: {},
     sectionOrder: defaultSectionOrder,
     sectionVisibility: defaultSectionVisibility,
   };
@@ -120,6 +124,10 @@ export async function updateDraftForUser(userId, draftId, patch) {
     basics: { ...current.basics, ...(patch.basics || {}) },
     extras: { ...current.extras, ...(patch.extras || {}) },
     sectionVisibility: { ...current.sectionVisibility, ...(patch.sectionVisibility || {}) },
+    typography: { ...(current.typography || {}), ...(patch.typography || {}) },
+    formatting: { ...(current.formatting || {}), ...(patch.formatting || {}) },
+    templateTheme: { ...(current.templateTheme || {}), ...(patch.templateTheme || {}) },
+    richText: { ...(current.richText || {}), ...(patch.richText || {}) },
     id: draftId,
     userId: String(userId),
     templateId: patch.templateId || current.templateId,
@@ -190,4 +198,16 @@ export async function upsertTemplate({ key, name, description, previewUrl }) {
 export async function getUserRole(userId) {
   const { rows } = await pool.query('SELECT role FROM users WHERE id = $1', [Number(userId)]);
   return rows[0]?.role || null;
+}
+
+
+export async function ensureTemplatesSeeded(templates = []) {
+  for (const t of templates) {
+    await upsertTemplate({
+      key: t.id,
+      name: t.name,
+      description: t.description || '',
+      previewUrl: t.previewImage || null,
+    });
+  }
 }
