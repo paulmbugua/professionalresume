@@ -11,6 +11,7 @@ import {
   exportCv,
   uploadTemplate,
   signFileDownload,
+  getPrintHtml,
 } from '../controllers/cvController.js';
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -22,6 +23,7 @@ r.post('/templates/upload', requireAuth, upload.single('file'), uploadTemplate);
 r.get('/drafts', requireAuth, listDrafts);
 r.post('/drafts', requireAuth, createDraftHandler);
 r.get('/drafts/:id', requireAuth, getDraft);
+r.get('/drafts/:id/print-html', requireAuth, getPrintHtml);
 r.put('/drafts/:id', requireAuth, updateDraft);
 r.patch('/drafts/:id', requireAuth, updateDraft);
 r.delete('/drafts/:id', requireAuth, deleteDraft);

@@ -171,3 +171,17 @@ export const signCvFile = async (
     throw new Error(toMessage(err));
   }
 };
+
+export const getCvPrintHtml = async (
+  backendUrl: string,
+  token: string,
+  id: string,
+): Promise<{ html: string }> => {
+  try {
+    const api = client(backendUrl, token);
+    const res = await api.get<{ html: string }>(`/api/cv/drafts/${id}/print-html`);
+    return res.data;
+  } catch (err: any) {
+    throw new Error(toMessage(err));
+  }
+};
