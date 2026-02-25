@@ -3,11 +3,11 @@ import React from 'react';
 import type { CvDraft, CvTemplate } from '@cvpro/shared/types';
 
 import AtsMinimal, { renderAtsMinimalHtml } from '../components/cv/templates/AtsMinimal';
-import ModernSidebar from '../components/cv/templates/ModernSidebar';
+import ModernSidebar, { renderModernSidebarHtml } from '../components/cv/templates/ModernSidebar';
 import BoldHeader, { renderBoldHeaderHtml } from '../components/cv/templates/BoldHeader';
-import ElegantSerif from '../components/cv/templates/ElegantSerif';
-import CreativeTimeline from '../components/cv/templates/CreativeTimeline';
-import CompactOnePager from '../components/cv/templates/CompactOnePager';
+import ElegantSerif, { renderElegantSerifHtml } from '../components/cv/templates/ElegantSerif';
+import CreativeTimeline, { renderCreativeTimelineHtml } from '../components/cv/templates/CreativeTimeline';
+import CompactOnePager, { renderCompactOnePagerHtml } from '../components/cv/templates/CompactOnePager';
 
 import ModernTeal, { renderModernTealHtml } from '../components/cv/templates/ModernTeal';
 import ModernSidebarBlue, {
@@ -48,8 +48,7 @@ export const templateRegistry: TemplateMeta[] = [
     description: 'Two-column layout that highlights skills and summary.',
     tags: ['modern', 'sidebar'],
     component: ModernSidebar,
-    // NOTE: no renderHtml → thumbnail will show "Preview unavailable"
-    // Add a renderer if you want thumbnails for this template.
+    renderHtml: renderModernSidebarHtml,
   },
   {
     id: 'bold-header',
@@ -71,7 +70,7 @@ export const templateRegistry: TemplateMeta[] = [
     description: 'Classic serif styling for a timeless look.',
     tags: ['classic', 'serif'],
     component: ElegantSerif,
-    // NOTE: no renderHtml → thumbnail will show "Preview unavailable"
+    renderHtml: renderElegantSerifHtml,
   },
   {
     id: 'creative-timeline',
@@ -82,7 +81,7 @@ export const templateRegistry: TemplateMeta[] = [
     description: 'Timeline layout that emphasizes career progression.',
     tags: ['creative', 'timeline'],
     component: CreativeTimeline,
-    // NOTE: no renderHtml → thumbnail will show "Preview unavailable"
+    renderHtml: renderCreativeTimelineHtml,
   },
   {
     id: 'modern-teal',
@@ -126,7 +125,7 @@ export const templateRegistry: TemplateMeta[] = [
     description: 'Dense one-page layout for concise resumes.',
     tags: ['compact', 'ats'],
     component: CompactOnePager,
-    // NOTE: no renderHtml → thumbnail will show "Preview unavailable"
+    renderHtml: renderCompactOnePagerHtml,
   },
 ];
 
