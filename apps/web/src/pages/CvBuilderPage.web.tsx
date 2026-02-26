@@ -135,13 +135,7 @@ const CvBuilderPageInner: React.FC<{
   };
 
   const handleExport = async () => {
-    debouncedSave.cancel();
-    const values = getValues();
-    const updated = await updateDraft.mutateAsync({ id, payload: values });
-    lastSavedSigRef.current = JSON.stringify(values);
-    setLastSavedAt(updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined);
-
-    const exported = await exportCv.mutateAsync({ draftId: id });
+    const exported = await exportCv.mutateAsync({ draftId: id, cvJson: getValues() });
     setExportUrl(exported.signedUrl || exported.url || undefined);
   };
 
