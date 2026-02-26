@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { LogOut } from 'lucide-react';
 import { useShopContext } from '@cvpro/shared/context';
 import { useCvDrafts, useDeleteCvDraft, useCreateCvDraft, useExportCv } from '@cvpro/shared/hooks';
 import TemplateThumbnail from '../components/cv/templates/TemplateThumbnail';
@@ -10,7 +11,8 @@ import { templateRegistryById } from '../templates/registry';
 import { normalizeDraft } from '../utils/cvDefaults';
 
 const ProfilePage: React.FC = () => {
-  const { backendUrl, token, user } = useShopContext() as any;
+  const { backendUrl, token, user, logout } = useShopContext() as any;
+  const [isLoggingOut, setIsLoggingOut] = React.useState(false);
   const router = useRouter();
   const { data: drafts = [], isLoading } = useCvDrafts({ backendUrl, token });
   const del = useDeleteCvDraft({ backendUrl, token });
@@ -21,12 +23,35 @@ const ProfilePage: React.FC = () => {
     if (!token) router.replace(`/login?returnTo=${encodeURIComponent('/profile')}`);
   }, [router, token]);
 
+  const handleLogout = React.useCallback(async () => {
+    setIsLoggingOut(true);
+    try {
+      await logout?.();
+      router.replace('/login');
+    } finally {
+      setIsLoggingOut(false);
+    }
+  }, [logout, router]);
+
   return (
     <div className="mx-auto w-full max-w-screen-2xl px-4 py-8 lg:px-8">
       <div className="mb-8 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-        <p className="text-xs uppercase tracking-[0.2em] text-gray-400">My Profile</p>
-        <h1 className="text-2xl font-semibold text-gray-900">{user?.name || 'CV Builder User'}</h1>
-        <p className="text-sm text-gray-500">{user?.email || 'Signed in'}</p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-gray-400">My Profile</p>
+            <h1 className="text-2xl font-semibold text-gray-900">{user?.name || 'CV Builder User'}</h1>
+            <p className="text-sm text-gray-500">{user?.email || 'Signed in'}</p>
+          </div>
+          <button
+            type="button"
+            onClick={handleLogout}
+            disabled={isLoggingOut}
+            className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-60"
+          >
+            <LogOut className="h-4 w-4" />
+            {isLoggingOut ? 'Logging out...' : 'Logout'}
+          </button>
+        </div>
       </div>
 
       <div className="mb-4 flex items-center justify-between">
