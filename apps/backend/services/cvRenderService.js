@@ -249,48 +249,72 @@ section{margin-bottom:10px}@page{size:A4;margin:12mm}@media print{body{backgroun
 }
 
 export async function htmlToPdfBuffer(html) {
-  let browser;
+  /** @type {import('playwright').Browser | import('puppeteer').Browser | null} */
+  let browser = null;
+  /** @type {'playwright'|'puppeteer'|null} */
+  let engine = null;
+
+  const assertPdf = (pdfBuffer) => {
+    if (!pdfBuffer || pdfBuffer.length < 30000) {
+      throw new Error('PDF buffer too small; HTML→PDF likely failed');
+    }
+    return pdfBuffer;
+  };
+
   try {
+    // ---------- Playwright (preferred) ----------
     const playwright = await import('playwright');
+    engine = 'playwright';
     browser = await playwright.chromium.launch({ headless: true });
     console.info('exportPdf engine=playwright');
+
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle' });
-    await page.emulateMediaType('screen');
+
+    // ✅ Playwright API (NOT emulateMediaType)
+    if (typeof page.emulateMedia === 'function') {
+      await page.emulateMedia({ media: 'print' });
+    }
+
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
       preferCSSPageSize: true,
     });
-    if (!pdfBuffer || pdfBuffer.length < 30000) {
-      throw new Error('PDF buffer too small; HTML→PDF likely failed');
-    }
-    return pdfBuffer;
+
+    return assertPdf(pdfBuffer);
   } catch (playwrightErr) {
+    // ---------- Puppeteer fallback ----------
     try {
       const puppeteer = await import('puppeteer');
+      engine = 'puppeteer';
       browser = await puppeteer.default.launch({
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
       });
       console.info('exportPdf engine=puppeteer');
+
       const page = await browser.newPage();
       await page.setContent(html, { waitUntil: 'networkidle0' });
-      await page.emulateMediaType('screen');
+
+      // ✅ Puppeteer API
+      if (typeof page.emulateMediaType === 'function') {
+        await page.emulateMediaType('print');
+      }
+
       const pdfBuffer = await page.pdf({
         format: 'A4',
         printBackground: true,
         preferCSSPageSize: true,
       });
-      if (!pdfBuffer || pdfBuffer.length < 30000) {
-        throw new Error('PDF buffer too small; HTML→PDF likely failed');
-      }
-      return pdfBuffer;
+
+      return assertPdf(pdfBuffer);
     } catch (puppeteerErr) {
       const playwrightMessage =
         (playwrightErr && playwrightErr.message) || String(playwrightErr);
       const puppeteerMessage =
         (puppeteerErr && puppeteerErr.message) || String(puppeteerErr);
+
       if (
         /executable doesn't exist|browser has not been found|install chromium/i.test(
           `${playwrightMessage} ${puppeteerMessage}`,
@@ -300,11 +324,18 @@ export async function htmlToPdfBuffer(html) {
           `HTML→PDF failed: missing browser binary. Run "npx playwright install chromium". Playwright: ${playwrightMessage}. Puppeteer: ${puppeteerMessage}`,
         );
       }
+
       throw new Error(
         `HTML→PDF rendering failed. Playwright: ${playwrightMessage}. Puppeteer: ${puppeteerMessage}`,
       );
     }
   } finally {
-    if (browser) await browser.close();
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (e) {
+        // ignore close errors
+      }
+    }
   }
 }

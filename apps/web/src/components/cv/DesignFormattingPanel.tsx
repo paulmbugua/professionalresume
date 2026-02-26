@@ -1,8 +1,15 @@
+// apps/web/src/components/cv/DesignFormattingPanel.tsx
 import React from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
-import type { CvDraft } from '@cvpro/shared/types';
+import type {
+  CvDraft,
+  CvTypography,
+  CvFormattingDefaults,
+  CvTemplateTheme,
+} from '@cvpro/shared/types';
 
 const HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}){1,2}$/;
+
 const normalizeHex = (value?: string, fallback = '#000000') => {
   const normalized = String(value || '').trim();
   return HEX_COLOR_RE.test(normalized) ? normalized.toLowerCase() : fallback;
@@ -23,83 +30,161 @@ const ColorInput = ({
       type="color"
       value={normalizeHex(value, '#000000')}
       onChange={(e) => onChange(normalizeHex(e.target.value, '#000000'))}
-      className="h-8 w-10 rounded border border-gray-200"
+      className="h-8 w-10 rounded border border-gray-200 dark:border-white/10"
     />
   </label>
 );
+
+// ✅ Typed defaults that satisfy your exact schema in packages/shared/types/cv.ts
+const DEFAULT_TYPOGRAPHY: CvTypography = {
+  baseFontSize: 12,
+  h1Size: 28,
+  h2Size: 13,
+  h3Size: 11,
+  bodySize: 12,
+  fontFamily: 'Inter, system-ui, Segoe UI, Arial',
+};
+
+const DEFAULT_FORMATTING: CvFormattingDefaults = {
+  textColor: '#0f172a',
+  mutedTextColor: '#475569',
+  linkColor: '#2563eb',
+};
+
+const DEFAULT_THEME: CvTemplateTheme = {
+  primary: '#0f172a', // required
+  secondary: '#334155',
+  accent: '#0f766e',
+  headerBg: '#0f172a',
+  headerText: '#ffffff',
+  sidebarBg: '#0f172a',
+  sidebarText: '#f8fafc',
+  sectionBg: '#ffffff',
+  borderColor: '#e5e7eb',
+};
+
+const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
 
 const DesignFormattingPanel: React.FC = () => {
   const { setValue, control, getValues } = useFormContext<CvDraft>();
   const draft = useWatch({ control }) as CvDraft;
   const templateId = draft?.templateId || '';
 
-  const setTypography = (key: keyof NonNullable<CvDraft['typography']>, value: string | number) => {
-    const current = getValues('typography') || {};
-    const next = { ...current, [key]: value };
+  // Hydrated values for UI display (always complete)
+  const typography: CvTypography = { ...DEFAULT_TYPOGRAPHY, ...(draft?.typography ?? {}) };
+  const formatting: CvFormattingDefaults = { ...DEFAULT_FORMATTING, ...(draft?.formatting ?? {}) };
+  const theme: CvTemplateTheme = { ...DEFAULT_THEME, ...(draft?.templateTheme ?? {}) };
+
+  const setTypography = (key: keyof CvTypography, value: string | number) => {
+    const current =
+      (getValues('typography') as CvTypography | undefined) ??
+      draft?.typography ??
+      DEFAULT_TYPOGRAPHY;
+
+    const next: CvTypography = {
+      ...DEFAULT_TYPOGRAPHY,
+      ...current,
+      [key]: value,
+    } as CvTypography;
+
+    // Safety clamps (optional)
+    if (key === 'baseFontSize') next.baseFontSize = clamp(Number(next.baseFontSize), 10, 16);
+    if (key === 'bodySize') next.bodySize = clamp(Number(next.bodySize), 10, 16);
+    if (key === 'h1Size') next.h1Size = clamp(Number(next.h1Size), 18, 34);
+    if (key === 'h2Size') next.h2Size = clamp(Number(next.h2Size), 11, 22);
+    if (key === 'h3Size') next.h3Size = clamp(Number(next.h3Size), 10, 18);
+
     setValue('typography', next, { shouldDirty: true, shouldTouch: true, shouldValidate: false });
   };
 
-  const setFormatting = (key: keyof NonNullable<CvDraft['formatting']>, value: string) => {
-    const current = getValues('formatting') || {};
-    const next = { ...current, [key]: value };
+  const setFormatting = (key: keyof CvFormattingDefaults, value: string) => {
+    const current =
+      (getValues('formatting') as CvFormattingDefaults | undefined) ??
+      draft?.formatting ??
+      DEFAULT_FORMATTING;
+
+    const next: CvFormattingDefaults = {
+      ...DEFAULT_FORMATTING,
+      ...current,
+      [key]: value,
+    };
+
     setValue('formatting', next, { shouldDirty: true, shouldTouch: true, shouldValidate: false });
   };
 
-  const setTemplateTheme = (key: keyof NonNullable<CvDraft['templateTheme']>, value: string) => {
-    const current = getValues('templateTheme') || {};
-    const next = { ...current, [key]: value };
-    setValue('templateTheme', next, {
-      shouldDirty: true,
-      shouldTouch: true,
-      shouldValidate: false,
-    });
+  const setTemplateTheme = (key: keyof CvTemplateTheme, value: string) => {
+    const current =
+      (getValues('templateTheme') as CvTemplateTheme | undefined) ??
+      draft?.templateTheme ??
+      DEFAULT_THEME;
+
+    const next: CvTemplateTheme = {
+      ...DEFAULT_THEME,
+      ...current,
+      [key]: value,
+    };
+
+    // Ensure required field stays present
+    if (!next.primary) next.primary = DEFAULT_THEME.primary;
+
+    setValue('templateTheme', next, { shouldDirty: true, shouldTouch: true, shouldValidate: false });
   };
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/5">
       <p className="text-xs uppercase tracking-[0.2em] text-gray-400">Design & Formatting</p>
+
       <div className="mt-3 space-y-3">
+        {/* Typography */}
         <label className="block text-xs text-gray-600 dark:text-white/80">
-          Base text size ({draft?.typography?.baseFontSize ?? 12}px)
+          Base text size ({typography.baseFontSize}px)
           <input
             type="range"
             min={10}
             max={16}
-            value={draft?.typography?.baseFontSize ?? 12}
+            value={typography.baseFontSize}
             onChange={(e) => setTypography('baseFontSize', Number(e.target.value))}
             className="mt-1 w-full"
           />
         </label>
+
         <label className="block text-xs text-gray-600 dark:text-white/80">
-          Heading size ({draft?.typography?.h1Size ?? 28}px)
+          Heading size ({typography.h1Size}px)
           <input
             type="range"
             min={18}
             max={34}
-            value={draft?.typography?.h1Size ?? 28}
+            value={typography.h1Size}
             onChange={(e) => setTypography('h1Size', Number(e.target.value))}
             className="mt-1 w-full"
           />
         </label>
 
+        {/* Colors */}
         <ColorInput
           label="Body text"
-          value={draft?.formatting?.textColor || '#0f172a'}
+          value={formatting.textColor}
           onChange={(v) => setFormatting('textColor', v)}
         />
         <ColorInput
           label="Muted text"
-          value={draft?.formatting?.mutedTextColor || '#475569'}
+          value={formatting.mutedTextColor}
           onChange={(v) => setFormatting('mutedTextColor', v)}
         />
         <ColorInput
+          label="Links"
+          value={formatting.linkColor}
+          onChange={(v) => setFormatting('linkColor', v)}
+        />
+
+        <ColorInput
           label="Accent"
-          value={draft?.templateTheme?.accent || '#0f766e'}
+          value={theme.accent ?? DEFAULT_THEME.accent ?? '#0f766e'}
           onChange={(v) => setTemplateTheme('accent', v)}
         />
         <ColorInput
           label="Primary"
-          value={draft?.templateTheme?.primary || '#0f172a'}
+          value={theme.primary}
           onChange={(v) => setTemplateTheme('primary', v)}
         />
 
@@ -107,12 +192,12 @@ const DesignFormattingPanel: React.FC = () => {
           <>
             <ColorInput
               label="Sidebar bg"
-              value={draft?.templateTheme?.sidebarBg || '#0f172a'}
+              value={theme.sidebarBg ?? DEFAULT_THEME.sidebarBg ?? '#0f172a'}
               onChange={(v) => setTemplateTheme('sidebarBg', v)}
             />
             <ColorInput
               label="Sidebar text"
-              value={draft?.templateTheme?.sidebarText || '#f8fafc'}
+              value={theme.sidebarText ?? DEFAULT_THEME.sidebarText ?? '#f8fafc'}
               onChange={(v) => setTemplateTheme('sidebarText', v)}
             />
           </>
@@ -122,12 +207,12 @@ const DesignFormattingPanel: React.FC = () => {
           <>
             <ColorInput
               label="Header bg"
-              value={draft?.templateTheme?.headerBg || '#0f172a'}
+              value={theme.headerBg ?? DEFAULT_THEME.headerBg ?? '#0f172a'}
               onChange={(v) => setTemplateTheme('headerBg', v)}
             />
             <ColorInput
               label="Header text"
-              value={draft?.templateTheme?.headerText || '#ffffff'}
+              value={theme.headerText ?? DEFAULT_THEME.headerText ?? '#ffffff'}
               onChange={(v) => setTemplateTheme('headerText', v)}
             />
           </>
