@@ -1,8 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { CvDraft } from '@cvpro/shared/types';
 import { resolvePreviewDraft } from '../../templates/demoResume';
 import { templateRegistryById, templateRegistry } from '../../templates/registry';
 import { stripScripts } from '../../utils/sanitizeHtmlForIframe';
+import { PREVIEW_MAX_HEIGHT, withPreviewEnhancements } from '../../utils/cvHtmlEnhance';
 
 type Props = {
   draft: CvDraft;
@@ -11,20 +12,22 @@ type Props = {
 };
 
 const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSourceHint }) => {
+  const [iframeHeight, setIframeHeight] = useState<number>(1400);
   const resolved = resolvePreviewDraft(draft);
-  const previewDraft = useMemo(
-    () => ({
-      ...resolved.draft,
-      typography: { ...(resolved.draft.typography || {}), ...(draft.typography || {}) },
-      formatting: { ...(resolved.draft.formatting || {}), ...(draft.formatting || {}) },
-      templateTheme: { ...(resolved.draft.templateTheme || {}), ...(draft.templateTheme || {}) },
-      richText: { ...(resolved.draft.richText || {}), ...(draft.richText || {}) },
-      sectionOrder: draft.sectionOrder || resolved.draft.sectionOrder,
-      sectionVisibility: {
-        ...(resolved.draft.sectionVisibility || {}),
-        ...(draft.sectionVisibility || {}),
-      },
-    }),
+  const previewDraft = useMemo<CvDraft>(
+    () =>
+      ({
+        ...resolved.draft,
+        typography: { ...(resolved.draft.typography || {}), ...(draft.typography || {}) },
+        formatting: { ...(resolved.draft.formatting || {}), ...(draft.formatting || {}) },
+        templateTheme: { ...(resolved.draft.templateTheme || {}), ...(draft.templateTheme || {}) },
+        richText: { ...(resolved.draft.richText || {}), ...(draft.richText || {}) },
+        sectionOrder: draft.sectionOrder || resolved.draft.sectionOrder,
+        sectionVisibility: {
+          ...(resolved.draft.sectionVisibility || {}),
+          ...(draft.sectionVisibility || {}),
+        },
+      }) as CvDraft,
     [resolved.draft, draft]
   );
   const resumeSource = resolved.resumeSource;
@@ -57,8 +60,23 @@ const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSource
 
   const html = useMemo(() => {
     const htmlRenderer = meta?.renderHtml;
-    return htmlRenderer ? stripScripts(htmlRenderer(previewDraft)) : null;
+    return htmlRenderer
+      ? withPreviewEnhancements(stripScripts(htmlRenderer(previewDraft)), previewDraft)
+      : null;
   }, [meta, previewDraft, styleFingerprint]);
+
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      const data: any = e.data;
+      if (!data || data.__cv_iframe_resize !== true) return;
+      const height = Number(data.height);
+      if (!Number.isFinite(height) || height < 500) return;
+      setIframeHeight(Math.min(height + 24, PREVIEW_MAX_HEIGHT));
+    };
+
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
 
   return (
     <div className="cv-preview-wrapper h-full min-h-0 w-full">
@@ -97,15 +115,16 @@ const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSource
         </div>
       )}
 
-      <div className="cv-page h-full min-h-0 w-full overflow-hidden rounded-2xl bg-white text-gray-900 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.4)]">
+      <div className="cv-page h-full min-h-0 w-full overflow-auto rounded-2xl bg-white text-gray-900 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.4)]">
         {html ? (
           <iframe
             key={`${previewDraft.templateId}:${styleFingerprint}`}
             title={`CV preview ${resumeSourceHint || resumeSource}`}
             srcDoc={html}
             sandbox="allow-same-origin"
-            className="h-full w-full"
-            style={{ border: 0 }}
+            scrolling="auto"
+            className="w-full"
+            style={{ border: 0, height: iframeHeight }}
           />
         ) : Template ? (
           <Template draft={previewDraft} />

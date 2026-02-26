@@ -138,6 +138,7 @@ export async function exportCv(req, res) {
         draft: draft || {},
         templateKey: draft?.templateId,
       });
+      console.info('exportCv htmlLength=', formattedHtml.length);
       console.info('exportCv htmlHead=', formattedHtml.slice(0, 200));
       if (
         !formattedHtml.includes('<style') ||
@@ -190,6 +191,7 @@ export async function getPrintHtml(req, res) {
     const draft = await getDraftForUser(req.user.id, req.params.id);
     if (!draft) return res.status(404).json({ error: 'Draft not found' });
     const html = buildCvHtml({ draft, templateKey: draft.templateId });
+    console.info('getPrintHtml htmlLength=', html.length);
     console.info('getPrintHtml htmlHead=', html.slice(0, 200));
     return res.json({ html });
   } catch (err) {

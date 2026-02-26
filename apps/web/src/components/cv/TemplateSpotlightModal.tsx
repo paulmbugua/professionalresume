@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import type { CvDraft } from '@cvpro/shared/types';
 import { demoResume } from '../../templates/demoResume';
 import { templateRegistryById } from '../../templates/registry';
+import { PREVIEW_MAX_HEIGHT, withPreviewEnhancements } from '../../utils/cvHtmlEnhance';
 
 type TemplateLite = { id: string; name?: string; description?: string };
 
@@ -51,7 +52,7 @@ const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, on
 
   const previewHtml = useMemo(() => {
     if (!templateMeta?.renderHtml) return null;
-    return templateMeta.renderHtml(previewDraft);
+    return withPreviewEnhancements(templateMeta.renderHtml(previewDraft), previewDraft);
   }, [templateMeta, previewDraft]);
 
   useEffect(() => {
@@ -62,7 +63,7 @@ const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, on
       if (!data || data.__cv_iframe_resize !== true) return;
       const next = Number(data.height);
       if (!Number.isFinite(next) || next <= 0) return;
-      setIframeHeight(Math.min(Math.max(next + 24, 900), 5000));
+      setIframeHeight(Math.min(Math.max(next + 24, 900), PREVIEW_MAX_HEIGHT));
     };
 
     window.addEventListener('message', onMsg);
@@ -154,7 +155,7 @@ const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, on
                         title={`${template.name ?? template.id} preview`}
                         srcDoc={previewHtml}
                         sandbox="allow-same-origin allow-scripts"
-                        scrolling="no"
+                        scrolling="auto"
                         className="w-full bg-white"
                         style={{ height: iframeHeight, width: '100%', border: 0 }}
                       />
