@@ -1,13 +1,13 @@
 import type { CvDraft } from '@cvpro/shared/types';
 import { demoResume } from './demoResume';
 
-export function buildPaginationStressDraft(templateId: string): CvDraft {
-  const manyBullets = Array.from(
-    { length: 6 },
-    (_, idx) =>
-      `Delivered initiative ${idx + 1} with measurable KPI lift across product, analytics, and operations.`
-  );
+const manyBullets = Array.from(
+  { length: 6 },
+  (_, idx) =>
+    `Delivered initiative ${idx + 1} with measurable KPI lift across product, analytics, and operations.`
+);
 
+export function buildPaginationStressDraft(templateId: string): CvDraft {
   return {
     ...demoResume,
     id: `stress-${templateId}`,
@@ -26,6 +26,26 @@ export function buildPaginationStressDraft(templateId: string): CvDraft {
       link: `https://example.com/projects/${i + 1}`,
       description:
         'Detailed project narrative intended to force multi-page flow and list wrapping in export and print.',
+      bullets: manyBullets,
+    })),
+  };
+}
+
+export function buildSidebarPaginationStressDraft(templateId: string): CvDraft {
+  return {
+    ...buildPaginationStressDraft(templateId),
+    id: `stress-sidebar-${templateId}`,
+    title: `Sidebar Pagination Stress (${templateId})`,
+    summary: 'Product leader focused on pragmatic execution and measurable outcomes.',
+    skills: ['Roadmapping', 'Stakeholder Management', 'Experimentation'],
+    certifications: [],
+    extras: [],
+    experience: Array.from({ length: 7 }, (_, i) => ({
+      company: `Main Column Heavy Org ${i + 1}`,
+      role: 'Head of Product',
+      start: `${2013 + i}`,
+      end: `${2014 + i}`,
+      location: 'Hybrid',
       bullets: manyBullets,
     })),
   };

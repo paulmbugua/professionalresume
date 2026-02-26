@@ -1,9 +1,36 @@
 import type { CvDraft } from '@cvpro/shared/types';
 
 const PREVIEW_MAX_HEIGHT = 10000;
+const SIDEBAR_TEMPLATE_IDS = new Set(['modern-sidebar', 'modern-sidebar-blue']);
+
+function applySidebarPagedBackgroundCss(templateMeta: { templateId: string }) {
+  const templateId = templateMeta.templateId;
+  if (!SIDEBAR_TEMPLATE_IDS.has(templateId)) return '';
+
+  // Print engines paginate one long flow; sidebar elements cannot stretch into empty
+  // leftover page space. Repeating a page-height background paints each A4 page slice.
+  return `
+body[data-template-id="${templateId}"]{
+  --cv-page-height:269mm;
+  --cv-sidebar-width:70mm;
+}
+@media print{
+  body[data-template-id="${templateId}"] .page{
+    background-image:linear-gradient(to right,var(--sidebarBg) 0 var(--cv-sidebar-width),#fff var(--cv-sidebar-width) 100%);
+    background-repeat:repeat-y;
+    background-size:100% var(--cv-page-height);
+    background-position:top left;
+    box-decoration-break:clone;
+    -webkit-box-decoration-break:clone;
+  }
+}
+body[data-template-id="${templateId}"] aside{background:transparent !important}
+`;
+}
 
 export function withPreviewEnhancements(html: string, draft: CvDraft) {
   const templateId = String(draft.templateId || '').trim();
+  const sidebarPagedBackgroundCss = applySidebarPagedBackgroundCss({ templateId });
   const paginationCss = `
 <style id="cv-shared-pagination">
 @page { size: A4; margin: 14mm; }
@@ -16,12 +43,7 @@ li{break-inside:avoid;page-break-inside:avoid}
   html,body{background:#fff !important;overflow:visible !important}
   .page{width:auto !important;min-height:auto !important;margin:0 !important;box-shadow:none !important;overflow:visible !important}
 }
-body[data-template-id="modern-sidebar"] .page,
-body[data-template-id="modern-sidebar-blue"] .page{
-  background:linear-gradient(to right,var(--sidebarBg) 0 70mm,#fff 70mm 100%);
-}
-body[data-template-id="modern-sidebar"] aside,
-body[data-template-id="modern-sidebar-blue"] aside{background:transparent !important}
+${sidebarPagedBackgroundCss}
 body[data-template-id="creative-timeline"] .timeline:before{
   top:0 !important;
   bottom:0 !important;
