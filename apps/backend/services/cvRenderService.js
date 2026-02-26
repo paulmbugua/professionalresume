@@ -227,6 +227,34 @@ function renderTemplateBody(d, sectionsHtml) {
   return `<main class="page">${header}${sectionsHtml}</main>`;
 }
 
+function buildSharedPaginationCss() {
+  return `
+@page{size:A4;margin:14mm}
+*{box-sizing:border-box}
+section,.item,.row,header,article{break-inside:avoid;page-break-inside:avoid}
+h2,h3{break-after:avoid;page-break-after:avoid}
+ul{break-inside:auto;page-break-inside:auto}
+li{break-inside:avoid;page-break-inside:avoid}
+body{margin:0;background:#f1f5f9;color:var(--textColor);font-family:var(--fontFamily);font-size:var(--bodySize)}
+.page{width:210mm;min-height:297mm;margin:18px auto;background:#fff;padding:16mm;box-shadow:0 12px 35px rgba(2,6,23,.10);overflow:visible}
+.page--bold>header{background:var(--headerBg);color:var(--headerText);margin:-16mm -16mm 12mm;padding:16mm}
+.page--sidebar{display:grid;grid-template-columns:70mm 1fr;padding:0;min-height:297mm;background:linear-gradient(to right,var(--sidebarBg) 0 70mm,#fff 70mm 100%)}
+.page--sidebar aside{background:transparent;color:var(--sidebarText);padding:14mm}
+.page--sidebar .content{padding:16mm}
+header{border-bottom:1px solid var(--borderColor);padding-bottom:8mm}
+h1{font-size:var(--h1Size);margin:0}
+h2{font-size:var(--h2Size);text-transform:uppercase;letter-spacing:.1em;color:var(--accent);margin:16px 0 8px}
+h3{margin:0 0 4px;font-size:var(--h3Size)}
+p{margin:0 0 6px;line-height:1.5}
+.muted{color:var(--mutedTextColor)}
+a{color:var(--linkColor)}
+ul{margin:6px 0 0;padding-left:18px}
+li{margin:4px 0}
+section{margin-bottom:10px}
+@media print{body{background:#fff}.page{margin:0;box-shadow:none;width:auto;min-height:auto;overflow:visible}}
+`;
+}
+
 export function buildCvHtml({ draft }) {
   const d = normalizeDraft(draft || {});
   const rt = (key, fallback = '') =>
@@ -237,15 +265,7 @@ export function buildCvHtml({ draft }) {
   const sections = renderSections(d, rt);
   const cssVars = buildCssVarBlock(d);
 
-  return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><style>${cssVars}
-*{box-sizing:border-box}body{margin:0;background:#f1f5f9;color:var(--textColor);font-family:var(--fontFamily);font-size:var(--bodySize)}
-.page{width:210mm;min-height:297mm;margin:18px auto;background:#fff;padding:16mm;box-shadow:0 12px 35px rgba(2,6,23,.10)}
-.page--bold>header{background:var(--headerBg);color:var(--headerText);margin:-16mm -16mm 12mm;padding:16mm}
-.page--sidebar{display:grid;grid-template-columns:34% 66%;padding:0;min-height:297mm}.page--sidebar aside{background:var(--sidebarBg);color:var(--sidebarText);padding:14mm}.page--sidebar .content{padding:16mm}
-header{border-bottom:1px solid var(--borderColor);padding-bottom:8mm}h1{font-size:var(--h1Size);margin:0}h2{font-size:var(--h2Size);text-transform:uppercase;letter-spacing:.1em;color:var(--accent);margin:16px 0 8px}
-h3{margin:0 0 4px;font-size:var(--h3Size)}p{margin:0 0 6px;line-height:1.5}.muted{color:var(--mutedTextColor)}a{color:var(--linkColor)}ul{margin:6px 0 0;padding-left:18px}li{margin:4px 0}
-section{margin-bottom:10px}@page{size:A4;margin:12mm}@media print{body{background:#fff}.page{margin:0;box-shadow:none}}
-</style></head><body>${renderTemplateBody(d, sections)}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><style>${cssVars}${buildSharedPaginationCss()}</style></head><body data-template-id="${esc(d.templateId || '')}">${renderTemplateBody(d, sections)}</body></html>`;
 }
 
 export async function htmlToPdfBuffer(html) {
@@ -258,6 +278,7 @@ export async function htmlToPdfBuffer(html) {
     if (!pdfBuffer || pdfBuffer.length < 30000) {
       throw new Error('PDF buffer too small; HTML→PDF likely failed');
     }
+    console.info('exportPdf pdfBytes=', pdfBuffer.length);
     return pdfBuffer;
   };
 
