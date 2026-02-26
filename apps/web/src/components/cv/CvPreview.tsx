@@ -58,12 +58,15 @@ const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSource
     ]
   );
 
+  const shouldUseHtmlPreview = !Template && Boolean(meta?.renderHtml);
+
   const html = useMemo(() => {
+    if (!shouldUseHtmlPreview) return null;
     const htmlRenderer = meta?.renderHtml;
     return htmlRenderer
       ? withPreviewEnhancements(stripScripts(htmlRenderer(previewDraft)), previewDraft)
       : null;
-  }, [meta, previewDraft, styleFingerprint]);
+  }, [meta, previewDraft, shouldUseHtmlPreview, styleFingerprint]);
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {

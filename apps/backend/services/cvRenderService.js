@@ -1,22 +1,15 @@
 import fs from 'node:fs';
-import { normalizeCvDraft, renderersById } from '../../../packages/shared/cv/renderers/index.js';
+import { normalizeCvDraft, renderersById, templateMarkersById } from '../../../packages/shared/cv/renderers/index.js';
 
 function assertTemplateMarkers(templateId, html) {
-  const checks = [
+  const baseChecks = [
     ['<style>', html.includes('<style')],
-    ['theme-vars', html.includes('--sidebarBg:') || html.includes('--headerBg:') || html.includes('--primary:')],
-    ['a4-size', html.includes('@page{size:A4') || html.includes('width:210mm')],
+    ['a4-size', html.includes('@page{size:A4') || html.includes('@page { size: A4') || html.includes('width:210mm')],
+    [`data-template-id=${templateId}`, html.includes(`data-template-id="${templateId}"`)],
   ];
 
-  if (templateId === 'modern-sidebar' || templateId === 'modern-sidebar-blue') {
-    checks.push(['page--sidebar', html.includes('page--sidebar')]);
-    checks.push(['--sidebarBg:', html.includes('--sidebarBg:')]);
-  }
-
-  if (templateId === 'bold-header') {
-    checks.push(['page--bold', html.includes('page--bold')]);
-    checks.push(['--headerBg:', html.includes('--headerBg:')]);
-  }
+  const templateChecks = (templateMarkersById[templateId] || []).map((marker) => [marker, html.includes(marker)]);
+  const checks = [...baseChecks, ...templateChecks];
 
   const missing = checks.filter(([, ok]) => !ok).map(([name]) => name);
   if (missing.length) {
