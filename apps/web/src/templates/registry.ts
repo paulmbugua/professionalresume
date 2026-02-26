@@ -1,20 +1,19 @@
 // apps/web/src/templates/registry.ts
 import React from 'react';
 import type { CvDraft, CvTemplate } from '@cvpro/shared/types';
+import { renderersById } from '@cvpro/shared/cv/renderers/index.js';
 
-import AtsMinimal, { renderAtsMinimalHtml } from '../components/cv/templates/AtsMinimal';
-import ModernSidebar, { renderModernSidebarHtml } from '../components/cv/templates/ModernSidebar';
-import BoldHeader, { renderBoldHeaderHtml } from '../components/cv/templates/BoldHeader';
-import ElegantSerif, { renderElegantSerifHtml } from '../components/cv/templates/ElegantSerif';
-import CreativeTimeline, { renderCreativeTimelineHtml } from '../components/cv/templates/CreativeTimeline';
-import CompactOnePager, { renderCompactOnePagerHtml } from '../components/cv/templates/CompactOnePager';
+import AtsMinimal from '../components/cv/templates/AtsMinimal';
+import ModernSidebar from '../components/cv/templates/ModernSidebar';
+import BoldHeader from '../components/cv/templates/BoldHeader';
+import ElegantSerif from '../components/cv/templates/ElegantSerif';
+import CreativeTimeline from '../components/cv/templates/CreativeTimeline';
+import CompactOnePager from '../components/cv/templates/CompactOnePager';
 
-import ModernTeal, { renderModernTealHtml } from '../components/cv/templates/ModernTeal';
-import ModernSidebarBlue, {
-  renderModernSidebarBlueHtml,
-} from '../components/cv/templates/ModernSidebarBlue';
+import ModernTeal from '../components/cv/templates/ModernTeal';
+import ModernSidebarBlue from '../components/cv/templates/ModernSidebarBlue';
 
-import AtsCompact, { renderAtsCompactHtml } from '../components/cv/templates/AtsCompact';
+import AtsCompact from '../components/cv/templates/AtsCompact';
 
 export type TemplateMeta = CvTemplate & {
   description?: string;
@@ -37,7 +36,7 @@ export const templateRegistry: TemplateMeta[] = [
     description: 'Simple, ATS-friendly layout with clean typography.',
     tags: ['ats', 'minimal'],
     component: AtsMinimal,
-    renderHtml: renderAtsMinimalHtml,
+    renderHtml: renderersById['ats-minimal'],
   },
   {
     id: 'modern-sidebar',
@@ -48,7 +47,7 @@ export const templateRegistry: TemplateMeta[] = [
     description: 'Two-column layout that highlights skills and summary.',
     tags: ['modern', 'sidebar'],
     component: ModernSidebar,
-    renderHtml: renderModernSidebarHtml,
+    renderHtml: renderersById['modern-sidebar'],
   },
   {
     id: 'bold-header',
@@ -59,7 +58,7 @@ export const templateRegistry: TemplateMeta[] = [
     description: 'Statement header with strong section hierarchy.',
     tags: ['modern', 'bold'],
     component: BoldHeader,
-    renderHtml: renderBoldHeaderHtml, // ✅ fixes blank thumbnail
+    renderHtml: renderersById['bold-header'], // ✅ fixes blank thumbnail
   },
   {
     id: 'elegant-serif',
@@ -70,7 +69,7 @@ export const templateRegistry: TemplateMeta[] = [
     description: 'Classic serif styling for a timeless look.',
     tags: ['classic', 'serif'],
     component: ElegantSerif,
-    renderHtml: renderElegantSerifHtml,
+    renderHtml: renderersById['elegant-serif'],
   },
   {
     id: 'creative-timeline',
@@ -81,7 +80,7 @@ export const templateRegistry: TemplateMeta[] = [
     description: 'Timeline layout that emphasizes career progression.',
     tags: ['creative', 'timeline'],
     component: CreativeTimeline,
-    renderHtml: renderCreativeTimelineHtml,
+    renderHtml: renderersById['creative-timeline'],
   },
   {
     id: 'modern-teal',
@@ -92,7 +91,7 @@ export const templateRegistry: TemplateMeta[] = [
     description: 'Teal-accent two-column layout with a focused contact rail.',
     tags: ['modern', 'teal', 'two-column'],
     component: ModernTeal,
-    renderHtml: renderModernTealHtml,
+    renderHtml: renderersById['modern-teal'],
   },
   {
     id: 'modern-sidebar-blue',
@@ -103,7 +102,7 @@ export const templateRegistry: TemplateMeta[] = [
     description: 'Blue sidebar with initials avatar and strong section blocks.',
     tags: ['modern', 'sidebar', 'blue'],
     component: ModernSidebarBlue,
-    renderHtml: renderModernSidebarBlueHtml,
+    renderHtml: renderersById['modern-sidebar-blue'],
   },
   {
     id: 'ats-compact',
@@ -114,7 +113,7 @@ export const templateRegistry: TemplateMeta[] = [
     description: 'Compact single-column layout optimized for ATS parsing.',
     tags: ['ats', 'compact', 'single-column'],
     component: AtsCompact,
-    renderHtml: renderAtsCompactHtml,
+    renderHtml: renderersById['ats-compact'],
   },
   {
     id: 'compact-one-pager',
@@ -125,7 +124,7 @@ export const templateRegistry: TemplateMeta[] = [
     description: 'Dense one-page layout for concise resumes.',
     tags: ['compact', 'ats'],
     component: CompactOnePager,
-    renderHtml: renderCompactOnePagerHtml,
+    renderHtml: renderersById['compact-one-pager'],
   },
 ];
 

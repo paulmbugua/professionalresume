@@ -124,6 +124,9 @@ export async function exportCv(req, res) {
     if (value.draftId) {
       draft = await getDraftForUser(req.user.id, value.draftId);
       if (!draft) return res.status(404).json({ error: 'Draft not found' });
+      console.info('[exportCv] source=db draftId=', value.draftId);
+    } else {
+      console.info('[exportCv] source=request cvJson=true');
     }
 
     let mimeType = 'application/pdf';
@@ -134,20 +137,7 @@ export async function exportCv(req, res) {
       mimeType = upload.mimetype || 'application/pdf';
       buffer = upload.buffer;
     } else {
-      const formattedHtml = buildCvHtml({
-        draft: draft || {},
-        templateKey: draft?.templateId,
-      });
-      console.info('exportCv htmlLength=', formattedHtml.length);
-      console.info('exportCv htmlHead=', formattedHtml.slice(0, 200));
-      if (
-        !formattedHtml.includes('<style') ||
-        !formattedHtml.includes('--primary')
-      ) {
-        throw new Error(
-          'Generated export HTML is missing style/theme variables',
-        );
-      }
+      const formattedHtml = buildCvHtml({ draft: draft || {} });
       buffer = await htmlToPdfBuffer(formattedHtml);
       mimeType = 'application/pdf';
     }
@@ -190,7 +180,7 @@ export async function getPrintHtml(req, res) {
   try {
     const draft = await getDraftForUser(req.user.id, req.params.id);
     if (!draft) return res.status(404).json({ error: 'Draft not found' });
-    const html = buildCvHtml({ draft, templateKey: draft.templateId });
+    const html = buildCvHtml({ draft });
     console.info('getPrintHtml htmlLength=', html.length);
     console.info('getPrintHtml htmlHead=', html.slice(0, 200));
     return res.json({ html });
