@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+
 const defaultSectionOrder = [
   'summary',
   'skills',
@@ -269,10 +271,7 @@ export function buildCvHtml({ draft }) {
 }
 
 export async function htmlToPdfBuffer(html) {
-  /** @type {import('playwright').Browser | import('puppeteer').Browser | null} */
   let browser = null;
-  /** @type {'playwright'|'puppeteer'|null} */
-  let engine = null;
 
   const assertPdf = (pdfBuffer) => {
     if (!pdfBuffer || pdfBuffer.length < 30000) {
@@ -282,20 +281,29 @@ export async function htmlToPdfBuffer(html) {
     return pdfBuffer;
   };
 
-  try {
-    // ---------- Playwright (preferred) ----------
-    const playwright = await import('playwright');
-    engine = 'playwright';
-    browser = await playwright.chromium.launch({ headless: true });
-    console.info('exportPdf engine=playwright');
+  const tryPuppeteer = async () => {
+    const puppeteer = await import('puppeteer');
+    console.info('exportPdf engine=puppeteer');
+
+    const systemChrome =
+      'C:\\\\Program Files\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe';
+
+    if (!fs.existsSync(systemChrome)) {
+      throw new Error(
+        `System Chrome not found at ${systemChrome}. Install Chrome or set CHROME_PATH env var.`
+      );
+    }
+
+    browser = await puppeteer.launch({
+      headless: true,
+      executablePath: systemChrome, // ✅ use system Chrome
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
+    });
 
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle' });
+    if (typeof page.emulateMediaType === 'function') await page.emulateMediaType('print');
 
-    // ✅ Playwright API (NOT emulateMediaType)
-    if (typeof page.emulateMedia === 'function') {
-      await page.emulateMedia({ media: 'print' });
-    }
+    await page.setContent(html, { waitUntil: 'networkidle0' });
 
     const pdfBuffer = await page.pdf({
       format: 'A4',
@@ -304,59 +312,54 @@ export async function htmlToPdfBuffer(html) {
     });
 
     return assertPdf(pdfBuffer);
-  } catch (playwrightErr) {
-    // ---------- Puppeteer fallback ----------
+  };
+
+  const tryPlaywright = async () => {
+    const playwright = await import('playwright');
+    console.info('exportPdf engine=playwright');
+
+    browser = await playwright.chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+    });
+
+    const page = await browser.newPage();
+    if (typeof page.emulateMedia === 'function') await page.emulateMedia({ media: 'print' });
+
+    await page.setContent(html, { waitUntil: 'networkidle' });
+
+    const pdfBuffer = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      preferCSSPageSize: true,
+    });
+
+    return assertPdf(pdfBuffer);
+  };
+
+  try {
+    if (process.platform === 'win32') {
+      // ✅ Windows: Puppeteer + system Chrome first (stable)
+      try {
+        return await tryPuppeteer();
+      } catch (e) {
+        console.warn('[exportPdf] puppeteer failed on win32, trying playwright...', e?.message || e);
+        return await tryPlaywright();
+      }
+    }
+
+    // Non-Windows: Playwright first
     try {
-      const puppeteer = await import('puppeteer');
-      engine = 'puppeteer';
-      browser = await puppeteer.default.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      });
-      console.info('exportPdf engine=puppeteer');
-
-      const page = await browser.newPage();
-      await page.setContent(html, { waitUntil: 'networkidle0' });
-
-      // ✅ Puppeteer API
-      if (typeof page.emulateMediaType === 'function') {
-        await page.emulateMediaType('print');
-      }
-
-      const pdfBuffer = await page.pdf({
-        format: 'A4',
-        printBackground: true,
-        preferCSSPageSize: true,
-      });
-
-      return assertPdf(pdfBuffer);
-    } catch (puppeteerErr) {
-      const playwrightMessage =
-        (playwrightErr && playwrightErr.message) || String(playwrightErr);
-      const puppeteerMessage =
-        (puppeteerErr && puppeteerErr.message) || String(puppeteerErr);
-
-      if (
-        /executable doesn't exist|browser has not been found|install chromium/i.test(
-          `${playwrightMessage} ${puppeteerMessage}`,
-        )
-      ) {
-        throw new Error(
-          `HTML→PDF failed: missing browser binary. Run "npx playwright install chromium". Playwright: ${playwrightMessage}. Puppeteer: ${puppeteerMessage}`,
-        );
-      }
-
-      throw new Error(
-        `HTML→PDF rendering failed. Playwright: ${playwrightMessage}. Puppeteer: ${puppeteerMessage}`,
-      );
+      return await tryPlaywright();
+    } catch (e) {
+      console.warn('[exportPdf] playwright failed, trying puppeteer...', e?.message || e);
+      return await tryPuppeteer();
     }
   } finally {
     if (browser) {
       try {
         await browser.close();
-      } catch (e) {
-        // ignore close errors
-      }
+      } catch {}
     }
   }
 }
