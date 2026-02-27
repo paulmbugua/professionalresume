@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import type { CvDraft } from '@cvpro/shared/types';
 import { demoResume } from '../../templates/demoResume';
 import { templateRegistryById } from '../../templates/registry';
-import { PREVIEW_MAX_HEIGHT, withPreviewEnhancements } from '../../utils/cvHtmlEnhance';
+import { withPreviewEnhancements } from '../../utils/cvHtmlEnhance';
 
 type TemplateLite = { id: string; name?: string; description?: string };
 
@@ -17,9 +17,11 @@ type Props = {
 
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
 
+// One-page height used by your templates (matches your BASE_H in thumbnails)
+const ONE_PAGE_HEIGHT_PX = 1130;
+
 const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, onContinue }) => {
   const [scale, setScale] = useState(1);
-  const [iframeHeight, setIframeHeight] = useState<number>(1100);
 
   // Close on ESC
   useEffect(() => {
@@ -33,10 +35,7 @@ const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, on
 
   // Reset zoom each open
   useEffect(() => {
-    if (isOpen) {
-      setScale(1);
-      setIframeHeight(1100);
-    }
+    if (isOpen) setScale(1);
   }, [isOpen, template?.id]);
 
   const templateMeta = template?.id ? templateRegistryById[template.id] : undefined;
@@ -51,24 +50,20 @@ const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, on
   }, [template?.id]);
 
   const previewHtml = useMemo(() => {
-    if (!templateMeta?.renderHtml) return null;
-    return withPreviewEnhancements(templateMeta.renderHtml(previewDraft), previewDraft);
-  }, [templateMeta, previewDraft]);
+    if (!templateMeta?.renderHtml || !template?.id) return null;
 
-  useEffect(() => {
-    if (!isOpen) return;
+    const raw = templateMeta.renderHtml(previewDraft);
 
-    const onMsg = (e: MessageEvent) => {
-      const data: any = e.data;
-      if (!data || data.__cv_iframe_resize !== true) return;
-      const next = Number(data.height);
-      if (!Number.isFinite(next) || next <= 0) return;
-      setIframeHeight(Math.min(Math.max(next + 24, 900), PREVIEW_MAX_HEIGHT));
-    };
-
-    window.addEventListener('message', onMsg);
-    return () => window.removeEventListener('message', onMsg);
-  }, [isOpen]);
+    // ✅ Modal should show ONE page only and should NOT autosize
+    // - injectAutosize:false prevents height growth loop
+    // - screenOnePageOnly:true clamps screen rendering to one page
+    return withPreviewEnhancements(
+      raw,
+      previewDraft,
+      { templateId: template.id },
+      { injectAutosize: false, screenOnePageOnly: true }
+    );
+  }, [templateMeta, previewDraft, template?.id]);
 
   if (!isOpen || !template) return null;
 
@@ -144,10 +139,7 @@ const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, on
           <div className="grid h-[calc(92vh-56px-34px)] min-h-0 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px]">
             {/* Big preview */}
             <div className="h-full min-h-0 overflow-auto bg-gradient-to-b from-gray-50 to-white p-3 sm:p-4 dark:from-black/20 dark:to-black/10">
-              <div
-                className="inline-block origin-top-left pb-10"
-                style={{ transform: `scale(${scale})` }}
-              >
+              <div className="inline-block origin-top-left pb-10" style={{ transform: `scale(${scale})` }}>
                 <div className="min-w-[860px]">
                   <div className="overflow-hidden rounded-2xl bg-white shadow-[0_20px_60px_-40px_rgba(15,23,42,0.35)]">
                     {previewHtml ? (
@@ -155,9 +147,10 @@ const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, on
                         title={`${template.name ?? template.id} preview`}
                         srcDoc={previewHtml}
                         sandbox="allow-same-origin allow-scripts"
-                        scrolling="auto"
-                        className="w-full bg-white"
-                        style={{ height: iframeHeight, width: '100%', border: 0 }}
+                        // ✅ no autosize, no infinite scroll: lock to one page height
+                        scrolling="no"
+                        className="w-full"
+                        style={{ height: ONE_PAGE_HEIGHT_PX, width: '100%', border: 0, background: '#fff' }}
                       />
                     ) : TemplateComponent ? (
                       <TemplateComponent draft={previewDraft} />
@@ -179,8 +172,8 @@ const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, on
                     What you’re seeing
                   </p>
                   <p className="mt-2 text-sm text-gray-700 dark:text-white/80">
-                    This is a full-size preview using our demo resume. When you continue, you’ll
-                    start editing and your details will replace the demo content in real time.
+                    This is a one-page preview using our demo resume. When you continue, you’ll start editing and
+                    your details will replace the demo content in real time.
                   </p>
                 </div>
 
@@ -189,9 +182,7 @@ const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, on
                     Controls
                   </p>
                   <ul className="mt-2 space-y-2 text-sm text-gray-700 dark:text-white/80">
-                    <li>• Scroll to see full page</li>
                     <li>• Use zoom (top-right)</li>
-                    <li>• Drag horizontal bar at bottom</li>
                     <li>• Press Esc to close</li>
                   </ul>
                 </div>
@@ -217,8 +208,7 @@ const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, on
 
           {/* Bottom hint (mobile) */}
           <div className="border-t border-gray-200 bg-white/70 px-4 py-2 text-[11px] text-gray-500 dark:border-white/10 dark:bg-white/5 dark:text-white/60 lg:hidden">
-            Tip: Use the bottom scrollbar to pan horizontally and see the full layout. Tap Continue
-            to start editing.
+            Tip: Use zoom (top-right). Tap Continue to start editing.
           </div>
         </div>
       </div>

@@ -10,24 +10,37 @@ const SIDEBAR_TEMPLATE_IDS = new Set(['modern-sidebar', 'modern-sidebar-blue']);
 function applySidebarPagedBackgroundCss(templateId) {
   if (!SIDEBAR_TEMPLATE_IDS.has(String(templateId || '').trim())) return '';
 
-  // In paged media the sidebar element stops at content height. A repeating page-sized
-  // background on the primary container paints the sidebar stripe for every printed page.
   return `
 <style id="cv-sidebar-paged-background">
 body[data-template-id="${templateId}"]{
-  --cv-page-height:269mm;
+  --cv-page-height:269mm;     /* A4 content height used for repeat */
   --cv-sidebar-width:70mm;
 }
+
+/* ✅ PRINT: paint on html/body so it repeats cleanly for every page slice */
 @media print{
-  body[data-template-id="${templateId}"] .page{
-    background-image:linear-gradient(to right,var(--sidebarBg) 0 var(--cv-sidebar-width),#fff var(--cv-sidebar-width) 100%);
+  html,body{
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    background-image:linear-gradient(
+      to right,
+      var(--sidebarBg) 0 var(--cv-sidebar-width),
+      #fff var(--cv-sidebar-width) 100%
+    );
     background-repeat:repeat-y;
     background-size:100% var(--cv-page-height);
     background-position:top left;
-    box-decoration-break:clone;
-    -webkit-box-decoration-break:clone;
+  }
+
+  /* ✅ prevent template .page background (often light gray) from showing */
+  body[data-template-id="${templateId}"] .page{
+    background: transparent !important;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
   }
 }
+
+/* avoid double painting from aside */
 body[data-template-id="${templateId}"] aside{background:transparent !important}
 </style>`;
 }
