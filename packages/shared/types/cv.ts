@@ -91,6 +91,7 @@ export type CvDraft = {
     phone: string;
     location: string;
     links: CvLink[];
+    photoUrl?: string;
   };
   summary: string;
   skills: string[];

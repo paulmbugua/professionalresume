@@ -90,6 +90,7 @@ export const draftPatchSchema = Joi.object({
     phone: Joi.string().allow(''),
     location: Joi.string().allow(''),
     links: Joi.array().items(linkSchema),
+    photoUrl: Joi.string().uri({ scheme: ['https'] }).allow(''),
   }),
   summary: Joi.string().allow(''),
   skills: Joi.array().items(Joi.string().allow('')),

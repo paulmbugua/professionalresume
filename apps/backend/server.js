@@ -17,6 +17,7 @@ import { inflightLimiter } from './middleware/inflightLimiter.js';
 import cvRoutes from './routes/cvRoutes.js';
 import cloudinaryRoutes from './routes/cloudinaryRoutes.js';
 import earningsRoutes from './routes/earningsRoutes.js';
+import uploadsRoutes from './routes/uploadsRoutes.js';
 
 
 // Middleware
@@ -197,6 +198,7 @@ app.use('/api/cv',                                      cvRoutes);
 app.use('/api/mpesa',                                  mpesaUrlsRoutes);
 
 app.use('/api/cloudinary',                             cloudinaryRoutes);
+app.use('/api/uploads',                                uploadsRoutes);
 
 app.use('/api/earnings',                               earningsRoutes);
 app.use('/api/user', userRouter);

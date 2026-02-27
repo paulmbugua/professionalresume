@@ -146,7 +146,7 @@ const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, on
                       <iframe
                         title={`${template.name ?? template.id} preview`}
                         srcDoc={previewHtml}
-                        sandbox="allow-same-origin allow-scripts"
+                        sandbox="allow-same-origin"
                         // ✅ no autosize, no infinite scroll: lock to one page height
                         scrolling="no"
                         className="w-full"

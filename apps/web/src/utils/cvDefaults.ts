@@ -43,6 +43,7 @@ export function normalizeDraft(draft: CvDraft): CvDraft {
       phone: draft.basics?.phone || '',
       location: draft.basics?.location || '',
       links: draft.basics?.links || [],
+      photoUrl: draft.basics?.photoUrl || '',
     },
     skills: draft.skills || [],
     experience: draft.experience || [],
