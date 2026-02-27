@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useFieldArray, useFormContext, Controller, useWatch } from 'react-hook-form';
 import type { CvDraft, CvSectionKey } from '@cvpro/shared/types';
+import { useShopContext } from '@cvpro/shared/context';
 import { demoResume, hasAnyUserData } from '../../templates/demoResume';
 import { stripHtml } from '../../utils/cvRichText';
+import { parseUploadedCv } from '../../utils/cvParseApi';
 
 // ✅ forwardRef so react-hook-form can register inputs correctly
 const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
@@ -171,7 +173,15 @@ const pillPrimary = `${pillBtn} border-transparent bg-primary text-white hover:o
 
 const CvForm: React.FC = () => {
   const { register, control, setValue, getValues } = useFormContext<CvDraft>();
+  const { backendUrl, token } = useShopContext() as any;
   const [skillInput, setSkillInput] = useState('');
+  const [uploadMode, setUploadMode] = useState<'merge' | 'replace'>('merge');
+  const [cvFile, setCvFile] = useState<File | null>(null);
+  const [parseState, setParseState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [parsedPreview, setParsedPreview] = useState<any | null>(null);
+  const [diagnostics, setDiagnostics] = useState<{ warnings?: string[]; parser?: string } | null>(null);
+  const [hasAppliedUpload, setHasAppliedUpload] = useState(false);
 
   // one-time guard so we don’t preload multiple times
   const didAutoPreloadRef = useRef(false);
@@ -351,7 +361,7 @@ const CvForm: React.FC = () => {
 
   // ✅ AUTO: Start from demo by default (ONLY if user has no data)
   useEffect(() => {
-    if (didAutoPreloadRef.current) return;
+    if (didAutoPreloadRef.current || hasAppliedUpload) return;
 
     const current = getValues();
     const hasUser = hasAnyUserData(current);
@@ -365,7 +375,7 @@ const CvForm: React.FC = () => {
       }, 0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [hasAppliedUpload]);
 
   // ---------- Clear helpers ----------
   const clearAllContent = () => {
@@ -456,6 +466,110 @@ const CvForm: React.FC = () => {
     setValue('skills', next as any, { shouldDirty: true, shouldTouch: true, shouldValidate: false });
   };
 
+
+  const applyExtractedToForm = (extracted: Partial<CvDraft>, mode: 'merge' | 'replace') => {
+    const current = getValues();
+
+    const choose = (existing: any, incoming: any) => {
+      if (mode === 'replace') return incoming;
+      const hasExisting = Array.isArray(existing)
+        ? existing.length > 0
+        : typeof existing === 'string'
+          ? existing.trim().length > 0
+          : Boolean(existing);
+      return hasExisting ? existing : incoming;
+    };
+
+    const nextBasics = {
+      ...current.basics,
+      name: choose(current.basics?.name, extracted.basics?.name || ''),
+      headline: choose(current.basics?.headline, extracted.basics?.headline || ''),
+      email: choose(current.basics?.email, extracted.basics?.email || ''),
+      phone: choose(current.basics?.phone, extracted.basics?.phone || ''),
+      location: choose(current.basics?.location, extracted.basics?.location || ''),
+      links: mode === 'replace' ? (extracted.basics?.links || []) : (current.basics?.links?.length ? current.basics.links : (extracted.basics?.links || [])),
+    } as any;
+
+    setValue('basics', nextBasics, { shouldDirty: true, shouldTouch: true });
+    linksField.replace(nextBasics.links || []);
+
+    const summaryValue = mode === 'replace'
+      ? (extracted.summary || '')
+      : (current.summary?.trim() ? current.summary : (extracted.summary || ''));
+    setValue('summary', summaryValue as any, { shouldDirty: true, shouldTouch: true });
+    setValue('richText.summary' as any, summaryValue as any, { shouldDirty: true, shouldTouch: true });
+
+    const mergedSkills = mode === 'replace'
+      ? (extracted.skills || [])
+      : Array.from(new Set([...(current.skills || []), ...(extracted.skills || [])]));
+    setValue('skills', mergedSkills as any, { shouldDirty: true, shouldTouch: true });
+
+    const exp = mode === 'replace' ? (extracted.experience || []) : ((current.experience?.length ? current.experience : (extracted.experience || [])) as any);
+    const edu = mode === 'replace' ? (extracted.education || []) : ((current.education?.length ? current.education : (extracted.education || [])) as any);
+    const proj = mode === 'replace' ? (extracted.projects || []) : ((current.projects?.length ? current.projects : (extracted.projects || [])) as any);
+    const cert = mode === 'replace' ? (extracted.certifications || []) : ((current.certifications?.length ? current.certifications : (extracted.certifications || [])) as any);
+
+    experienceField.replace(exp as any);
+    educationField.replace(edu as any);
+    projectsField.replace(proj as any);
+    certificationsField.replace(cert as any);
+
+    setValue('experience', exp as any, { shouldDirty: true, shouldTouch: true });
+    setValue('education', edu as any, { shouldDirty: true, shouldTouch: true });
+    setValue('projects', proj as any, { shouldDirty: true, shouldTouch: true });
+    setValue('certifications', cert as any, { shouldDirty: true, shouldTouch: true });
+
+    const extraLanguages = mode === 'replace'
+      ? (extracted.extras?.languages || [])
+      : (current.extras?.languages?.length ? current.extras.languages : (extracted.extras?.languages || []));
+    const extraInterests = mode === 'replace'
+      ? (extracted.extras?.interests || [])
+      : (current.extras?.interests?.length ? current.extras.interests : (extracted.extras?.interests || []));
+
+    setValue('extras.languages', extraLanguages as any, { shouldDirty: true, shouldTouch: true });
+    setValue('extras.interests', extraInterests as any, { shouldDirty: true, shouldTouch: true });
+
+    if (!current.title?.trim()) {
+      const suggestedTitle = (extracted.basics?.name || current.basics?.name || 'My CV').trim();
+      setValue('title', `${suggestedTitle} CV` as any, { shouldDirty: true, shouldTouch: true });
+    }
+
+    const nextVisibility = { ...(current.sectionVisibility || {}) } as Record<CvSectionKey, boolean>;
+    const extractedHas = {
+      summary: Boolean((extracted.summary || '').trim()),
+      skills: Boolean(extracted.skills?.length),
+      experience: Boolean(extracted.experience?.length),
+      education: Boolean(extracted.education?.length),
+      projects: Boolean(extracted.projects?.length),
+      certifications: Boolean(extracted.certifications?.length),
+      extras: Boolean(extracted.extras?.languages?.length || extracted.extras?.interests?.length),
+    };
+    (Object.keys(extractedHas) as CvSectionKey[]).forEach((key) => {
+      if (mode === 'replace') nextVisibility[key] = extractedHas[key];
+      else if (extractedHas[key]) nextVisibility[key] = true;
+    });
+    setValue('sectionVisibility', nextVisibility as any, { shouldDirty: true, shouldTouch: true });
+
+    didAutoPreloadRef.current = true;
+    setHasAppliedUpload(true);
+  };
+
+  const onExtractCv = async () => {
+    if (!backendUrl || !token || !cvFile) return;
+    setParseState('loading');
+    setParseError(null);
+    setParsedPreview(null);
+    try {
+      const parsed = await parseUploadedCv({ backendUrl, token, file: cvFile, mode: uploadMode });
+      setParsedPreview(parsed.extracted || null);
+      setDiagnostics(parsed.diagnostics || null);
+      setParseState('success');
+    } catch (err: any) {
+      setParseError(err?.response?.data?.error || err?.message || 'Failed to parse CV');
+      setParseState('error');
+    }
+  };
+
   // ---------- Pills ----------
   const includePill = (key: CvSectionKey) => (
     <button
@@ -507,6 +621,77 @@ const CvForm: React.FC = () => {
   return (
     <div className="space-y-6">
       {topActions}
+
+      <SectionCard
+        title="Upload your existing CV"
+        subtitle="Upload PDF/DOCX and we’ll auto-fill the form."
+        isOpen
+        onToggle={() => {}}
+      >
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              type="file"
+              accept="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.pdf,.docx"
+              onChange={(e) => setCvFile(e.target.files?.[0] || null)}
+              className="text-xs"
+            />
+            <label className="inline-flex items-center gap-2 text-xs text-gray-600">
+              <input
+                type="checkbox"
+                checked={uploadMode === 'merge'}
+                onChange={(e) => setUploadMode(e.target.checked ? 'merge' : 'replace')}
+              />
+              Merge into existing data (recommended)
+            </label>
+            <button
+              type="button"
+              disabled={!cvFile || parseState === 'loading'}
+              onClick={onExtractCv}
+              className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+            >
+              {parseState === 'loading' ? 'Uploading & parsing...' : 'Extract details'}
+            </button>
+          </div>
+
+          {parseState === 'error' && parseError ? (
+            <p className="text-xs text-rose-600">{parseError}</p>
+          ) : null}
+
+          {parseState === 'success' && parsedPreview ? (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
+              <p><b>Name:</b> {parsedPreview.basics?.name || '—'}</p>
+              <p><b>Headline:</b> {parsedPreview.basics?.headline || '—'}</p>
+              <p><b>Email / Phone:</b> {parsedPreview.basics?.email || '—'} / {parsedPreview.basics?.phone || '—'}</p>
+              <p><b>Location:</b> {parsedPreview.basics?.location || '—'}</p>
+              <p className="mt-2">
+                <b>Counts:</b> skills {parsedPreview.skills?.length || 0} · experience {parsedPreview.experience?.length || 0} · education {parsedPreview.education?.length || 0} · projects {parsedPreview.projects?.length || 0} · certs {parsedPreview.certifications?.length || 0}
+              </p>
+              {diagnostics?.warnings?.length ? (
+                <ul className="mt-2 list-disc pl-5">
+                  {diagnostics.warnings.map((w, idx) => <li key={idx}>{w}</li>)}
+                </ul>
+              ) : null}
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => applyExtractedToForm(parsedPreview, uploadMode)}
+                  className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white"
+                >
+                  Apply to form
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setParsedPreview(null); setParseState('idle'); setDiagnostics(null); }}
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700"
+                >
+                  Discard
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </SectionCard>
 
       {/* BASICS */}
       <SectionCard

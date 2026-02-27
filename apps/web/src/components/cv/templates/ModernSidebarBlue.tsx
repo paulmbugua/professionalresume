@@ -15,36 +15,6 @@ const esc = (v: any) =>
 
 const safeKey = (s?: string | null) => (s ?? '').toString().trim().toLowerCase();
 
-const withAutosizeScript = (html: string) => {
-  const autosize = `<script>
-(function(){
-  function send(){
-    try{
-      var h = Math.max(
-        document.body.scrollHeight,
-        document.documentElement.scrollHeight,
-        document.body.offsetHeight,
-        document.documentElement.offsetHeight
-      );
-      parent.postMessage({ __cv_iframe_resize: true, height: h }, '*');
-    }catch(e){}
-  }
-  window.addEventListener('load', send);
-  window.addEventListener('resize', send);
-  try{
-    var obs = new MutationObserver(function(){ send(); });
-    obs.observe(document.documentElement, { childList:true, subtree:true, characterData:true, attributes:true });
-  }catch(e){}
-  setTimeout(send, 0);
-  setInterval(send, 500);
-})();
-</script>`;
-
-  return html.includes('</body>')
-    ? html.replace('</body>', `${autosize}</body>`)
-    : `${html}${autosize}`;
-};
-
 function initials(name?: string) {
   const parts = (name || '').trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return 'YN';
@@ -160,7 +130,8 @@ ${cssVarBlock}
 body{margin:0;background:#e2e8f0;font-family:Poppins,system-ui,Segoe UI,Arial;color:var(--ink)}
 .page{width:210mm;min-height:297mm;margin:18px auto;background:var(--paper);display:grid;grid-template-columns:72mm 1fr;box-shadow:0 12px 35px rgba(2,6,23,.12)}
 aside{background:linear-gradient(180deg,var(--sidebarBg),var(--primary));color:var(--sidebarText);padding:12mm}
-.avatar{width:78px;height:78px;border-radius:999px;background:rgba(255,255,255,.2);display:grid;place-items:center;font-size:27px;font-weight:700;margin-bottom:12px}
+.avatar{width:78px;height:78px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,.2);display:grid;place-items:center;font-size:27px;font-weight:700;margin-bottom:12px}
+.avatar-img{width:100%;height:100%;object-fit:cover;display:block}
 .side-name{font-size:22px;line-height:1.15;font-weight:700;margin:0 0 2px}.side-headline{margin:0 0 14px;color:var(--sideText);font-size:11px}
 .s-title{margin:0 0 8px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:color-mix(in srgb, var(--sidebarText) 78%, white 22%);font-weight:700}
 .s-block{margin:0 0 14px}.s-block div,.s-block li{font-size:11px;line-height:1.5;color:var(--sidebarText)}
@@ -177,7 +148,7 @@ main{padding:12mm 13mm}.name{margin:0;font-size:30px;letter-spacing:-.02em}.head
 <body>
 <main class="page">
   <aside>
-    <div class="avatar">${esc(initials(b.name))}</div>
+    <div class="avatar">${b.photoUrl ? `<img class="avatar-img" src="${esc(b.photoUrl)}" alt="Profile photo" />` : esc(initials(b.name))}</div>
     <p class="side-name">${esc(b.name || 'Your Name')}</p>
     <p class="side-headline">${esc(b.headline || 'Professional Headline')}</p>
     <section class="s-block"><p class="s-title">Contact</p>${contact || '<div>Add contact details</div>'}</section>
@@ -194,9 +165,8 @@ main{padding:12mm 13mm}.name{margin:0;font-size:30px;letter-spacing:-.02em}.head
 </body>
 </html>`;
 
-  const htmlWithAutosize = withAutosizeScript(html);
-  logScriptProbe('modern-sidebar-blue', htmlWithAutosize);
-  return htmlWithAutosize;
+  logScriptProbe('modern-sidebar-blue', html);
+  return html;
 }
 
 const ModernSidebarBlue: React.FC<Props> = ({ draft }) => {

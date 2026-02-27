@@ -64,7 +64,7 @@ const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSource
     if (!shouldUseHtmlPreview) return null;
     const htmlRenderer = meta?.renderHtml;
     return htmlRenderer
-      ? withPreviewEnhancements(stripScripts(htmlRenderer(previewDraft)), previewDraft)
+      ? withPreviewEnhancements(stripScripts(htmlRenderer(previewDraft)), previewDraft, { templateId: previewDraft.templateId }, { injectAutosize: true })
       : null;
   }, [meta, previewDraft, shouldUseHtmlPreview, styleFingerprint]);
 
