@@ -54,7 +54,7 @@ const CvTemplatesPage: React.FC = () => {
   const continueWithTemplate = React.useCallback(
     (templateId: string) => {
       setSpotlightOpen(false);
-      router.push(`/builder/new?templateId=${encodeURIComponent(templateId)}`);
+      router.push(`/resume/create-choice?templateId=${encodeURIComponent(templateId)}`);
     },
     [router]
   );
