@@ -8,7 +8,8 @@ import { getReturnToFromQuery } from '../lib/returnTo';
 
 const CvBuilderNew: React.FC = () => {
   const params = useSearchParams();
-  const templateId = params?.get('templateId') ?? null;
+  const templateId = params?.get('templateId')?.trim() || 'ats-minimal';
+  const importFromUpload = params?.get('importFrom') === 'upload';
 
   const router = useRouter();
   const { backendUrl, token } = useShopContext() as any;
@@ -26,11 +27,6 @@ const CvBuilderNew: React.FC = () => {
   }, [templateId]);
 
   useEffect(() => {
-    if (!templateId) {
-      router.replace('/templates');
-      return;
-    }
-
     // Wait for backendUrl to exist (common in context hydration)
     if (!backendUrl) {
       setStatus('Loading configuration...');
@@ -56,10 +52,23 @@ const CvBuilderNew: React.FC = () => {
 
     (async () => {
       try {
-        // Helpful dev log
-        console.log('[CvBuilderNew] creating draft', { templateId, backendUrl });
+        let importedData: any | undefined;
+        if (importFromUpload && typeof window !== 'undefined') {
+          const raw = window.sessionStorage.getItem('cvpro:imported-draft');
+          if (raw) {
+            importedData = JSON.parse(raw);
+            window.sessionStorage.removeItem('cvpro:imported-draft');
+          }
+        }
 
-        const draft = await createDraft.mutateAsync({ templateId, title: 'Untitled CV' });
+        // Helpful dev log
+        console.log('[CvBuilderNew] creating draft', { templateId, backendUrl, imported: Boolean(importedData) });
+
+        const draft = await createDraft.mutateAsync({
+          templateId,
+          title: 'Untitled CV',
+          ...(importedData ? { data: importedData } : {}),
+        });
 
         if (cancelled) return;
 
@@ -99,7 +108,7 @@ const CvBuilderNew: React.FC = () => {
     };
     // Do NOT include createDraft as a dependency (unstable object)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [templateId, token, backendUrl, router]);
+  }, [templateId, importFromUpload, token, backendUrl, router]);
 
   return (
     <div className="mx-auto flex min-h-[60vh] w-full max-w-screen-lg items-center justify-center px-4 py-12 text-center">
