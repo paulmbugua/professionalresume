@@ -4,7 +4,13 @@ const MAX_TEXT_CHARS = 120000;
 
 const headingMap = {
   summary: ['summary', 'professional summary', 'profile', 'about', 'objective'],
-  experience: ['experience', 'work experience', 'employment', 'work history', 'professional experience'],
+  experience: [
+    'experience',
+    'work experience',
+    'employment',
+    'work history',
+    'professional experience',
+  ],
   education: ['education', 'academic background'],
   skills: ['skills', 'technical skills', 'core skills', 'competencies'],
   projects: ['projects', 'personal projects'],
@@ -16,8 +22,10 @@ const headingMap = {
 
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const URL_RE = /(https?:\/\/[^\s)]+|www\.[^\s)]+)/gi;
-const PHONE_RE = /(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)?\d{3,4}[\s.-]?\d{3,4}(?:[\s.-]?\d{1,4})?/g;
-const DATE_RANGE_RE = /((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{4}|\d{4})\s*(?:-|–|—|to)\s*((?:Present|Current|Now)|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{4}|\d{4})/i;
+const PHONE_RE =
+  /(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)?\d{3,4}[\s.-]?\d{3,4}(?:[\s.-]?\d{1,4})?/g;
+const DATE_RANGE_RE =
+  /((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{4}|\d{4})\s*(?:-|–|—|to)\s*((?:Present|Current|Now)|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{4}|\d{4})/i;
 
 function cleanText(input = '') {
   return String(input)
@@ -62,7 +70,10 @@ function splitSections(text) {
   let current = 'top';
   for (const line of lines) {
     if (!line) {
-      if (sections[current]?.length && sections[current][sections[current].length - 1] !== '') {
+      if (
+        sections[current]?.length &&
+        sections[current][sections[current].length - 1] !== ''
+      ) {
         sections[current].push('');
       }
       continue;
@@ -84,6 +95,7 @@ function normalizeUrl(url = '') {
   if (!u) return '';
   if (/^https?:\/\//i.test(u)) return u;
   if (/^www\./i.test(u)) return `https://${u}`;
+  if (/^[a-z0-9.-]+\.[a-z]{2,}(\/.*)?$/i.test(u)) return `https://${u}`;
   return u;
 }
 
@@ -105,25 +117,41 @@ function dedupeStrings(values = [], max = 50) {
 function parseBasics(text, topLines = []) {
   const emails = text.match(EMAIL_RE) || [];
   const urls = text.match(URL_RE) || [];
-  const phones = (text.match(PHONE_RE) || []).filter((p) => p.replace(/\D/g, '').length >= 7);
+  const phones = (text.match(PHONE_RE) || []).filter(
+    (p) => p.replace(/\D/g, '').length >= 7,
+  );
 
-  const nameCandidate = topLines.find((line) => {
-    const words = line.trim().split(/\s+/);
-    if (words.length < 2 || words.length > 5) return false;
-    if (EMAIL_RE.test(line) || URL_RE.test(line) || PHONE_RE.test(line)) return false;
-    return /^[A-Za-z][A-Za-z\s'.-]+$/.test(line);
-  }) || topLines[0] || '';
+  const nameCandidate =
+    topLines.find((line) => {
+      const words = line.trim().split(/\s+/);
+      if (words.length < 2 || words.length > 5) return false;
+      if (EMAIL_RE.test(line) || URL_RE.test(line) || PHONE_RE.test(line))
+        return false;
+      return /^[A-Za-z][A-Za-z\s'.-]+$/.test(line);
+    }) ||
+    topLines[0] ||
+    '';
 
-  const headlineCandidate = topLines.find((line) => {
-    const lower = line.toLowerCase();
-    if (line === nameCandidate) return false;
-    return /(engineer|developer|designer|manager|analyst|consultant|specialist|lead|architect)/i.test(lower);
-  }) || '';
+  const headlineCandidate =
+    topLines.find((line) => {
+      const lower = line.toLowerCase();
+      if (line === nameCandidate) return false;
+      return /(engineer|developer|designer|manager|analyst|consultant|specialist|lead|architect)/i.test(
+        lower,
+      );
+    }) || '';
 
-  const locationCandidate = topLines.find((line) => {
-    if (EMAIL_RE.test(line) || URL_RE.test(line) || PHONE_RE.test(line)) return false;
-    return /,/.test(line) || /\b(kenya|usa|uk|canada|nigeria|india|germany|france|remote)\b/i.test(line);
-  }) || '';
+  const locationCandidate =
+    topLines.find((line) => {
+      if (EMAIL_RE.test(line) || URL_RE.test(line) || PHONE_RE.test(line))
+        return false;
+      return (
+        /,/.test(line) ||
+        /\b(kenya|usa|uk|canada|nigeria|india|germany|france|remote)\b/i.test(
+          line,
+        )
+      );
+    }) || '';
 
   const links = dedupeStrings(urls.map(normalizeUrl), 10).map((url) => ({
     label: /linkedin/i.test(url)
@@ -171,7 +199,7 @@ function parseBullets(lines = []) {
   );
 }
 
-function parseExperience(lines = []) {
+export function parseExperience(lines = []) {
   if (!lines.length) return [];
   const entries = [];
   let current = null;
@@ -197,7 +225,14 @@ function parseExperience(lines = []) {
     const dateMatch = line.match(DATE_RANGE_RE);
     if (dateMatch) {
       if (!current) {
-        current = { company: '', role: '', start: '', end: '', location: '', bullets: [] };
+        current = {
+          company: '',
+          role: '',
+          start: '',
+          end: '',
+          location: '',
+          bullets: [],
+        };
       }
       current.start = dateMatch[1] || '';
       current.end = dateMatch[2] || '';
@@ -205,13 +240,28 @@ function parseExperience(lines = []) {
     }
 
     if (/^[-•*]\s+/.test(line)) {
-      if (!current) current = { company: '', role: '', start: '', end: '', location: '', bullets: [] };
+      if (!current)
+        current = {
+          company: '',
+          role: '',
+          start: '',
+          end: '',
+          location: '',
+          bullets: [],
+        };
       current.bullets.push(line.replace(/^[-•*]\s+/, ''));
       continue;
     }
 
     if (!current) {
-      current = { company: '', role: '', start: '', end: '', location: '', bullets: [] };
+      current = {
+        company: '',
+        role: '',
+        start: '',
+        end: '',
+        location: '',
+        bullets: [],
+      };
       const parts = line.split(/\s+[-–—]\s+|\s+\|\s+/);
       current.role = parts[0] || '';
       current.company = parts[1] || '';
@@ -223,7 +273,14 @@ function parseExperience(lines = []) {
     else if (!current.location && /,/.test(line)) current.location = line;
     else {
       flush();
-      current = { company: '', role: line, start: '', end: '', location: '', bullets: [] };
+      current = {
+        company: '',
+        role: line,
+        start: '',
+        end: '',
+        location: '',
+        bullets: [],
+      };
     }
   }
 
@@ -231,7 +288,7 @@ function parseExperience(lines = []) {
   return entries.slice(0, 20);
 }
 
-function parseEducation(lines = []) {
+export function parseEducation(lines = []) {
   const items = [];
   let current = null;
   const flush = () => {
@@ -252,14 +309,17 @@ function parseEducation(lines = []) {
     if (!line) continue;
     const date = line.match(DATE_RANGE_RE);
     if (date) {
-      if (!current) current = { school: '', program: '', start: '', end: '', details: '' };
+      if (!current)
+        current = { school: '', program: '', start: '', end: '', details: '' };
       current.start = date[1] || '';
       current.end = date[2] || '';
       continue;
     }
     if (/^[-•*]\s+/.test(line)) {
-      if (!current) current = { school: '', program: '', start: '', end: '', details: '' };
-      current.details = `${current.details} ${line.replace(/^[-•*]\s+/, '')}`.trim();
+      if (!current)
+        current = { school: '', program: '', start: '', end: '', details: '' };
+      current.details =
+        `${current.details} ${line.replace(/^[-•*]\s+/, '')}`.trim();
       continue;
     }
 
@@ -302,20 +362,31 @@ function parseProjects(lines = []) {
     if (!line) continue;
     const url = (line.match(URL_RE) || [])[0] || '';
     if (/^[-•*]\s+/.test(line)) {
-      if (!current) current = { name: '', link: '', description: '', bullets: [] };
+      if (!current)
+        current = { name: '', link: '', description: '', bullets: [] };
       current.bullets.push(line.replace(/^[-•*]\s+/, ''));
       continue;
     }
 
     if (!current) {
-      current = { name: line, link: normalizeUrl(url), description: '', bullets: [] };
+      current = {
+        name: line,
+        link: normalizeUrl(url),
+        description: '',
+        bullets: [],
+      };
       continue;
     }
 
     if (!current.description) current.description = line;
     else {
       flush();
-      current = { name: line, link: normalizeUrl(url), description: '', bullets: [] };
+      current = {
+        name: line,
+        link: normalizeUrl(url),
+        description: '',
+        bullets: [],
+      };
     }
   }
   flush();
@@ -340,11 +411,13 @@ function parseCertifications(lines = []) {
 
 function parseSimpleList(lines = [], max = 20) {
   const raw = lines.join('\n');
-  const parts = raw.includes(',') ? raw.split(',') : lines.map((l) => l.replace(/^[-•*]\s*/, ''));
+  const parts = raw.includes(',')
+    ? raw.split(',')
+    : lines.map((l) => l.replace(/^[-•*]\s*/, ''));
   return dedupeStrings(parts, max);
 }
 
-function normalizeExtractedDraft(extracted = {}) {
+export function normalizeExtractedDraft(extracted = {}) {
   const basics = extracted.basics || {};
   const links = Array.isArray(basics.links) ? basics.links : [];
   const dedupLinks = [];
@@ -355,7 +428,10 @@ function normalizeExtractedDraft(extracted = {}) {
     const key = url.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    dedupLinks.push({ label: cap(l?.label || 'Website', 60), url: cap(url, 240) });
+    dedupLinks.push({
+      label: cap(l?.label || 'Website', 60),
+      url: cap(url, 240),
+    });
     if (dedupLinks.length >= 12) break;
   }
 
@@ -370,32 +446,46 @@ function normalizeExtractedDraft(extracted = {}) {
     },
     summary: cap(extracted.summary, 2000),
     skills: dedupeStrings(extracted.skills || [], 50),
-    experience: (Array.isArray(extracted.experience) ? extracted.experience : []).slice(0, 20).map((e) => ({
-      company: cap(e?.company, 180),
-      role: cap(e?.role, 180),
-      start: cap(e?.start, 40),
-      end: cap(e?.end, 40),
-      location: cap(e?.location, 120),
-      bullets: dedupeStrings(e?.bullets || [], 12),
-    })),
-    education: (Array.isArray(extracted.education) ? extracted.education : []).slice(0, 10).map((e) => ({
-      school: cap(e?.school, 180),
-      program: cap(e?.program, 180),
-      start: cap(e?.start, 40),
-      end: cap(e?.end, 40),
-      details: cap(e?.details, 500),
-    })),
-    projects: (Array.isArray(extracted.projects) ? extracted.projects : []).slice(0, 20).map((p) => ({
-      name: cap(p?.name, 180),
-      link: cap(normalizeUrl(p?.link || ''), 240),
-      description: cap(p?.description, 600),
-      bullets: dedupeStrings(p?.bullets || [], 12),
-    })),
-    certifications: (Array.isArray(extracted.certifications) ? extracted.certifications : []).slice(0, 20).map((c) => ({
-      name: cap(c?.name, 180),
-      issuer: cap(c?.issuer, 140),
-      year: cap(c?.year, 8),
-    })),
+    experience: (Array.isArray(extracted.experience)
+      ? extracted.experience
+      : []
+    )
+      .slice(0, 20)
+      .map((e) => ({
+        company: cap(e?.company, 180),
+        role: cap(e?.role, 180),
+        start: cap(e?.start, 40),
+        end: cap(e?.end, 40),
+        location: cap(e?.location, 120),
+        bullets: dedupeStrings(e?.bullets || [], 12),
+      })),
+    education: (Array.isArray(extracted.education) ? extracted.education : [])
+      .slice(0, 10)
+      .map((e) => ({
+        school: cap(e?.school, 180),
+        program: cap(e?.program, 180),
+        start: cap(e?.start, 40),
+        end: cap(e?.end, 40),
+        details: cap(e?.details, 500),
+      })),
+    projects: (Array.isArray(extracted.projects) ? extracted.projects : [])
+      .slice(0, 20)
+      .map((p) => ({
+        name: cap(p?.name, 180),
+        link: cap(normalizeUrl(p?.link || ''), 240),
+        description: cap(p?.description, 600),
+        bullets: dedupeStrings(p?.bullets || [], 12),
+      })),
+    certifications: (Array.isArray(extracted.certifications)
+      ? extracted.certifications
+      : []
+    )
+      .slice(0, 20)
+      .map((c) => ({
+        name: cap(c?.name, 180),
+        issuer: cap(c?.issuer, 140),
+        year: cap(c?.year, 8),
+      })),
     extras: {
       languages: dedupeStrings(extracted?.extras?.languages || [], 20),
       interests: dedupeStrings(extracted?.extras?.interests || [], 20),
@@ -444,7 +534,9 @@ function unzipDocxEntry(buffer, wantedName = 'word/document.xml') {
     const compressedSize = buffer.readUInt32LE(offset + 18);
     const fileNameLen = buffer.readUInt16LE(offset + 26);
     const extraLen = buffer.readUInt16LE(offset + 28);
-    const fileName = buffer.slice(offset + 30, offset + 30 + fileNameLen).toString('utf8');
+    const fileName = buffer
+      .slice(offset + 30, offset + 30 + fileNameLen)
+      .toString('utf8');
     const dataStart = offset + 30 + fileNameLen + extraLen;
     const dataEnd = dataStart + compressedSize;
 
@@ -476,6 +568,153 @@ function extractTextFromDocxBuffer(buffer) {
   return cleanText(textOnly);
 }
 
+async function refineExtractionWithAi({ text, extracted }) {
+  if (!process.env.OPENAI_API_KEY) return null;
+
+  const schema = {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      basics: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          name: { type: 'string' },
+          headline: { type: 'string' },
+          email: { type: 'string' },
+          phone: { type: 'string' },
+          location: { type: 'string' },
+          links: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                label: { type: 'string' },
+                url: { type: 'string' },
+              },
+              required: ['label', 'url'],
+            },
+          },
+        },
+      },
+      summary: { type: 'string' },
+      skills: { type: 'array', items: { type: 'string' } },
+      experience: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            company: { type: 'string' },
+            role: { type: 'string' },
+            start: { type: 'string' },
+            end: { type: 'string' },
+            location: { type: 'string' },
+            bullets: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['company', 'role', 'start', 'end', 'bullets'],
+        },
+      },
+      education: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            school: { type: 'string' },
+            program: { type: 'string' },
+            start: { type: 'string' },
+            end: { type: 'string' },
+            details: { type: 'string' },
+          },
+          required: ['school', 'program', 'start', 'end'],
+        },
+      },
+      projects: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            name: { type: 'string' },
+            link: { type: 'string' },
+            description: { type: 'string' },
+            bullets: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['name', 'description', 'bullets'],
+        },
+      },
+      certifications: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            name: { type: 'string' },
+            issuer: { type: 'string' },
+            year: { type: 'string' },
+          },
+          required: ['name'],
+        },
+      },
+      extras: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          languages: { type: 'array', items: { type: 'string' } },
+          interests: { type: 'array', items: { type: 'string' } },
+        },
+      },
+      confidence: { type: 'number' },
+      warnings: { type: 'array', items: { type: 'string' } },
+    },
+    required: [
+      'basics',
+      'summary',
+      'skills',
+      'experience',
+      'education',
+      'projects',
+      'certifications',
+      'extras',
+      'confidence',
+      'warnings',
+    ],
+  };
+
+  try {
+    const { openai } = await import('./aiCourseCore.js');
+    const completion = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      temperature: 0.1,
+      response_format: {
+        type: 'json_schema',
+        json_schema: { name: 'cv_refine', schema, strict: true },
+      },
+      messages: [
+        {
+          role: 'system',
+          content:
+            'Map resume text into CvDraft JSON. Use only facts present in text. Keep unknown fields empty. Dedupe and keep concise.',
+        },
+        {
+          role: 'user',
+          content: `Resume text:
+${text.slice(0, 14000)}
+
+Heuristic extraction:
+${JSON.stringify(extracted).slice(0, 9000)}`,
+        },
+      ],
+    });
+    const content = completion?.choices?.[0]?.message?.content || '{}';
+    return JSON.parse(content);
+  } catch (err) {
+    return null;
+  }
+}
+
 export async function parseCvFileToDraftPartial({ buffer, mimetype }) {
   const mime = String(mimetype || '').toLowerCase();
   let parser = 'pdf';
@@ -484,7 +723,10 @@ export async function parseCvFileToDraftPartial({ buffer, mimetype }) {
   if (mime === 'application/pdf') {
     parser = 'pdf';
     text = extractTextFromPdfBuffer(buffer);
-  } else if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+  } else if (
+    mime ===
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  ) {
     parser = 'docx';
     text = extractTextFromDocxBuffer(buffer);
   } else {
@@ -506,7 +748,7 @@ export async function parseCvFileToDraftPartial({ buffer, mimetype }) {
     interests: parseSimpleList(sections.interests || [], 20),
   };
 
-  const extracted = normalizeExtractedDraft({
+  const heuristicExtracted = normalizeExtractedDraft({
     basics,
     summary,
     skills,
@@ -517,9 +759,18 @@ export async function parseCvFileToDraftPartial({ buffer, mimetype }) {
     extras,
   });
 
+  const refined = await refineExtractionWithAi({
+    text,
+    extracted: heuristicExtracted,
+  });
+  const extracted = normalizeExtractedDraft(refined || heuristicExtracted);
+
   const warnings = [];
-  if (!extracted.basics.name) warnings.push('Could not confidently detect full name.');
-  if (!extracted.experience.length) warnings.push('No work experience detected.');
+  if (refined?.warnings?.length) warnings.push(...refined.warnings.slice(0, 6));
+  if (!extracted.basics.name)
+    warnings.push('Could not confidently detect full name.');
+  if (!extracted.experience.length)
+    warnings.push('No work experience detected.');
   if (!extracted.skills.length) warnings.push('No skills detected.');
 
   return {
@@ -527,6 +778,11 @@ export async function parseCvFileToDraftPartial({ buffer, mimetype }) {
     diagnostics: {
       parser,
       warnings,
+      confidence:
+        typeof refined?.confidence === 'number'
+          ? refined.confidence
+          : undefined,
+      usedAiRefinement: Boolean(refined),
     },
   };
 }

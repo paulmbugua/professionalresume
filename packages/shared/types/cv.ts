@@ -76,6 +76,13 @@ export type CvSectionKey =
   | 'certifications'
   | 'extras';
 
+export type CvDraftMeta = {
+  isDemoSeeded?: boolean;
+  hasImportedCv?: boolean;
+  importedAt?: string;
+  importMode?: 'merge' | 'replace';
+};
+
 export type CvDraft = {
   id: string;
   userId: string;
@@ -104,6 +111,7 @@ export type CvDraft = {
   formatting?: CvFormattingDefaults;
   templateTheme?: CvTemplateTheme;
   richText?: CvRichTextMap;
+  meta?: CvDraftMeta;
   sectionOrder: CvSectionKey[];
   sectionVisibility: Record<CvSectionKey, boolean>;
 };

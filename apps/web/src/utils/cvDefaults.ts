@@ -19,10 +19,25 @@ export const defaultSectionVisibility = defaultSectionOrder.reduce(
 );
 
 const templateThemeDefaults: Record<string, Record<string, string>> = {
-  'modern-sidebar': { primary: '#0f172a', sidebarBg: '#0f172a', sidebarText: '#f8fafc', accent: '#38bdf8' },
-  'bold-header': { primary: '#0f172a', headerBg: '#0f172a', headerText: '#ffffff', accent: '#38bdf8' },
+  'modern-sidebar': {
+    primary: '#0f172a',
+    sidebarBg: '#0f172a',
+    sidebarText: '#f8fafc',
+    accent: '#38bdf8',
+  },
+  'bold-header': {
+    primary: '#0f172a',
+    headerBg: '#0f172a',
+    headerText: '#ffffff',
+    accent: '#38bdf8',
+  },
   'modern-teal': { primary: '#0f766e', accent: '#0d9488', sectionBg: '#f0fdfa' },
-  'modern-sidebar-blue': { primary: '#1d4ed8', sidebarBg: '#1d4ed8', sidebarText: '#eff6ff', accent: '#93c5fd' },
+  'modern-sidebar-blue': {
+    primary: '#1d4ed8',
+    sidebarBg: '#1d4ed8',
+    sidebarText: '#eff6ff',
+    accent: '#93c5fd',
+  },
 };
 
 export function normalizeDraft(draft: CvDraft): CvDraft {
@@ -77,6 +92,12 @@ export function normalizeDraft(draft: CvDraft): CvDraft {
     },
     richText: {
       ...(draft.richText || {}),
+    },
+    meta: {
+      isDemoSeeded: Boolean(draft.meta?.isDemoSeeded),
+      hasImportedCv: Boolean(draft.meta?.hasImportedCv),
+      importedAt: draft.meta?.importedAt,
+      importMode: draft.meta?.importMode,
     },
   };
 }
