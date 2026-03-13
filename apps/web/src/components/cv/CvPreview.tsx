@@ -31,6 +31,12 @@ const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSource
     [resolved.draft, draft]
   );
   const resumeSource = resolved.resumeSource;
+  const previewBadgeLabel =
+    resumeSource === 'demo'
+      ? 'Demo content'
+      : resumeSource === 'saved'
+        ? 'Saved draft'
+        : 'Imported / live';
 
   const meta = templateRegistryById[previewDraft.templateId] || templateRegistry[0];
   const hasKnownTemplate = Boolean(meta?.component);
@@ -64,7 +70,12 @@ const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSource
     if (!shouldUseHtmlPreview) return null;
     const htmlRenderer = meta?.renderHtml;
     return htmlRenderer
-      ? withPreviewEnhancements(stripScripts(htmlRenderer(previewDraft)), previewDraft, { templateId: previewDraft.templateId }, { injectAutosize: true })
+      ? withPreviewEnhancements(
+          stripScripts(htmlRenderer(previewDraft)),
+          previewDraft,
+          { templateId: previewDraft.templateId },
+          { injectAutosize: true }
+        )
       : null;
   }, [meta, previewDraft, shouldUseHtmlPreview, styleFingerprint]);
 
@@ -97,7 +108,7 @@ const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSource
                 resumeSource === 'demo' ? 'bg-amber-500' : 'bg-emerald-500'
               }`}
             />
-            {resumeSource === 'demo' ? 'DEMO PREVIEW' : 'LIVE PREVIEW'}
+            {previewBadgeLabel}
           </span>
         ) : (
           <span />
@@ -105,7 +116,7 @@ const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSource
 
         {resumeSource === 'demo' && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            Showing demo resume data. Add your details to replace this preview.
+            Showing sample content. Upload a CV or edit fields to switch to your own data.
           </div>
         )}
       </div>

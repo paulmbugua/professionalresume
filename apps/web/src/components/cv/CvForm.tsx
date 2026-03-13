@@ -8,22 +8,25 @@ import { parseUploadedCv } from '../../utils/cvParseApi';
 
 // ✅ forwardRef so react-hook-form can register inputs correctly
 const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
-  ({ className, ...props }, ref) => <input {...props} ref={ref} className={`input ${className ?? ''}`} />
+  ({ className, ...props }, ref) => (
+    <input {...props} ref={ref} className={`input ${className ?? ''}`} />
+  )
 );
 Input.displayName = 'Input';
 
-const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>(
-  ({ className, ...props }, ref) => (
-    <textarea {...props} ref={ref} className={`input min-h-[90px] ${className ?? ''}`} />
-  )
-);
+const Textarea = React.forwardRef<
+  HTMLTextAreaElement,
+  React.TextareaHTMLAttributes<HTMLTextAreaElement>
+>(({ className, ...props }, ref) => (
+  <textarea {...props} ref={ref} className={`input min-h-[90px] ${className ?? ''}`} />
+));
 Textarea.displayName = 'Textarea';
 
-const RichTextField: React.FC<{ name: string; plainName?: keyof CvDraft; placeholder?: string }> = ({
-  name,
-  plainName,
-  placeholder,
-}) => {
+const RichTextField: React.FC<{
+  name: string;
+  plainName?: keyof CvDraft;
+  placeholder?: string;
+}> = ({ name, plainName, placeholder }) => {
   const { setValue, watch } = useFormContext<CvDraft>();
   const value = (watch(name as any) as string) || '';
 
@@ -35,9 +38,19 @@ const RichTextField: React.FC<{ name: string; plainName?: keyof CvDraft; placeho
   return (
     <div className="space-y-2">
       <div className="flex gap-2 text-xs">
-        <button type="button" className="rounded border px-2 py-1" onClick={() => applyWrap('strong')}>Bold</button>
-        <button type="button" className="rounded border px-2 py-1" onClick={() => applyWrap('em')}>Italic</button>
-        <button type="button" className="rounded border px-2 py-1" onClick={() => applyWrap('u')}>Underline</button>
+        <button
+          type="button"
+          className="rounded border px-2 py-1"
+          onClick={() => applyWrap('strong')}
+        >
+          Bold
+        </button>
+        <button type="button" className="rounded border px-2 py-1" onClick={() => applyWrap('em')}>
+          Italic
+        </button>
+        <button type="button" className="rounded border px-2 py-1" onClick={() => applyWrap('u')}>
+          Underline
+        </button>
       </div>
       <Textarea
         value={value}
@@ -48,7 +61,10 @@ const RichTextField: React.FC<{ name: string; plainName?: keyof CvDraft; placeho
             setValue(plainName as any, stripHtml(html), { shouldDirty: true, shouldTouch: true });
           }
         }}
-        placeholder={placeholder || 'Use simple rich text tags like <strong>bold</strong> or <span style="color:#0ea5a5">color</span>'}
+        placeholder={
+          placeholder ||
+          'Use simple rich text tags like <strong>bold</strong> or <span style="color:#0ea5a5">color</span>'
+        }
       />
     </div>
   );
@@ -155,7 +171,9 @@ const SectionCard: React.FC<SectionCardProps> = ({
           </span>
           {status ? <StatusPill status={status} title={statusTitle} /> : null}
         </div>
-        {subtitle ? <p className="mt-1 text-xs text-gray-500 dark:text-white/60">{subtitle}</p> : null}
+        {subtitle ? (
+          <p className="mt-1 text-xs text-gray-500 dark:text-white/60">{subtitle}</p>
+        ) : null}
       </button>
 
       {right ? <div className="shrink-0">{right}</div> : null}
@@ -172,7 +190,7 @@ const pillDanger = `${pillBtn} border-rose-200 bg-rose-50 text-rose-700 hover:bg
 const pillPrimary = `${pillBtn} border-transparent bg-primary text-white hover:opacity-90`;
 
 const CvForm: React.FC = () => {
-  const { register, control, setValue, getValues } = useFormContext<CvDraft>();
+  const { register, control, setValue, getValues, reset } = useFormContext<CvDraft>();
   const { backendUrl, token } = useShopContext() as any;
   const [skillInput, setSkillInput] = useState('');
   const [uploadMode, setUploadMode] = useState<'merge' | 'replace'>('merge');
@@ -180,8 +198,13 @@ const CvForm: React.FC = () => {
   const [parseState, setParseState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [parseError, setParseError] = useState<string | null>(null);
   const [parsedPreview, setParsedPreview] = useState<any | null>(null);
-  const [diagnostics, setDiagnostics] = useState<{ warnings?: string[]; parser?: string } | null>(null);
+  const [diagnostics, setDiagnostics] = useState<{
+    warnings?: string[];
+    parser?: string;
+    confidence?: number;
+  } | null>(null);
   const [hasAppliedUpload, setHasAppliedUpload] = useState(false);
+  const [importUndoSnapshot, setImportUndoSnapshot] = useState<CvDraft | null>(null);
 
   // one-time guard so we don’t preload multiple times
   const didAutoPreloadRef = useRef(false);
@@ -301,6 +324,17 @@ const CvForm: React.FC = () => {
     const current = getValues();
 
     // Non-array fields
+    setValue('meta.isDemoSeeded' as any, true, {
+      shouldDirty: markDirty,
+      shouldTouch: false,
+      shouldValidate: false,
+    });
+    setValue('meta.hasImportedCv' as any, false, {
+      shouldDirty: markDirty,
+      shouldTouch: false,
+      shouldValidate: false,
+    });
+
     setValue('title', current.title?.trim() ? current.title : demoResume.title, {
       shouldDirty: markDirty,
       shouldTouch: false,
@@ -380,10 +414,20 @@ const CvForm: React.FC = () => {
   // ---------- Clear helpers ----------
   const clearAllContent = () => {
     setValue('title', '', { shouldDirty: true });
+    setValue('meta.isDemoSeeded' as any, false, { shouldDirty: true });
+    setValue('meta.hasImportedCv' as any, false, { shouldDirty: true });
 
     setValue(
       'basics',
-      { ...demoResume.basics, name: '', headline: '', email: '', phone: '', location: '', links: [] } as any,
+      {
+        ...demoResume.basics,
+        name: '',
+        headline: '',
+        email: '',
+        phone: '',
+        location: '',
+        links: [],
+      } as any,
       { shouldDirty: true }
     );
     linksField.replace([] as any);
@@ -457,57 +501,164 @@ const CvForm: React.FC = () => {
     const trimmed = skillInput.trim();
     if (!trimmed) return;
     const next = Array.from(new Set([...(skills as string[]), trimmed]));
-    setValue('skills', next as any, { shouldDirty: true, shouldTouch: true, shouldValidate: false });
+    setValue('skills', next as any, {
+      shouldDirty: true,
+      shouldTouch: true,
+      shouldValidate: false,
+    });
     setSkillInput('');
   };
 
   const removeSkill = (skill: string) => {
     const next = (skills as string[]).filter((item) => item !== skill);
-    setValue('skills', next as any, { shouldDirty: true, shouldTouch: true, shouldValidate: false });
+    setValue('skills', next as any, {
+      shouldDirty: true,
+      shouldTouch: true,
+      shouldValidate: false,
+    });
   };
 
+  const isSameAsDemo = (path: string, value: any) => {
+    const demoValue = path
+      .split('.')
+      .reduce((acc: any, part) => (acc ? acc[part] : undefined), demoResume as any);
+    return JSON.stringify(demoValue ?? null) === JSON.stringify(value ?? null);
+  };
+
+  const isMeaningful = (value: any) => {
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === 'string') return value.trim().length > 0;
+    return Boolean(value);
+  };
+
+  const chooseField = (
+    path: string,
+    existing: any,
+    incoming: any,
+    mode: 'merge' | 'replace',
+    isDemoSeeded: boolean
+  ) => {
+    if (mode === 'replace') return incoming;
+    const incomingMeaningful = isMeaningful(incoming);
+    if (!incomingMeaningful) return existing;
+
+    const existingMeaningful = isMeaningful(existing);
+    if (!existingMeaningful) return incoming;
+
+    const existingFromDemo = isDemoSeeded && isSameAsDemo(path, existing);
+    return existingFromDemo ? incoming : existing;
+  };
 
   const applyExtractedToForm = (extracted: Partial<CvDraft>, mode: 'merge' | 'replace') => {
     const current = getValues();
-
-    const choose = (existing: any, incoming: any) => {
-      if (mode === 'replace') return incoming;
-      const hasExisting = Array.isArray(existing)
-        ? existing.length > 0
-        : typeof existing === 'string'
-          ? existing.trim().length > 0
-          : Boolean(existing);
-      return hasExisting ? existing : incoming;
-    };
+    const isDemoSeeded = Boolean(current.meta?.isDemoSeeded);
 
     const nextBasics = {
       ...current.basics,
-      name: choose(current.basics?.name, extracted.basics?.name || ''),
-      headline: choose(current.basics?.headline, extracted.basics?.headline || ''),
-      email: choose(current.basics?.email, extracted.basics?.email || ''),
-      phone: choose(current.basics?.phone, extracted.basics?.phone || ''),
-      location: choose(current.basics?.location, extracted.basics?.location || ''),
-      links: mode === 'replace' ? (extracted.basics?.links || []) : (current.basics?.links?.length ? current.basics.links : (extracted.basics?.links || [])),
+      name: chooseField(
+        'basics.name',
+        current.basics?.name,
+        extracted.basics?.name || '',
+        mode,
+        isDemoSeeded
+      ),
+      headline: chooseField(
+        'basics.headline',
+        current.basics?.headline,
+        extracted.basics?.headline || '',
+        mode,
+        isDemoSeeded
+      ),
+      email: chooseField(
+        'basics.email',
+        current.basics?.email,
+        extracted.basics?.email || '',
+        mode,
+        isDemoSeeded
+      ),
+      phone: chooseField(
+        'basics.phone',
+        current.basics?.phone,
+        extracted.basics?.phone || '',
+        mode,
+        isDemoSeeded
+      ),
+      location: chooseField(
+        'basics.location',
+        current.basics?.location,
+        extracted.basics?.location || '',
+        mode,
+        isDemoSeeded
+      ),
+      links: chooseField(
+        'basics.links',
+        current.basics?.links || [],
+        extracted.basics?.links || [],
+        mode,
+        isDemoSeeded
+      ),
     } as any;
 
     setValue('basics', nextBasics, { shouldDirty: true, shouldTouch: true });
     linksField.replace(nextBasics.links || []);
 
-    const summaryValue = mode === 'replace'
-      ? (extracted.summary || '')
-      : (current.summary?.trim() ? current.summary : (extracted.summary || ''));
+    const summaryValue = chooseField(
+      'summary',
+      current.summary || '',
+      extracted.summary || '',
+      mode,
+      isDemoSeeded
+    );
     setValue('summary', summaryValue as any, { shouldDirty: true, shouldTouch: true });
-    setValue('richText.summary' as any, summaryValue as any, { shouldDirty: true, shouldTouch: true });
+    setValue('richText.summary' as any, summaryValue as any, {
+      shouldDirty: true,
+      shouldTouch: true,
+    });
 
-    const mergedSkills = mode === 'replace'
-      ? (extracted.skills || [])
-      : Array.from(new Set([...(current.skills || []), ...(extracted.skills || [])]));
+    const mergedSkills =
+      mode === 'replace'
+        ? extracted.skills || []
+        : Array.from(
+            new Set([
+              ...(chooseField(
+                'skills',
+                current.skills || [],
+                extracted.skills || [],
+                mode,
+                isDemoSeeded
+              ) || []),
+            ])
+          );
     setValue('skills', mergedSkills as any, { shouldDirty: true, shouldTouch: true });
 
-    const exp = mode === 'replace' ? (extracted.experience || []) : ((current.experience?.length ? current.experience : (extracted.experience || [])) as any);
-    const edu = mode === 'replace' ? (extracted.education || []) : ((current.education?.length ? current.education : (extracted.education || [])) as any);
-    const proj = mode === 'replace' ? (extracted.projects || []) : ((current.projects?.length ? current.projects : (extracted.projects || [])) as any);
-    const cert = mode === 'replace' ? (extracted.certifications || []) : ((current.certifications?.length ? current.certifications : (extracted.certifications || [])) as any);
+    const exp = chooseField(
+      'experience',
+      current.experience || [],
+      extracted.experience || [],
+      mode,
+      isDemoSeeded
+    ) as any[];
+    const edu = chooseField(
+      'education',
+      current.education || [],
+      extracted.education || [],
+      mode,
+      isDemoSeeded
+    ) as any[];
+    const proj = chooseField(
+      'projects',
+      current.projects || [],
+      extracted.projects || [],
+      mode,
+      isDemoSeeded
+    ) as any[];
+    const cert = chooseField(
+      'certifications',
+      current.certifications || [],
+      extracted.certifications || [],
+      mode,
+      isDemoSeeded
+    ) as any[];
 
     experienceField.replace(exp as any);
     educationField.replace(edu as any);
@@ -519,22 +670,33 @@ const CvForm: React.FC = () => {
     setValue('projects', proj as any, { shouldDirty: true, shouldTouch: true });
     setValue('certifications', cert as any, { shouldDirty: true, shouldTouch: true });
 
-    const extraLanguages = mode === 'replace'
-      ? (extracted.extras?.languages || [])
-      : (current.extras?.languages?.length ? current.extras.languages : (extracted.extras?.languages || []));
-    const extraInterests = mode === 'replace'
-      ? (extracted.extras?.interests || [])
-      : (current.extras?.interests?.length ? current.extras.interests : (extracted.extras?.interests || []));
+    const extraLanguages = chooseField(
+      'extras.languages',
+      current.extras?.languages || [],
+      extracted.extras?.languages || [],
+      mode,
+      isDemoSeeded
+    );
+    const extraInterests = chooseField(
+      'extras.interests',
+      current.extras?.interests || [],
+      extracted.extras?.interests || [],
+      mode,
+      isDemoSeeded
+    );
 
     setValue('extras.languages', extraLanguages as any, { shouldDirty: true, shouldTouch: true });
     setValue('extras.interests', extraInterests as any, { shouldDirty: true, shouldTouch: true });
 
-    if (!current.title?.trim()) {
-      const suggestedTitle = (extracted.basics?.name || current.basics?.name || 'My CV').trim();
+    if (!current.title?.trim() || (isDemoSeeded && isSameAsDemo('title', current.title))) {
+      const suggestedTitle = (extracted.basics?.name || nextBasics.name || 'My CV').trim();
       setValue('title', `${suggestedTitle} CV` as any, { shouldDirty: true, shouldTouch: true });
     }
 
-    const nextVisibility = { ...(current.sectionVisibility || {}) } as Record<CvSectionKey, boolean>;
+    const nextVisibility = { ...(current.sectionVisibility || {}) } as Record<
+      CvSectionKey,
+      boolean
+    >;
     const extractedHas = {
       summary: Boolean((extracted.summary || '').trim()),
       skills: Boolean(extracted.skills?.length),
@@ -550,6 +712,14 @@ const CvForm: React.FC = () => {
     });
     setValue('sectionVisibility', nextVisibility as any, { shouldDirty: true, shouldTouch: true });
 
+    setValue('meta.isDemoSeeded' as any, false, { shouldDirty: true, shouldTouch: false });
+    setValue('meta.hasImportedCv' as any, true, { shouldDirty: true, shouldTouch: false });
+    setValue('meta.importedAt' as any, new Date().toISOString(), {
+      shouldDirty: true,
+      shouldTouch: false,
+    });
+    setValue('meta.importMode' as any, mode, { shouldDirty: true, shouldTouch: false });
+
     didAutoPreloadRef.current = true;
     setHasAppliedUpload(true);
   };
@@ -561,8 +731,13 @@ const CvForm: React.FC = () => {
     setParsedPreview(null);
     try {
       const parsed = await parseUploadedCv({ backendUrl, token, file: cvFile, mode: uploadMode });
-      setParsedPreview(parsed.extracted || null);
+      const extracted = parsed.extracted || null;
+      setParsedPreview(extracted);
       setDiagnostics(parsed.diagnostics || null);
+      if (extracted) {
+        setImportUndoSnapshot(getValues() as CvDraft);
+        applyExtractedToForm(extracted, uploadMode);
+      }
       setParseState('success');
     } catch (err: any) {
       setParseError(err?.response?.data?.error || err?.message || 'Failed to parse CV');
@@ -594,17 +769,24 @@ const CvForm: React.FC = () => {
       <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-400">Quick setup</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-400">
+              Quick setup
+            </p>
             <h3 className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
               Build fast, then remove what you don’t need
             </h3>
             <p className="mt-1 text-xs text-gray-500 dark:text-white/60">
-              Demo content loads by default. Delete sections/items you don’t want. Preview updates instantly.
+              Sample content loads by default. Importing a CV now replaces sample values
+              automatically.
             </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => preloadFromDemo({ markDirty: true })} className={pillPrimary}>
+            <button
+              type="button"
+              onClick={() => preloadFromDemo({ markDirty: true })}
+              className={pillPrimary}
+            >
               Start from demo
             </button>
             <button type="button" onClick={clearAllContent} className={pillDanger}>
@@ -660,32 +842,50 @@ const CvForm: React.FC = () => {
 
           {parseState === 'success' && parsedPreview ? (
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
-              <p><b>Name:</b> {parsedPreview.basics?.name || '—'}</p>
-              <p><b>Headline:</b> {parsedPreview.basics?.headline || '—'}</p>
-              <p><b>Email / Phone:</b> {parsedPreview.basics?.email || '—'} / {parsedPreview.basics?.phone || '—'}</p>
-              <p><b>Location:</b> {parsedPreview.basics?.location || '—'}</p>
+              <p>
+                <b>Name:</b> {parsedPreview.basics?.name || '—'}
+              </p>
+              <p>
+                <b>Headline:</b> {parsedPreview.basics?.headline || '—'}
+              </p>
+              <p>
+                <b>Email / Phone:</b> {parsedPreview.basics?.email || '—'} /{' '}
+                {parsedPreview.basics?.phone || '—'}
+              </p>
+              <p>
+                <b>Location:</b> {parsedPreview.basics?.location || '—'}
+              </p>
               <p className="mt-2">
-                <b>Counts:</b> skills {parsedPreview.skills?.length || 0} · experience {parsedPreview.experience?.length || 0} · education {parsedPreview.education?.length || 0} · projects {parsedPreview.projects?.length || 0} · certs {parsedPreview.certifications?.length || 0}
+                <b>Counts:</b> skills {parsedPreview.skills?.length || 0} · experience{' '}
+                {parsedPreview.experience?.length || 0} · education{' '}
+                {parsedPreview.education?.length || 0} · projects{' '}
+                {parsedPreview.projects?.length || 0} · certs{' '}
+                {parsedPreview.certifications?.length || 0}
               </p>
               {diagnostics?.warnings?.length ? (
                 <ul className="mt-2 list-disc pl-5">
-                  {diagnostics.warnings.map((w, idx) => <li key={idx}>{w}</li>)}
+                  {diagnostics.warnings.map((w, idx) => (
+                    <li key={idx}>{w}</li>
+                  ))}
                 </ul>
               ) : null}
               <div className="mt-3 flex gap-2">
+                <span className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white">
+                  Imported details applied
+                </span>
                 <button
                   type="button"
-                  onClick={() => applyExtractedToForm(parsedPreview, uploadMode)}
-                  className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white"
+                  disabled={!importUndoSnapshot}
+                  onClick={() => {
+                    if (importUndoSnapshot) {
+                      reset(importUndoSnapshot);
+                      setHasAppliedUpload(Boolean(importUndoSnapshot.meta?.hasImportedCv));
+                      setImportUndoSnapshot(null);
+                    }
+                  }}
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 disabled:opacity-50"
                 >
-                  Apply to form
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setParsedPreview(null); setParseState('idle'); setDiagnostics(null); }}
-                  className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700"
-                >
-                  Discard
+                  Undo import
                 </button>
               </div>
             </div>
@@ -714,7 +914,9 @@ const CvForm: React.FC = () => {
 
         <div className="mt-4 space-y-2">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase text-gray-500 dark:text-white/60">Links</p>
+            <p className="text-xs font-semibold uppercase text-gray-500 dark:text-white/60">
+              Links
+            </p>
             <button
               type="button"
               onClick={() => linksField.append({ label: '', url: '' } as any)}
@@ -761,7 +963,11 @@ const CvForm: React.FC = () => {
           </div>
         }
       >
-        <RichTextField name="richText.summary" plainName="summary" placeholder="Write a professional summary (supports <strong>, <em>, <u>, color span)" />
+        <RichTextField
+          name="richText.summary"
+          plainName="summary"
+          placeholder="Write a professional summary (supports <strong>, <em>, <u>, color span)"
+        />
       </SectionCard>
 
       {/* SKILLS */}
@@ -797,7 +1003,11 @@ const CvForm: React.FC = () => {
         </div>
 
         <div className="mt-3 flex gap-2">
-          <Input value={skillInput} onChange={(e) => setSkillInput(e.target.value)} placeholder="Add a skill" />
+          <Input
+            value={skillInput}
+            onChange={(e) => setSkillInput(e.target.value)}
+            placeholder="Add a skill"
+          />
           <button
             type="button"
             onClick={addSkill}
@@ -824,11 +1034,20 @@ const CvForm: React.FC = () => {
         }
       >
         <div className="mb-3 flex items-center justify-between">
-          <p className="text-xs text-gray-500 dark:text-white/60">Add roles you want included. Remove the rest.</p>
+          <p className="text-xs text-gray-500 dark:text-white/60">
+            Add roles you want included. Remove the rest.
+          </p>
           <button
             type="button"
             onClick={() =>
-              experienceField.append({ company: '', role: '', start: '', end: '', location: '', bullets: [] } as any)
+              experienceField.append({
+                company: '',
+                role: '',
+                start: '',
+                end: '',
+                location: '',
+                bullets: [],
+              } as any)
             }
             className="text-xs font-semibold text-primary"
           >
@@ -838,13 +1057,22 @@ const CvForm: React.FC = () => {
 
         <div className="space-y-4">
           {experienceField.fields.map((field, index) => (
-            <div key={field.id} className="rounded-xl border border-gray-100 p-3 dark:border-white/10">
+            <div
+              key={field.id}
+              className="rounded-xl border border-gray-100 p-3 dark:border-white/10"
+            >
               <div className="grid gap-2 md:grid-cols-2">
-                <Input placeholder="Company" {...register(`experience.${index}.company` as const)} />
+                <Input
+                  placeholder="Company"
+                  {...register(`experience.${index}.company` as const)}
+                />
                 <Input placeholder="Role" {...register(`experience.${index}.role` as const)} />
                 <Input placeholder="Start" {...register(`experience.${index}.start` as const)} />
                 <Input placeholder="End" {...register(`experience.${index}.end` as const)} />
-                <Input placeholder="Location" {...register(`experience.${index}.location` as const)} />
+                <Input
+                  placeholder="Location"
+                  {...register(`experience.${index}.location` as const)}
+                />
               </div>
               <div className="mt-3">
                 <BulletsField name={`experience.${index}.bullets`} />
@@ -858,7 +1086,9 @@ const CvForm: React.FC = () => {
               </button>
             </div>
           ))}
-          {experienceField.fields.length === 0 && <p className="text-xs text-gray-400">No experience entries yet.</p>}
+          {experienceField.fields.length === 0 && (
+            <p className="text-xs text-gray-400">No experience entries yet.</p>
+          )}
         </div>
       </SectionCard>
 
@@ -881,7 +1111,15 @@ const CvForm: React.FC = () => {
           <p className="text-xs text-gray-500 dark:text-white/60">Remove entries you don’t want.</p>
           <button
             type="button"
-            onClick={() => educationField.append({ school: '', program: '', start: '', end: '', details: '' } as any)}
+            onClick={() =>
+              educationField.append({
+                school: '',
+                program: '',
+                start: '',
+                end: '',
+                details: '',
+              } as any)
+            }
             className="text-xs font-semibold text-primary"
           >
             + Add education
@@ -890,7 +1128,10 @@ const CvForm: React.FC = () => {
 
         <div className="space-y-4">
           {educationField.fields.map((field, index) => (
-            <div key={field.id} className="rounded-xl border border-gray-100 p-3 dark:border-white/10">
+            <div
+              key={field.id}
+              className="rounded-xl border border-gray-100 p-3 dark:border-white/10"
+            >
               <div className="grid gap-2 md:grid-cols-2">
                 <Input placeholder="School" {...register(`education.${index}.school` as const)} />
                 <Input placeholder="Program" {...register(`education.${index}.program` as const)} />
@@ -898,7 +1139,10 @@ const CvForm: React.FC = () => {
                 <Input placeholder="End" {...register(`education.${index}.end` as const)} />
               </div>
               <div className="mt-3">
-                <Textarea placeholder="Details" {...register(`education.${index}.details` as const)} />
+                <Textarea
+                  placeholder="Details"
+                  {...register(`education.${index}.details` as const)}
+                />
               </div>
               <button
                 type="button"
@@ -909,7 +1153,9 @@ const CvForm: React.FC = () => {
               </button>
             </div>
           ))}
-          {educationField.fields.length === 0 && <p className="text-xs text-gray-400">No education entries yet.</p>}
+          {educationField.fields.length === 0 && (
+            <p className="text-xs text-gray-400">No education entries yet.</p>
+          )}
         </div>
       </SectionCard>
 
@@ -929,10 +1175,14 @@ const CvForm: React.FC = () => {
         }
       >
         <div className="mb-3 flex items-center justify-between">
-          <p className="text-xs text-gray-500 dark:text-white/60">Add projects that strengthen the story.</p>
+          <p className="text-xs text-gray-500 dark:text-white/60">
+            Add projects that strengthen the story.
+          </p>
           <button
             type="button"
-            onClick={() => projectsField.append({ name: '', link: '', description: '', bullets: [] } as any)}
+            onClick={() =>
+              projectsField.append({ name: '', link: '', description: '', bullets: [] } as any)
+            }
             className="text-xs font-semibold text-primary"
           >
             + Add project
@@ -941,13 +1191,22 @@ const CvForm: React.FC = () => {
 
         <div className="space-y-4">
           {projectsField.fields.map((field, index) => (
-            <div key={field.id} className="rounded-xl border border-gray-100 p-3 dark:border-white/10">
+            <div
+              key={field.id}
+              className="rounded-xl border border-gray-100 p-3 dark:border-white/10"
+            >
               <div className="grid gap-2 md:grid-cols-2">
-                <Input placeholder="Project name" {...register(`projects.${index}.name` as const)} />
+                <Input
+                  placeholder="Project name"
+                  {...register(`projects.${index}.name` as const)}
+                />
                 <Input placeholder="Link" {...register(`projects.${index}.link` as const)} />
               </div>
               <div className="mt-3">
-                <Textarea placeholder="Short description" {...register(`projects.${index}.description` as const)} />
+                <Textarea
+                  placeholder="Short description"
+                  {...register(`projects.${index}.description` as const)}
+                />
               </div>
               <div className="mt-3">
                 <BulletsField name={`projects.${index}.bullets`} />
@@ -961,7 +1220,9 @@ const CvForm: React.FC = () => {
               </button>
             </div>
           ))}
-          {projectsField.fields.length === 0 && <p className="text-xs text-gray-400">No projects yet.</p>}
+          {projectsField.fields.length === 0 && (
+            <p className="text-xs text-gray-400">No projects yet.</p>
+          )}
         </div>
       </SectionCard>
 
@@ -993,10 +1254,19 @@ const CvForm: React.FC = () => {
 
         <div className="space-y-4">
           {certificationsField.fields.map((field, index) => (
-            <div key={field.id} className="rounded-xl border border-gray-100 p-3 dark:border-white/10">
+            <div
+              key={field.id}
+              className="rounded-xl border border-gray-100 p-3 dark:border-white/10"
+            >
               <div className="grid gap-2 md:grid-cols-3">
-                <Input placeholder="Certification" {...register(`certifications.${index}.name` as const)} />
-                <Input placeholder="Issuer" {...register(`certifications.${index}.issuer` as const)} />
+                <Input
+                  placeholder="Certification"
+                  {...register(`certifications.${index}.name` as const)}
+                />
+                <Input
+                  placeholder="Issuer"
+                  {...register(`certifications.${index}.issuer` as const)}
+                />
                 <Input placeholder="Year" {...register(`certifications.${index}.year` as const)} />
               </div>
               <button

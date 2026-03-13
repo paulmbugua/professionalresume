@@ -4,7 +4,13 @@ export type ParsedCvResponse = {
   ok: boolean;
   mode?: 'merge' | 'replace';
   extracted: any;
-  diagnostics?: { parser?: 'pdf' | 'docx'; pages?: number; warnings?: string[] };
+  diagnostics?: {
+    parser?: 'pdf' | 'docx';
+    pages?: number;
+    warnings?: string[];
+    confidence?: number;
+    usedAiRefinement?: boolean;
+  };
 };
 
 export async function parseUploadedCv(args: {

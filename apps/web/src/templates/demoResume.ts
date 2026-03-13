@@ -1,4 +1,4 @@
-import type { CvDraft } from '@cvpro/shared/types';
+import type { CvDraft, CvDraftMeta } from '@cvpro/shared/types';
 
 export const demoResume: CvDraft = {
   id: 'demo-cv',
@@ -86,16 +86,19 @@ export const demoResume: CvDraft = {
   },
 };
 
-const hasText = (value?: string | null) => Boolean(value && value.trim().length > 0);
+const DEMO_META: CvDraftMeta = {
+  isDemoSeeded: true,
+  hasImportedCv: false,
+};
 
-const hasAnyNonEmptyBullet = (arr?: Array<string | null | undefined>) =>
-  Boolean(arr?.some((v) => hasText(v)));
+const hasText = (value?: string | null) => Boolean(value && value.trim().length > 0);
+const capString = (value: string | undefined | null, fallback = '') =>
+  hasText(value) ? String(value).trim() : fallback;
 
 export const hasAnyUserData = (draft?: Partial<CvDraft>) => {
   if (!draft) return false;
 
   const basics: Partial<CvDraft['basics']> = draft.basics ?? {};
-
   if (
     hasText(basics.name) ||
     hasText(basics.headline) ||
@@ -109,7 +112,6 @@ export const hasAnyUserData = (draft?: Partial<CvDraft>) => {
 
   if (hasText(draft.summary)) return true;
   if (draft.skills?.some((s) => hasText(s))) return true;
-
   if (
     draft.experience?.some(
       (e) =>
@@ -159,161 +161,106 @@ export const hasAnyUserData = (draft?: Partial<CvDraft>) => {
   return false;
 };
 
-/**
- * Overlay rules:
- * - Strings: take user value only if non-empty, otherwise keep demo/base value.
- * - Arrays: if user has at least one meaningful item, take user array, otherwise keep demo/base.
- *
- * IMPORTANT for typing: these helpers MUST return non-optional fields (CvDraft has required strings).
- */
-const overlayString = (demoVal: string, userVal?: string | null) =>
-  hasText(userVal) ? userVal!.trim() : demoVal;
+const isDraftMarkedDemoSeeded = (draft?: Partial<CvDraft>) => Boolean(draft?.meta?.isDemoSeeded);
 
-const overlayLinks = (
-  demoLinks: CvDraft['basics']['links'],
-  userLinks?: CvDraft['basics']['links']
-): CvDraft['basics']['links'] => {
-  const userHasAny = userLinks?.some((l) => hasText(l?.label) || hasText(l?.url)) ?? false;
-  return userHasAny ? (userLinks as CvDraft['basics']['links']) : demoLinks;
+const hasImportedOrMeaningfulContent = (draft?: Partial<CvDraft>) => {
+  if (!draft) return false;
+  if (draft.meta?.hasImportedCv) return true;
+  return hasAnyUserData(draft);
 };
 
-const overlaySkills = (demoSkills: string[], userSkills?: string[]): string[] => {
-  const userHasAny = userSkills?.some((s) => hasText(s)) ?? false;
-  return userHasAny ? (userSkills as string[]) : demoSkills;
+export const getDraftSource = (draft?: Partial<CvDraft>): 'demo' | 'live' | 'saved' => {
+  if (!draft) return 'demo';
+  if (draft.id && draft.id !== 'demo-cv' && hasImportedOrMeaningfulContent(draft)) return 'saved';
+  if (hasImportedOrMeaningfulContent(draft) && !isDraftMarkedDemoSeeded(draft)) return 'live';
+  return 'demo';
 };
 
-const overlayExperience = (
-  demoExp: CvDraft['experience'],
-  userExp?: CvDraft['experience']
-): CvDraft['experience'] => {
-  const userHasAny =
-    userExp?.some(
-      (e) =>
-        hasText(e.company) ||
-        hasText(e.role) ||
-        hasText(e.location) ||
-        hasText(e.start) ||
-        hasText(e.end) ||
-        hasAnyNonEmptyBullet(e.bullets)
-    ) ?? false;
-
-  return userHasAny ? (userExp as CvDraft['experience']) : demoExp;
-};
-
-const overlayEducation = (
-  demoEdu: CvDraft['education'],
-  userEdu?: CvDraft['education']
-): CvDraft['education'] => {
-  const userHasAny =
-    userEdu?.some(
-      (e) =>
-        hasText(e.school) ||
-        hasText(e.program) ||
-        hasText(e.start) ||
-        hasText(e.end) ||
-        hasText(e.details)
-    ) ?? false;
-
-  return userHasAny ? (userEdu as CvDraft['education']) : demoEdu;
-};
-
-const overlayProjects = (
-  demoProj: CvDraft['projects'],
-  userProj?: CvDraft['projects']
-): CvDraft['projects'] => {
-  const userHasAny =
-    userProj?.some(
-      (p) =>
-        hasText(p.name) ||
-        hasText(p.link) ||
-        hasText(p.description) ||
-        hasAnyNonEmptyBullet(p.bullets)
-    ) ?? false;
-
-  return userHasAny ? (userProj as CvDraft['projects']) : demoProj;
-};
-
-const overlayCerts = (
-  demoCerts: CvDraft['certifications'],
-  userCerts?: CvDraft['certifications']
-): CvDraft['certifications'] => {
-  const userHasAny =
-    userCerts?.some((c) => hasText(c.name) || hasText(c.issuer) || hasText(c.year)) ?? false;
-
-  return userHasAny ? (userCerts as CvDraft['certifications']) : demoCerts;
-};
-
-const overlayExtras = (
-  demoExtras: CvDraft['extras'],
-  userExtras?: CvDraft['extras']
-): CvDraft['extras'] => {
-  const userHasLang = userExtras?.languages?.some((l) => hasText(l)) ?? false;
-  const userHasInt = userExtras?.interests?.some((i) => hasText(i)) ?? false;
-
-  return {
-    ...demoExtras,
-    ...(userExtras ?? {}),
-    languages: userHasLang ? userExtras!.languages : demoExtras.languages,
-    interests: userHasInt ? userExtras!.interests : demoExtras.interests,
-  };
+const resolveSectionArray = <T>(demoValue: T[], userValue?: T[], preferDraft = false): T[] => {
+  if (preferDraft) return userValue ?? [];
+  return Array.isArray(userValue) && userValue.length > 0 ? (userValue as T[]) : demoValue;
 };
 
 export const resolvePreviewDraft = (
   draft: Partial<CvDraft> | undefined
-): { draft: CvDraft; resumeSource: 'demo' | 'live' } => {
+): { draft: CvDraft; resumeSource: 'demo' | 'live' | 'saved' } => {
   const templateId = draft?.templateId ?? demoResume.templateId;
-
-  // base demo (template-aware if later you add per-template demo payloads)
   const base: CvDraft = { ...demoResume, templateId };
 
-  // If no draft yet, pure demo
-  if (!draft) return { draft: base, resumeSource: 'demo' };
+  if (!draft) return { draft: { ...base, meta: DEMO_META }, resumeSource: 'demo' };
 
-  const hasUser = hasAnyUserData(draft);
+  const resumeSource = getDraftSource(draft);
+  const preferDraftValues = resumeSource !== 'demo';
 
   const merged: CvDraft = {
     ...base,
-
-    // keep real identity fields from draft if present
     id: (draft.id as CvDraft['id']) ?? base.id,
     userId: (draft.userId as CvDraft['userId']) ?? base.userId,
     updatedAt: (draft.updatedAt as CvDraft['updatedAt']) ?? base.updatedAt,
-
-    title: overlayString(base.title, draft.title),
+    title: preferDraftValues ? capString(draft.title) : capString(draft.title, base.title),
     templateId,
-
     basics: {
       ...base.basics,
       ...(draft.basics ?? {}),
-      name: overlayString(base.basics.name, draft.basics?.name),
-      headline: overlayString(base.basics.headline, draft.basics?.headline),
-      email: overlayString(base.basics.email, draft.basics?.email),
-      phone: overlayString(base.basics.phone, draft.basics?.phone),
-      location: overlayString(base.basics.location, draft.basics?.location),
-      links: overlayLinks(base.basics.links, draft.basics?.links),
+      name: preferDraftValues
+        ? capString(draft.basics?.name)
+        : capString(draft.basics?.name, base.basics.name),
+      headline: preferDraftValues
+        ? capString(draft.basics?.headline)
+        : capString(draft.basics?.headline, base.basics.headline),
+      email: preferDraftValues
+        ? capString(draft.basics?.email)
+        : capString(draft.basics?.email, base.basics.email),
+      phone: preferDraftValues
+        ? capString(draft.basics?.phone)
+        : capString(draft.basics?.phone, base.basics.phone),
+      location: preferDraftValues
+        ? capString(draft.basics?.location)
+        : capString(draft.basics?.location, base.basics.location),
+      links: preferDraftValues
+        ? ((draft.basics?.links ?? []) as CvDraft['basics']['links'])
+        : resolveSectionArray(base.basics.links, draft.basics?.links),
     },
-
-    summary: overlayString(base.summary, draft.summary),
-
-    skills: overlaySkills(base.skills ?? [], draft.skills),
-
-    experience: overlayExperience(base.experience ?? [], draft.experience),
-    education: overlayEducation(base.education ?? [], draft.education),
-    projects: overlayProjects(base.projects ?? [], draft.projects),
-    certifications: overlayCerts(base.certifications ?? [], draft.certifications),
-
-    extras: overlayExtras(base.extras, draft.extras),
-
-    // Always reflect user layout config (even if no text yet)
+    summary: preferDraftValues ? capString(draft.summary) : capString(draft.summary, base.summary),
+    skills: resolveSectionArray(base.skills, draft.skills, preferDraftValues),
+    experience: resolveSectionArray(base.experience, draft.experience, preferDraftValues),
+    education: resolveSectionArray(base.education, draft.education, preferDraftValues),
+    projects: resolveSectionArray(base.projects, draft.projects, preferDraftValues),
+    certifications: resolveSectionArray(
+      base.certifications,
+      draft.certifications,
+      preferDraftValues
+    ),
+    extras: preferDraftValues
+      ? {
+          languages: draft.extras?.languages ?? [],
+          interests: draft.extras?.interests ?? [],
+        }
+      : {
+          ...base.extras,
+          ...(draft.extras ?? {}),
+          languages:
+            draft.extras?.languages && draft.extras.languages.length > 0
+              ? draft.extras.languages
+              : base.extras.languages,
+          interests:
+            draft.extras?.interests && draft.extras.interests.length > 0
+              ? draft.extras.interests
+              : base.extras.interests,
+        },
     sectionOrder: (draft.sectionOrder as CvDraft['sectionOrder']) ?? base.sectionOrder,
     sectionVisibility:
       (draft.sectionVisibility as CvDraft['sectionVisibility']) ?? base.sectionVisibility,
-
-    typography: (draft.typography as CvDraft['typography']) ?? (base.typography as CvDraft['typography']),
-    formatting: (draft.formatting as CvDraft['formatting']) ?? (base.formatting as CvDraft['formatting']),
-    templateTheme: (draft.templateTheme as CvDraft['templateTheme']) ?? (base.templateTheme as CvDraft['templateTheme']),
-    richText: (draft.richText as CvDraft['richText']) ?? (base.richText as CvDraft['richText']),
+    typography: (draft.typography as CvDraft['typography']) ?? base.typography,
+    formatting: (draft.formatting as CvDraft['formatting']) ?? base.formatting,
+    templateTheme: (draft.templateTheme as CvDraft['templateTheme']) ?? base.templateTheme,
+    richText: (draft.richText as CvDraft['richText']) ?? base.richText,
+    meta: {
+      ...DEMO_META,
+      ...(draft.meta || {}),
+      isDemoSeeded: isDraftMarkedDemoSeeded(draft),
+    },
   };
 
-  return { draft: merged, resumeSource: hasUser ? 'live' : 'demo' };
+  return { draft: merged, resumeSource };
 };
