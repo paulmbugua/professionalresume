@@ -1,5 +1,4 @@
 import { inflateRawSync } from 'node:zlib';
-import { inflateSync } from 'node:zlib';
 import { mapExtractedResumeToCvDraft } from '../../../packages/shared/cv/mapExtractedResumeToCvDraft.js';
 
 const MAX_TEXT_CHARS = 120000;
@@ -45,8 +44,6 @@ const PDF_INTERNAL_MARKERS = [
   'ProcSet',
   'StructParents',
 ];
-const RESUME_SIGNAL_RE =
-  /\b(summary|professional summary|experience|education|skills|profile|email|phone|location|projects|certifications|languages)\b/i;
 
 function cleanText(input = '') {
   return String(input)
@@ -708,47 +705,6 @@ function debugStage(label, payload) {
   }
 }
 
-export function isLikelyCorruptedPdfText(text = '') {
-  const sample = String(text || '').slice(0, 12000);
-  if (!sample.trim()) return true;
-  const markerHits = PDF_INTERNAL_MARKERS.reduce((acc, marker) => {
-    const re = new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-    const matches = sample.match(re) || [];
-    return acc + matches.length;
-  }, 0);
-
-  const mostlySingleTokenLines = sample
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line) => /^\d+\s+\d+\s+obj$/i.test(line) || /^(xref|trailer|endobj|endstream)$/i.test(line))
-    .length;
-
-  return markerHits >= 8 || mostlySingleTokenLines >= 3;
-}
-
-export function isUsefulResumeText(text = '') {
-  const sample = String(text || '').slice(0, 20000);
-  if (!sample.trim()) return false;
-  if (sample.trim().length < 120) return false;
-
-  if (isLikelyCorruptedPdfText(sample)) return false;
-
-  const lines = sample
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const naturalLines = lines.filter((line) => line.split(/\s+/).length >= 3).length;
-  const hasResumeSignals = RESUME_SIGNAL_RE.test(sample);
-  const hasEmail = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(sample);
-  const hasPhone = /(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)?\d{3,4}[\s.-]?\d{3,4}(?:[\s.-]?\d{1,4})?/.test(sample);
-  const hasUrl = /(https?:\/\/[^\s)]+|www\.[^\s)]+)/i.test(sample);
-  const hasIdentitySignals =
-    hasEmail || hasPhone || hasUrl || /\b(19|20)\d{2}\b/.test(sample);
-
-  return naturalLines >= 4 && (hasResumeSignals || hasIdentitySignals);
-}
-
 function decodePdfStringLiteral(str) {
   return str
     .replace(/\\\(/g, '(')
@@ -777,7 +733,7 @@ function extractTextFromPdfBuffer(buffer) {
 
   collectFromChunk(raw);
 
-  const streamRegex = /<<(.*?)>>\s*stream\r?\n([\s\S]*?)\r?\nendstream/gs;
+  const streamRegex = /<<(.*?)>>\s*stream\r?\n([\s\S]*?)\r?\nendstream/g;
   let match;
   while ((match = streamRegex.exec(raw)) !== null) {
     const dict = match[1] || '';
@@ -787,11 +743,7 @@ function extractTextFromPdfBuffer(buffer) {
 
     try {
       if (/FlateDecode/i.test(dict)) {
-        try {
-          decoded = inflateSync(streamBuffer).toString('latin1');
-        } catch (_inflateErr) {
-          decoded = inflateRawSync(streamBuffer).toString('latin1');
-        }
+        decoded = inflateRawSync(streamBuffer).toString('latin1');
       }
     } catch (_err) {
       decoded = null;
@@ -1019,14 +971,7 @@ export async function parseCvFileToDraftPartial({ buffer, mimetype, filename }) 
   let parser = 'pdf';
   let text = '';
 
-  debugStage('RAW_FILE_META', {
-    mimetype: mime,
-    filename: lowerName,
-    ext,
-    hasBuffer: Boolean(buffer),
-    bytes: buffer?.length || 0,
-    first32Hex: buffer?.slice(0, 32)?.toString('hex') || '',
-  });
+  debugStage('RAW_FILE_META', { mimetype: mime, filename: lowerName, ext, bytes: buffer?.length || 0 });
 
   if (mime === 'application/pdf' || ext === '.pdf') {
     parser = 'pdf';
@@ -1074,21 +1019,6 @@ export async function parseCvFileToDraftPartial({ buffer, mimetype, filename }) 
   }
 
   debugStage('RAW_PDF_TEXT', text.slice(0, 4000));
-  debugStage('PDF_EXTRACTED_TEXT_PREVIEW', text.slice(0, 4000));
-
-  const sanity = {
-    parser,
-    corrupted: parser === 'pdf' ? isLikelyCorruptedPdfText(text) : false,
-    hasText: Boolean(text.trim()),
-    useful: isUsefulResumeText(text),
-  };
-  debugStage('EXTRACTION_SANITY_RESULT', sanity);
-
-  if (!sanity.hasText || sanity.corrupted || !sanity.useful) {
-    throw new Error(
-      'We could not safely extract readable text from this PDF. Please upload a text-based PDF or DOCX.',
-    );
-  }
 
   const sections = splitSections(text);
   const topLines = (sections.top || []).filter(Boolean).slice(0, 12);

@@ -82,22 +82,6 @@ const debugCvImport = (label: string, payload: unknown) => {
   }
 };
 
-const looksLikePdfJunk = (payload: any) => {
-  const sample = [
-    payload?.summary,
-    payload?.basics?.name,
-    ...(payload?.skills || []),
-  ]
-    .filter(Boolean)
-    .join('\n')
-    .slice(0, 5000);
-  const hits = ['%PDF-', ' obj', 'endobj', 'stream', 'xref', 'trailer'].reduce((acc, marker) => {
-    const m = sample.match(new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'));
-    return acc + (m?.length || 0);
-  }, 0);
-  return hits >= 4;
-};
-
 const BulletsField: React.FC<{
   name: `experience.${number}.bullets` | `projects.${number}.bullets`;
 }> = ({ name }) => (

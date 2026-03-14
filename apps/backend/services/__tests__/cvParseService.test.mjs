@@ -4,8 +4,6 @@ import {
   parseExperience,
   parseEducation,
   normalizeExtractedDraft,
-  isLikelyCorruptedPdfText,
-  isUsefulResumeText,
 } from '../cvParseService.js';
 import { mapExtractedResumeToCvDraft } from '../../../../packages/shared/cv/mapExtractedResumeToCvDraft.js';
 
@@ -94,29 +92,4 @@ test('parseEducation keeps multiple education entries', () => {
   assert.equal(result.length, 2);
   assert.equal(result[0].school, 'University of Nairobi');
   assert.equal(result[1].school, 'Qatar Technical Institute');
-});
-
-test('isLikelyCorruptedPdfText flags raw PDF internals', () => {
-  const corrupted = `%PDF-1.7\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R /ViewerPreferences 3 0 R >>\nendobj\n4 0 obj\nstream\n...\nendstream\nxref\ntrailer`;
-  assert.equal(isLikelyCorruptedPdfText(corrupted), true);
-});
-
-test('isLikelyCorruptedPdfText allows semantic resume text', () => {
-  const clean = `PAUL MBUGUA\nSenior Full Stack Developer / Platform Engineer\nQatar\npaulpep2002@gmail.com\n\nProfessional Summary\nExperienced developer building platforms.\n\nExperience\nPlatform Engineer - Nova\n2022 - Present\n- Built APIs`;
-  assert.equal(isLikelyCorruptedPdfText(clean), false);
-});
-
-test('isUsefulResumeText returns false for empty extraction', () => {
-  assert.equal(isUsefulResumeText(''), false);
-  assert.equal(isUsefulResumeText('   \n   '), false);
-});
-
-test('isUsefulResumeText returns true for realistic resume text', () => {
-  const clean = `PAUL MBUGUA\nSenior Full Stack Developer / Platform Engineer\nQatar\npaulpep2002@gmail.com\n+974 39918177\n\nProfessional Summary\nFull stack engineer with platform background.\n\nExperience\nPlatform Engineer - Nova\n2022 - Present\n- Built APIs and CI/CD systems\n\nEducation\nUniversity of Nairobi - BSc Computer Science\n2016 - 2020`;
-  assert.equal(isUsefulResumeText(clean), true);
-});
-
-test('isUsefulResumeText returns false for PDF marker-heavy output', () => {
-  const corrupted = `%PDF-1.7\n1 0 obj\nendobj\n2 0 obj\nstream\nendstream\nxref\ntrailer\nMediaBox\nViewerPreferences`;
-  assert.equal(isUsefulResumeText(corrupted), false);
 });
