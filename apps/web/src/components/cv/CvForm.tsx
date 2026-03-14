@@ -72,6 +72,16 @@ const RichTextField: React.FC<{
 
 const hasText = (v?: string | null) => Boolean(v && v.trim().length > 0);
 
+
+const debugCvImport = (label: string, payload: unknown) => {
+  if (process.env.NODE_ENV === 'production') return;
+  try {
+    console.log(`[CV_IMPORT_DEBUG] ${label}`, payload);
+  } catch (_err) {
+    // no-op
+  }
+};
+
 const BulletsField: React.FC<{
   name: `experience.${number}.bullets` | `projects.${number}.bullets`;
 }> = ({ name }) => (
@@ -552,6 +562,39 @@ const CvForm: React.FC = () => {
   const applyExtractedToForm = (extracted: Partial<CvDraft>, mode: 'merge' | 'replace') => {
     const current = getValues();
     const isDemoSeeded = Boolean(current.meta?.isDemoSeeded);
+    debugCvImport('FORM_APPLY_PAYLOAD', { mode, extracted });
+
+    if (mode === 'replace') {
+      const replaced = {
+        ...current,
+        basics: {
+          ...current.basics,
+          ...(extracted.basics || {}),
+          links: extracted.basics?.links || [],
+        },
+        summary: extracted.summary || '',
+        skills: extracted.skills || [],
+        experience: extracted.experience || [],
+        education: extracted.education || [],
+        projects: extracted.projects || [],
+        certifications: extracted.certifications || [],
+        extras: {
+          languages: extracted.extras?.languages || [],
+          interests: extracted.extras?.interests || [],
+        },
+        meta: {
+          ...(current.meta || {}),
+          isDemoSeeded: false,
+          hasImportedCv: true,
+          importedAt: new Date().toISOString(),
+          importMode: mode,
+        },
+      } as CvDraft;
+      reset(replaced, { keepDefaultValues: false });
+      didAutoPreloadRef.current = true;
+      setHasAppliedUpload(true);
+      return;
+    }
 
     const nextBasics = {
       ...current.basics,
