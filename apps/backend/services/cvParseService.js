@@ -705,25 +705,6 @@ function debugStage(label, payload) {
   }
 }
 
-export function isLikelyCorruptedPdfText(text = '') {
-  const sample = String(text || '').slice(0, 12000);
-  if (!sample.trim()) return true;
-  const markerHits = PDF_INTERNAL_MARKERS.reduce((acc, marker) => {
-    const re = new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-    const matches = sample.match(re) || [];
-    return acc + matches.length;
-  }, 0);
-
-  const mostlySingleTokenLines = sample
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line) => /^\d+\s+\d+\s+obj$/i.test(line) || /^(xref|trailer|endobj|endstream)$/i.test(line))
-    .length;
-
-  return markerHits >= 8 || mostlySingleTokenLines >= 3;
-}
-
 function decodePdfStringLiteral(str) {
   return str
     .replace(/\\\(/g, '(')
@@ -993,20 +974,7 @@ export async function parseCvFileToDraftPartial({ buffer, mimetype, filename }) 
     throw new Error('Unsupported file type. Upload PDF or DOCX.');
   }
 
-  debugStage('PDF_EXTRACTED_TEXT_PREVIEW', text.slice(0, 4000));
-
-  const sanity = {
-    parser,
-    corrupted: parser === 'pdf' ? isLikelyCorruptedPdfText(text) : false,
-    hasText: Boolean(text.trim()),
-  };
-  debugStage('EXTRACTION_SANITY_RESULT', sanity);
-
-  if (!sanity.hasText || sanity.corrupted) {
-    throw new Error(
-      'We could not safely extract readable text from this PDF. Please upload a text-based PDF or DOCX.',
-    );
-  }
+  debugStage('RAW_PDF_TEXT', text.slice(0, 4000));
 
   const sections = splitSections(text);
   const topLines = (sections.top || []).filter(Boolean).slice(0, 12);

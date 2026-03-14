@@ -4,7 +4,6 @@ import {
   parseExperience,
   parseEducation,
   normalizeExtractedDraft,
-  isLikelyCorruptedPdfText,
 } from '../cvParseService.js';
 import { mapExtractedResumeToCvDraft } from '../../../../packages/shared/cv/mapExtractedResumeToCvDraft.js';
 
@@ -93,14 +92,4 @@ test('parseEducation keeps multiple education entries', () => {
   assert.equal(result.length, 2);
   assert.equal(result[0].school, 'University of Nairobi');
   assert.equal(result[1].school, 'Qatar Technical Institute');
-});
-
-test('isLikelyCorruptedPdfText flags raw PDF internals', () => {
-  const corrupted = `%PDF-1.7\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R /ViewerPreferences 3 0 R >>\nendobj\n4 0 obj\nstream\n...\nendstream\nxref\ntrailer`;
-  assert.equal(isLikelyCorruptedPdfText(corrupted), true);
-});
-
-test('isLikelyCorruptedPdfText allows semantic resume text', () => {
-  const clean = `PAUL MBUGUA\nSenior Full Stack Developer / Platform Engineer\nQatar\npaulpep2002@gmail.com\n\nProfessional Summary\nExperienced developer building platforms.\n\nExperience\nPlatform Engineer - Nova\n2022 - Present\n- Built APIs`;
-  assert.equal(isLikelyCorruptedPdfText(clean), false);
 });
