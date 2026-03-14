@@ -758,6 +758,19 @@ function extractTextFromPdfBuffer(buffer) {
   return cleanText(parts.join('\n'));
 }
 
+function extractTextFromPdfBufferFallback(buffer) {
+  const raw = buffer.toString('latin1');
+  const matches = raw.match(/\((?:\\.|[^\\)]){2,}\)/g) || [];
+  if (!matches.length) return '';
+  const decoded = matches
+    .slice(0, 20000)
+    .map((token) => decodePdfStringLiteral(token.slice(1, -1)))
+    .map((line) => line.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ' ').trim())
+    .filter((line) => line.length >= 2)
+    .join('\n');
+  return cleanText(decoded);
+}
+
 function unzipDocxEntry(buffer, wantedName = 'word/document.xml') {
   let offset = 0;
   while (offset + 30 < buffer.length) {
@@ -962,7 +975,38 @@ export async function parseCvFileToDraftPartial({ buffer, mimetype, filename }) 
 
   if (mime === 'application/pdf' || ext === '.pdf') {
     parser = 'pdf';
-    text = extractTextFromPdfBuffer(buffer);
+    debugStage('PDF_EXTRACTOR_SELECTED', { primary: 'pdf-token+flate', secondary: 'pdf-paren-fallback' });
+    try {
+      const primaryText = extractTextFromPdfBuffer(buffer);
+      debugStage('PDF_PRIMARY_EXTRACT_RESULT', {
+        type: typeof primaryText,
+        length: primaryText.length,
+        preview: primaryText.slice(0, 500),
+      });
+      text = primaryText;
+      if (!isUsefulResumeText(text)) {
+        const fallbackText = extractTextFromPdfBufferFallback(buffer);
+        debugStage('PDF_FALLBACK_EXTRACT_RESULT', {
+          type: typeof fallbackText,
+          length: fallbackText.length,
+          preview: fallbackText.slice(0, 500),
+        });
+        if (isUsefulResumeText(fallbackText)) {
+          text = fallbackText;
+          debugStage('PDF_EXTRACTOR_SUCCESS', { extractor: 'fallback' });
+        } else {
+          debugStage('PDF_EXTRACTOR_SUCCESS', { extractor: 'primary', useful: isUsefulResumeText(primaryText) });
+        }
+      } else {
+        debugStage('PDF_EXTRACTOR_SUCCESS', { extractor: 'primary' });
+      }
+    } catch (err) {
+      debugStage('PDF_EXTRACTOR_EXCEPTION', {
+        message: err?.message || String(err),
+        stack: err?.stack || null,
+      });
+      throw err;
+    }
   } else if (
     mime ===
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
