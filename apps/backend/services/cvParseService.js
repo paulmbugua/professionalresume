@@ -31,6 +31,19 @@ const PHONE_TEST_RE =
   /^(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)?\d{3,4}[\s.-]?\d{3,4}(?:[\s.-]?\d{1,4})?$/;
 const DATE_RANGE_RE =
   /((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{4}|\d{4})\s*(?:-|–|—|to)\s*((?:Present|Current|Now)|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{4}|\d{4})/i;
+const PDF_INTERNAL_MARKERS = [
+  '%PDF-',
+  ' obj',
+  'endobj',
+  'stream',
+  'endstream',
+  'xref',
+  'trailer',
+  'MediaBox',
+  'ViewerPreferences',
+  'ProcSet',
+  'StructParents',
+];
 
 function cleanText(input = '') {
   return String(input)
@@ -705,18 +718,42 @@ function decodePdfStringLiteral(str) {
 function extractTextFromPdfBuffer(buffer) {
   const raw = buffer.toString('latin1');
   const parts = [];
-  const parens = raw.match(/\((?:\\.|[^\\)])*\)\s*Tj/g) || [];
-  for (const token of parens) {
-    const inner = token.replace(/\)\s*Tj$/, '').replace(/^\(/, '');
-    parts.push(decodePdfStringLiteral(inner));
+  const collectFromChunk = (chunk = '') => {
+    const parens = chunk.match(/\((?:\\.|[^\\)])*\)\s*Tj/g) || [];
+    for (const token of parens) {
+      const inner = token.replace(/\)\s*Tj$/, '').replace(/^\(/, '');
+      parts.push(decodePdfStringLiteral(inner));
+    }
+    const arrays = chunk.match(/\[(.*?)\]\s*TJ/gs) || [];
+    for (const token of arrays) {
+      const matches = token.match(/\((?:\\.|[^\\)])*\)/g) || [];
+      for (const m of matches) parts.push(decodePdfStringLiteral(m.slice(1, -1)));
+    }
+  };
+
+  collectFromChunk(raw);
+
+  const streamRegex = /<<(.*?)>>\s*stream\r?\n([\s\S]*?)\r?\nendstream/g;
+  let match;
+  while ((match = streamRegex.exec(raw)) !== null) {
+    const dict = match[1] || '';
+    const streamDataLatin = match[2] || '';
+    const streamBuffer = Buffer.from(streamDataLatin, 'latin1');
+    let decoded = null;
+
+    try {
+      if (/FlateDecode/i.test(dict)) {
+        decoded = inflateRawSync(streamBuffer).toString('latin1');
+      }
+    } catch (_err) {
+      decoded = null;
+    }
+
+    if (decoded) collectFromChunk(decoded);
   }
-  const arrays = raw.match(/\[(.*?)\]\s*TJ/gs) || [];
-  for (const token of arrays) {
-    const matches = token.match(/\((?:\\.|[^\\)])*\)/g) || [];
-    for (const m of matches) parts.push(decodePdfStringLiteral(m.slice(1, -1)));
-  }
+
   if (!parts.length) {
-    return cleanText(raw.replace(/[^\x20-\x7E\n]/g, ' '));
+    return '';
   }
   return cleanText(parts.join('\n'));
 }
@@ -914,17 +951,22 @@ ${JSON.stringify(extracted).slice(0, 9000)}`,
   }
 }
 
-export async function parseCvFileToDraftPartial({ buffer, mimetype }) {
+export async function parseCvFileToDraftPartial({ buffer, mimetype, filename }) {
   const mime = String(mimetype || '').toLowerCase();
+  const lowerName = String(filename || '').toLowerCase();
+  const ext = lowerName.includes('.') ? lowerName.slice(lowerName.lastIndexOf('.')) : '';
   let parser = 'pdf';
   let text = '';
 
-  if (mime === 'application/pdf') {
+  debugStage('RAW_FILE_META', { mimetype: mime, filename: lowerName, ext, bytes: buffer?.length || 0 });
+
+  if (mime === 'application/pdf' || ext === '.pdf') {
     parser = 'pdf';
     text = extractTextFromPdfBuffer(buffer);
   } else if (
     mime ===
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    ext === '.docx'
   ) {
     parser = 'docx';
     text = extractTextFromDocxBuffer(buffer);

@@ -11,6 +11,37 @@ type Props = {
   resumeSourceHint?: 'saved' | 'demo' | 'live';
 };
 
+const hasPdfJunk = (draft: CvDraft) => {
+  const sample = [
+    draft?.summary,
+    draft?.basics?.name,
+    draft?.basics?.headline,
+    ...(draft?.skills || []).slice(0, 20),
+    ...(draft?.experience || []).flatMap((item) => [item.role, item.company, ...(item.bullets || [])]),
+  ]
+    .filter(Boolean)
+    .join('\n')
+    .slice(0, 6000);
+
+  const markers = [
+    '%PDF-',
+    ' obj',
+    'endobj',
+    'stream',
+    'endstream',
+    'xref',
+    'trailer',
+    'MediaBox',
+    'ViewerPreferences',
+    'StructParents',
+  ];
+  const hits = markers.reduce((acc, marker) => {
+    const m = sample.match(new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'));
+    return acc + (m?.length || 0);
+  }, 0);
+  return hits >= 6;
+};
+
 const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSourceHint }) => {
   const [iframeHeight, setIframeHeight] = useState<number>(1400);
   const resolved = resolvePreviewDraft(draft);
@@ -31,6 +62,7 @@ const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSource
     [resolved.draft, draft]
   );
   const resumeSource = resolved.resumeSource;
+  const blockedDueToCorruption = hasPdfJunk(previewDraft);
   const previewBadgeLabel =
     resumeSource === 'demo'
       ? 'Demo content'
@@ -143,7 +175,15 @@ const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSource
       )}
 
       <div className="cv-page h-full min-h-0 w-full overflow-auto rounded-2xl bg-white text-gray-900 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.4)]">
-        {html ? (
+        {blockedDueToCorruption ? (
+          <div className="p-6 text-sm text-rose-600">
+            <p className="font-semibold">Imported resume data looks corrupted.</p>
+            <p className="mt-1 text-xs text-rose-700">
+              We detected PDF internal tokens in extracted content and blocked preview rendering to avoid
+              showing invalid data. Please retry extraction with a text-based PDF or DOCX.
+            </p>
+          </div>
+        ) : html ? (
           <iframe
             key={`${previewDraft.templateId}:${styleFingerprint}`}
             title={`CV preview ${resumeSourceHint || resumeSource}`}

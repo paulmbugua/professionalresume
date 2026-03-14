@@ -775,6 +775,9 @@ const CvForm: React.FC = () => {
     try {
       const parsed = await parseUploadedCv({ backendUrl, token, file: cvFile, mode: uploadMode });
       const extracted = parsed.extracted || null;
+      if (extracted && looksLikePdfJunk(extracted)) {
+        throw new Error('Extraction output appears corrupted. Please retry with a text-based PDF or DOCX.');
+      }
       setParsedPreview(extracted);
       setDiagnostics(parsed.diagnostics || null);
       if (extracted) {
