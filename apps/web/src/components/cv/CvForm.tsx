@@ -72,6 +72,32 @@ const RichTextField: React.FC<{
 
 const hasText = (v?: string | null) => Boolean(v && v.trim().length > 0);
 
+
+const debugCvImport = (label: string, payload: unknown) => {
+  if (process.env.NODE_ENV === 'production') return;
+  try {
+    console.log(`[CV_IMPORT_DEBUG] ${label}`, payload);
+  } catch (_err) {
+    // no-op
+  }
+};
+
+const looksLikePdfJunk = (payload: any) => {
+  const sample = [
+    payload?.summary,
+    payload?.basics?.name,
+    ...(payload?.skills || []),
+  ]
+    .filter(Boolean)
+    .join('\n')
+    .slice(0, 5000);
+  const hits = ['%PDF-', ' obj', 'endobj', 'stream', 'xref', 'trailer'].reduce((acc, marker) => {
+    const m = sample.match(new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'));
+    return acc + (m?.length || 0);
+  }, 0);
+  return hits >= 4;
+};
+
 const BulletsField: React.FC<{
   name: `experience.${number}.bullets` | `projects.${number}.bullets`;
 }> = ({ name }) => (
@@ -552,6 +578,39 @@ const CvForm: React.FC = () => {
   const applyExtractedToForm = (extracted: Partial<CvDraft>, mode: 'merge' | 'replace') => {
     const current = getValues();
     const isDemoSeeded = Boolean(current.meta?.isDemoSeeded);
+    debugCvImport('FORM_APPLY_PAYLOAD', { mode, extracted });
+
+    if (mode === 'replace') {
+      const replaced = {
+        ...current,
+        basics: {
+          ...current.basics,
+          ...(extracted.basics || {}),
+          links: extracted.basics?.links || [],
+        },
+        summary: extracted.summary || '',
+        skills: extracted.skills || [],
+        experience: extracted.experience || [],
+        education: extracted.education || [],
+        projects: extracted.projects || [],
+        certifications: extracted.certifications || [],
+        extras: {
+          languages: extracted.extras?.languages || [],
+          interests: extracted.extras?.interests || [],
+        },
+        meta: {
+          ...(current.meta || {}),
+          isDemoSeeded: false,
+          hasImportedCv: true,
+          importedAt: new Date().toISOString(),
+          importMode: mode,
+        },
+      } as CvDraft;
+      reset(replaced, { keepDefaultValues: false });
+      didAutoPreloadRef.current = true;
+      setHasAppliedUpload(true);
+      return;
+    }
 
     const nextBasics = {
       ...current.basics,
@@ -732,6 +791,9 @@ const CvForm: React.FC = () => {
     try {
       const parsed = await parseUploadedCv({ backendUrl, token, file: cvFile, mode: uploadMode });
       const extracted = parsed.extracted || null;
+      if (extracted && looksLikePdfJunk(extracted)) {
+        throw new Error('Extraction output appears corrupted. Please retry with a text-based PDF or DOCX.');
+      }
       setParsedPreview(extracted);
       setDiagnostics(parsed.diagnostics || null);
       if (extracted) {

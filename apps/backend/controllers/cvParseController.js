@@ -19,6 +19,7 @@ export async function parseCvUpload(req, res) {
     const { extracted, diagnostics } = await parseCvFileToDraftPartial({
       buffer: req.file.buffer,
       mimetype: req.file.mimetype,
+      filename: req.file.originalname,
     });
 
     return res.json({
