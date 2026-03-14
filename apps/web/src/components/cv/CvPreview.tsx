@@ -80,6 +80,19 @@ const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSource
   }, [meta, previewDraft, shouldUseHtmlPreview, styleFingerprint]);
 
   useEffect(() => {
+    if (process.env.NODE_ENV === 'production') return;
+    console.log('[CV_IMPORT_DEBUG] PREVIEW_RENDER_PAYLOAD', {
+      name: previewDraft?.basics?.name,
+      headline: previewDraft?.basics?.headline,
+      email: previewDraft?.basics?.email,
+      experience: previewDraft?.experience?.length || 0,
+      education: previewDraft?.education?.length || 0,
+      skills: previewDraft?.skills?.length || 0,
+      languages: previewDraft?.extras?.languages?.length || 0,
+    });
+  }, [previewDraft]);
+
+  useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       const data: any = e.data;
       if (!data || data.__cv_iframe_resize !== true) return;

@@ -1,4 +1,5 @@
 import { inflateRawSync } from 'node:zlib';
+import { mapExtractedResumeToCvDraft } from '../../../packages/shared/cv/mapExtractedResumeToCvDraft.js';
 
 const MAX_TEXT_CHARS = 120000;
 
@@ -24,6 +25,10 @@ const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const URL_RE = /(https?:\/\/[^\s)]+|www\.[^\s)]+)/gi;
 const PHONE_RE =
   /(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)?\d{3,4}[\s.-]?\d{3,4}(?:[\s.-]?\d{1,4})?/g;
+const EMAIL_TEST_RE = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
+const URL_TEST_RE = /^(https?:\/\/[^\s)]+|www\.[^\s)]+|[a-z0-9.-]+\.[a-z]{2,}(?:\/[^\s)]*)?)$/i;
+const PHONE_TEST_RE =
+  /^(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)?\d{3,4}[\s.-]?\d{3,4}(?:[\s.-]?\d{1,4})?$/;
 const DATE_RANGE_RE =
   /((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{4}|\d{4})\s*(?:-|–|—|to)\s*((?:Present|Current|Now)|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{4}|\d{4})/i;
 
@@ -114,7 +119,72 @@ function dedupeStrings(values = [], max = 50) {
   return out;
 }
 
+function isEmailLine(value = '') {
+  return EMAIL_TEST_RE.test(String(value).trim());
+}
+
+function isPhoneLine(value = '') {
+  const line = String(value).trim();
+  if (!line) return false;
+  if (!PHONE_TEST_RE.test(line)) return false;
+  return line.replace(/\D/g, '').length >= 7;
+}
+
+function isUrlLine(value = '') {
+  return URL_TEST_RE.test(String(value).trim());
+}
+
+function parseDateRange(value = '') {
+  const m = String(value).match(DATE_RANGE_RE);
+  if (!m) return { start: '', end: '', current: false };
+  const end = m[2] || '';
+  return {
+    start: m[1] || '',
+    end,
+    current: /present|current|now/i.test(end),
+  };
+}
+
+function flattenSkillLines(lines = []) {
+  const out = [];
+  for (const line of lines) {
+    const cleaned = cap(line, 300);
+    if (!cleaned) continue;
+    const rhs = cleaned.includes(':') ? cleaned.split(':').slice(1).join(':') : cleaned;
+    const chunks = rhs.split(/[,|;/]|\s{2,}/g).map((s) => cap(s, 120));
+    for (const chunk of chunks) {
+      if (!chunk) continue;
+      out.push(chunk.replace(/^[-•*]\s*/, ''));
+    }
+  }
+  return dedupeStrings(out, 80);
+}
+
+function inferNameFromLines(lines = []) {
+  const candidates = lines
+    .map((line) => cap(line, 120))
+    .filter(Boolean)
+    .filter((line) => {
+      const words = line.split(/\s+/).filter(Boolean);
+      if (words.length < 2 || words.length > 5) return false;
+      if (isEmailLine(line) || isUrlLine(line) || isPhoneLine(line)) return false;
+      return /^[A-Za-z][A-Za-z\s'.-]+$/.test(line);
+    });
+
+  const uppercase = candidates.find((line) => {
+    const letters = line.replace(/[^A-Za-z]/g, '');
+    if (!letters) return false;
+    return letters === letters.toUpperCase();
+  });
+
+  return uppercase || candidates[0] || '';
+}
+
 function parseBasics(text, topLines = []) {
+  const allLines = text
+    .split('\n')
+    .map((line) => cap(line, 180))
+    .filter(Boolean);
   const emails = text.match(EMAIL_RE) || [];
   const urls = text.match(URL_RE) || [];
   const phones = (text.match(PHONE_RE) || []).filter(
@@ -125,10 +195,10 @@ function parseBasics(text, topLines = []) {
     topLines.find((line) => {
       const words = line.trim().split(/\s+/);
       if (words.length < 2 || words.length > 5) return false;
-      if (EMAIL_RE.test(line) || URL_RE.test(line) || PHONE_RE.test(line))
-        return false;
+      if (isEmailLine(line) || isUrlLine(line) || isPhoneLine(line)) return false;
       return /^[A-Za-z][A-Za-z\s'.-]+$/.test(line);
     }) ||
+    inferNameFromLines(allLines) ||
     topLines[0] ||
     '';
 
@@ -143,15 +213,20 @@ function parseBasics(text, topLines = []) {
 
   const locationCandidate =
     topLines.find((line) => {
-      if (EMAIL_RE.test(line) || URL_RE.test(line) || PHONE_RE.test(line))
-        return false;
+      if (isEmailLine(line) || isUrlLine(line) || isPhoneLine(line)) return false;
       return (
         /,/.test(line) ||
-        /\b(kenya|usa|uk|canada|nigeria|india|germany|france|remote)\b/i.test(
+        /\b(kenya|usa|uk|canada|nigeria|india|germany|france|qatar|uae|remote)\b/i.test(
           line,
         )
       );
-    }) || '';
+    }) ||
+    allLines.find((line) =>
+      /\b(kenya|usa|uk|canada|nigeria|india|germany|france|qatar|uae|remote)\b/i.test(
+        line,
+      ),
+    ) ||
+    '';
 
   const links = dedupeStrings(urls.map(normalizeUrl), 10).map((url) => ({
     label: /linkedin/i.test(url)
@@ -184,10 +259,7 @@ function parseSummary(sections, topLines) {
 function parseSkills(lines = []) {
   const raw = lines.join('\n');
   if (!raw.trim()) return [];
-  const parts = raw.includes(',')
-    ? raw.split(',')
-    : raw.split('\n').map((line) => line.replace(/^[-•*]\s*/, ''));
-  return dedupeStrings(parts, 50);
+  return flattenSkillLines(raw.split('\n')).slice(0, 50);
 }
 
 function parseBullets(lines = []) {
@@ -222,6 +294,28 @@ export function parseExperience(lines = []) {
 
   for (const line of lines) {
     if (!line) continue;
+    const headerParts = line.split(/\s+[-–—]\s+|\s+\|\s+/).map((p) => p.trim());
+    const hasHeaderRoleCompany = headerParts.length >= 2 && !/^[-•*]\s+/.test(line);
+    const inlineDate = parseDateRange(line);
+    const looksLikeDateOnly = Boolean(inlineDate.start && inlineDate.end) && headerParts.length <= 2;
+
+    if (
+      hasHeaderRoleCompany &&
+      !looksLikeDateOnly &&
+      (inlineDate.start || (!current || (current.role && current.company)))
+    ) {
+      flush();
+      current = {
+        company: headerParts[1] || '',
+        role: headerParts[0] || '',
+        start: inlineDate.start || '',
+        end: inlineDate.end || '',
+        location: '',
+        bullets: [],
+      };
+      continue;
+    }
+
     const dateMatch = line.match(DATE_RANGE_RE);
     if (dateMatch) {
       if (!current) {
@@ -335,7 +429,14 @@ export function parseEducation(lines = []) {
     else if (!current.program) current.program = line;
     else {
       flush();
-      current = { school: line, program: '', start: '', end: '', details: '' };
+      const parts = line.split(/\s+[-–—]\s+|\s+\|\s+/);
+      current = {
+        school: parts[0] || line,
+        program: parts[1] || '',
+        start: '',
+        end: '',
+        details: '',
+      };
     }
   }
   flush();
@@ -418,6 +519,7 @@ function parseSimpleList(lines = [], max = 20) {
 }
 
 export function normalizeExtractedDraft(extracted = {}) {
+  const canonical = mapExtractedResumeToCvDraft(extracted, {});
   const basics = extracted.basics || {};
   const links = Array.isArray(basics.links) ? basics.links : [];
   const dedupLinks = [];
@@ -444,8 +546,8 @@ export function normalizeExtractedDraft(extracted = {}) {
       location: cap(basics.location, 120),
       links: dedupLinks,
     },
-    summary: cap(extracted.summary, 2000),
-    skills: dedupeStrings(extracted.skills || [], 50),
+    summary: cap(canonical.summary || extracted.summary, 2000),
+    skills: dedupeStrings(canonical.skills || extracted.skills || [], 50),
     experience: (Array.isArray(extracted.experience)
       ? extracted.experience
       : []
@@ -459,7 +561,7 @@ export function normalizeExtractedDraft(extracted = {}) {
         location: cap(e?.location, 120),
         bullets: dedupeStrings(e?.bullets || [], 12),
       })),
-    education: (Array.isArray(extracted.education) ? extracted.education : [])
+    education: (Array.isArray(canonical.education) ? canonical.education : Array.isArray(extracted.education) ? extracted.education : [])
       .slice(0, 10)
       .map((e) => ({
         school: cap(e?.school, 180),
@@ -468,7 +570,7 @@ export function normalizeExtractedDraft(extracted = {}) {
         end: cap(e?.end, 40),
         details: cap(e?.details, 500),
       })),
-    projects: (Array.isArray(extracted.projects) ? extracted.projects : [])
+    projects: (Array.isArray(canonical.projects) ? canonical.projects : Array.isArray(extracted.projects) ? extracted.projects : [])
       .slice(0, 20)
       .map((p) => ({
         name: cap(p?.name, 180),
@@ -476,7 +578,9 @@ export function normalizeExtractedDraft(extracted = {}) {
         description: cap(p?.description, 600),
         bullets: dedupeStrings(p?.bullets || [], 12),
       })),
-    certifications: (Array.isArray(extracted.certifications)
+    certifications: (Array.isArray(canonical.certifications)
+      ? canonical.certifications
+      : Array.isArray(extracted.certifications)
       ? extracted.certifications
       : []
     )
@@ -487,10 +591,105 @@ export function normalizeExtractedDraft(extracted = {}) {
         year: cap(c?.year, 8),
       })),
     extras: {
-      languages: dedupeStrings(extracted?.extras?.languages || [], 20),
+      languages: dedupeStrings(
+        extracted?.extras?.languages || extracted?.languages || [],
+        20,
+      ),
       interests: dedupeStrings(extracted?.extras?.interests || [], 20),
     },
   };
+}
+
+function mergeExtractedData(primary = {}, fallback = {}) {
+  return normalizeExtractedDraft({
+    basics: {
+      ...(fallback.basics || {}),
+      ...(primary.basics || {}),
+      links: [
+        ...((primary.basics && primary.basics.links) || []),
+        ...((fallback.basics && fallback.basics.links) || []),
+      ],
+    },
+    summary: primary.summary || fallback.summary || '',
+    skills: [...(primary.skills || []), ...(fallback.skills || [])],
+    experience: (primary.experience && primary.experience.length)
+      ? primary.experience
+      : fallback.experience || [],
+    education: (primary.education && primary.education.length)
+      ? primary.education
+      : fallback.education || [],
+    projects: (primary.projects && primary.projects.length)
+      ? primary.projects
+      : fallback.projects || [],
+    certifications: (primary.certifications && primary.certifications.length)
+      ? primary.certifications
+      : fallback.certifications || [],
+    extras: {
+      languages: [
+        ...((primary.extras && primary.extras.languages) || []),
+        ...((fallback.extras && fallback.extras.languages) || []),
+      ],
+      interests: [
+        ...((primary.extras && primary.extras.interests) || []),
+        ...((fallback.extras && fallback.extras.interests) || []),
+      ],
+    },
+  });
+}
+
+function recoverDeterministicSections(text = '', extracted = {}) {
+  const lines = text
+    .split('\n')
+    .map((line) => cap(line, 200))
+    .filter(Boolean);
+  const links = dedupeStrings((text.match(URL_RE) || []).map(normalizeUrl), 12).map((url) => ({
+    label: /github/i.test(url)
+      ? 'GitHub'
+      : /linkedin/i.test(url)
+        ? 'LinkedIn'
+        : /portfolio|novagptech/i.test(url)
+          ? 'Portfolio'
+          : 'Website',
+    url,
+  }));
+  const basics = {
+    ...extracted.basics,
+    name: extracted.basics?.name || inferNameFromLines(lines),
+    email: extracted.basics?.email || cap((text.match(EMAIL_RE) || [])[0] || '', 160),
+    phone: extracted.basics?.phone || cap((text.match(PHONE_RE) || [])[0] || '', 80),
+    location:
+      extracted.basics?.location ||
+      lines.find((line) => /\b(qatar|uae|kenya|remote|usa|uk|canada)\b/i.test(line)) ||
+      '',
+    links: [...(extracted.basics?.links || []), ...links],
+  };
+
+  const parsedLanguages = lines
+    .filter((line) => /\b(fluent|basic|native|intermediate|advanced)\b/i.test(line))
+    .filter((line) => /\b(english|arabic|french|spanish|german|swahili)\b/i.test(line))
+    .map((line) => line.replace(/^[-•*]\s*/, ''));
+
+  return normalizeExtractedDraft({
+    ...extracted,
+    basics,
+    skills: extracted.skills?.length ? extracted.skills : flattenSkillLines(lines),
+    extras: {
+      languages: [
+        ...(extracted.extras?.languages || []),
+        ...parsedLanguages,
+      ],
+      interests: extracted.extras?.interests || [],
+    },
+  });
+}
+
+function debugStage(label, payload) {
+  if (process.env.NODE_ENV === 'production' && !process.env.CV_PARSE_DEBUG) return;
+  try {
+    console.info(`[CV_PARSE_DEBUG] ${label}`, payload);
+  } catch (_err) {
+    // no-op
+  }
 }
 
 function decodePdfStringLiteral(str) {
@@ -733,6 +932,8 @@ export async function parseCvFileToDraftPartial({ buffer, mimetype }) {
     throw new Error('Unsupported file type. Upload PDF or DOCX.');
   }
 
+  debugStage('RAW_PDF_TEXT', text.slice(0, 4000));
+
   const sections = splitSections(text);
   const topLines = (sections.top || []).filter(Boolean).slice(0, 12);
 
@@ -763,7 +964,11 @@ export async function parseCvFileToDraftPartial({ buffer, mimetype }) {
     text,
     extracted: heuristicExtracted,
   });
-  const extracted = normalizeExtractedDraft(refined || heuristicExtracted);
+  debugStage('AI_STRUCTURED_EXTRACTION', refined || null);
+
+  const mergedExtracted = mergeExtractedData(refined || {}, heuristicExtracted);
+  const extracted = recoverDeterministicSections(text, mergedExtracted);
+  debugStage('NORMALIZED_CV_DRAFT', extracted);
 
   const warnings = [];
   if (refined?.warnings?.length) warnings.push(...refined.warnings.slice(0, 6));
