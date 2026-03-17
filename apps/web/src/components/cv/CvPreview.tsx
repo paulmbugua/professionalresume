@@ -96,7 +96,7 @@ const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSource
     ]
   );
 
-  const shouldUseHtmlPreview = !Template && Boolean(meta?.renderHtml);
+  const shouldUseHtmlPreview = Boolean(meta?.renderHtml);
 
   const html = useMemo(() => {
     if (!shouldUseHtmlPreview) return null;
