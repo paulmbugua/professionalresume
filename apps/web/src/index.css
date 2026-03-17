@@ -13,18 +13,17 @@
 @layer base {
   /* Root font size + sane text scaling */
   html {
-    font-size: 16px;
+    font-size: 16.5px;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
-  }
-  @media (min-width: 768px) {
-    html { font-size: 14px; }
   }
 
   /* Light mode defaults */
   body {
     @apply font-sans text-darkText bg-softGray antialiased;
     font-family: 'Poppins', sans-serif;
+    font-size: 1rem;
+    line-height: 1.55;
   }
   /* Force inherit */
   * { font-family: inherit; }
@@ -162,13 +161,12 @@ section[id] { scroll-margin-top: 80px; }
   /* Buttons */
   .btn {
     @apply inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg
-           bg-softPink text-white font-medium transition duration-200 hover:bg-pink-700
-           dark:hover:bg-pink-600;
+           bg-primary text-white font-semibold transition duration-200 hover:bg-secondary;
   }
   .btn-outline {
     @apply inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg
-           border border-softPink text-softPink font-medium transition duration-200
-           hover:bg-softPink hover:text-white;
+           border border-primary text-primary font-semibold transition duration-200
+           hover:bg-primary hover:text-white;
   }
 
   .link { @apply text-gray-500 hover:text-softPink cursor-pointer dark:text-darkTextSecondary; }

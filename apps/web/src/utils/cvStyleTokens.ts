@@ -2,10 +2,10 @@ import type { CvDraft } from '@cvpro/shared/types';
 
 export function resolveDraftStyles(draft: CvDraft) {
   const typography = draft.typography || {
-    baseFontSize: 12,
-    h1Size: 28,
-    h2Size: 12,
-    h3Size: 11,
+    baseFontSize: 11,
+    h1Size: 26,
+    h2Size: 13,
+    h3Size: 12,
     bodySize: 11,
     fontFamily: 'Inter,system-ui,Arial',
   };

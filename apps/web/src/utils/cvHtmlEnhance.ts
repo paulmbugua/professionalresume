@@ -98,15 +98,16 @@ export function withPreviewEnhancements(
 
   const paginationCss = `
 <style id="cv-shared-pagination">
-@page { size: A4; margin: 14mm; }
+@page { size: A4; margin: 0; }
 *{box-sizing:border-box}
+html,body{margin:0;padding:0}
 section,.item,.row,header,article{break-inside:avoid;page-break-inside:avoid}
 h2,h3{break-after:avoid;page-break-after:avoid}
 ul{break-inside:auto;page-break-inside:auto}
 li{break-inside:avoid;page-break-inside:avoid}
 @media print{
   html,body{background:#fff !important;overflow:visible !important}
-  .page{width:auto !important;min-height:auto !important;margin:0 !important;box-shadow:none !important;overflow:visible !important}
+  .page{margin:0 !important;box-shadow:none !important;overflow:visible !important}
 }
 ${sidebarPagedBackgroundCss}
 ${onePageClampCss}
