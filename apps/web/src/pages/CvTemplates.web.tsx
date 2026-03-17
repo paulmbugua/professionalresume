@@ -597,11 +597,11 @@ const CvTemplatesPage: React.FC = () => {
 <div className="w-full bg-[#f7f8fb] pb-10">
   <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
     <div className="text-center text-xs font-semibold text-gray-500">
-      Our customers have been hired at<sup>2</sup>
+      Our customers have been hired at<sup>1</sup>
     </div>
 
     <div className="mt-2 text-center text-[11px] text-gray-400">
-      <sup>2</sup> Company names and logos are used for illustrative purposes only.
+      <sup>1</sup> Company names and logos are used for illustrative purposes only.
     </div>
   </div>
 

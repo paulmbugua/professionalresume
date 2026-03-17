@@ -12,6 +12,7 @@ import {
   uploadTemplate,
   signFileDownload,
   getPrintHtml,
+  improveExperienceController
 } from '../controllers/cvController.js';
 import { parseCvUpload } from '../controllers/cvParseController.js';
 
@@ -41,7 +42,7 @@ r.get('/drafts/:id/print-html', requireAuth, getPrintHtml);
 r.put('/drafts/:id', requireAuth, updateDraft);
 r.patch('/drafts/:id', requireAuth, updateDraft);
 r.delete('/drafts/:id', requireAuth, deleteDraft);
-
+r.post('/improve-experience', requireAuth, improveExperienceController);
 r.post('/export', requireAuth, upload.single('file'), exportCv);
 r.post('/parse', requireAuth, parseUpload.single('file'), parseCvUpload);
 r.get('/files/:key/sign', requireAuth, signFileDownload);

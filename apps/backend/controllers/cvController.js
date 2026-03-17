@@ -13,6 +13,7 @@ import {
   ensureTemplatesSeeded,
 } from '../services/cvService.js';
 import { cvTemplates as localTemplates } from '../services/cvTemplates.js';
+import { improveExperienceWithAi } from '../services/cvAiService.js';
 import { buildCvHtml, htmlToPdfBuffer } from '../services/cvRenderService.js';
 import { putDocObject, signDocGetUrl, getPublicR2Url } from '../services/r2.js';
 import {
@@ -246,5 +247,31 @@ export async function uploadTemplate(req, res) {
     return res
       .status(500)
       .json({ error: err.message || 'Failed to upload template' });
+  }
+}
+
+
+
+export async function improveExperienceController(req, res) {
+  try {
+    const { experience, wholeCvContext } = req.body || {};
+
+    if (!experience || typeof experience !== 'object') {
+      return res.status(400).json({ error: 'Experience payload is required.' });
+    }
+
+    const improved = await improveExperienceWithAi({
+      experience,
+      wholeCvContext: wholeCvContext || {},
+    });
+
+    return res.json({
+      ok: true,
+      improved,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      error: err?.message || 'Failed to improve experience.',
+    });
   }
 }

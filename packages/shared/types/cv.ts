@@ -9,6 +9,7 @@ export type CvExperience = {
   start: string;
   end: string;
   location?: string;
+  description?: string;
   bullets: string[];
 };
 

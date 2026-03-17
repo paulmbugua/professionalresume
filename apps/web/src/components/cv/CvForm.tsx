@@ -5,8 +5,8 @@ import { useShopContext } from '@cvpro/shared/context';
 import { demoResume, hasAnyUserData } from '../../templates/demoResume';
 import { stripHtml } from '../../utils/cvRichText';
 import { parseUploadedCv } from '../../utils/cvParseApi';
+import { improveExperienceEntry } from '../../utils/cvImproveApi';
 
-// ✅ forwardRef so react-hook-form can register inputs correctly
 const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
   ({ className, ...props }, ref) => (
     <input {...props} ref={ref} className={`input ${className ?? ''}`} />
@@ -72,15 +72,88 @@ const RichTextField: React.FC<{
 
 const hasText = (v?: string | null) => Boolean(v && v.trim().length > 0);
 
-
 const debugCvImport = (label: string, payload: unknown) => {
   if (process.env.NODE_ENV === 'production') return;
   try {
     console.log(`[CV_IMPORT_DEBUG] ${label}`, payload);
-  } catch (_err) {
+  } catch {
     // no-op
   }
 };
+
+const looksLikePdfJunk = (extracted: any): boolean => {
+  if (!extracted) return false;
+
+  const textBits: string[] = [];
+
+  const push = (value: unknown) => {
+    if (typeof value === 'string' && value.trim()) textBits.push(value);
+    if (Array.isArray(value)) {
+      value.forEach((item) => {
+        if (typeof item === 'string' && item.trim()) textBits.push(item);
+      });
+    }
+  };
+
+  push(extracted?.basics?.name);
+  push(extracted?.basics?.headline);
+  push(extracted?.basics?.email);
+  push(extracted?.basics?.phone);
+  push(extracted?.basics?.location);
+  push(extracted?.summary);
+  push(extracted?.skills);
+  push(extracted?.extras?.languages);
+  push(extracted?.extras?.interests);
+
+  const sample = textBits.join(' ').slice(0, 4000);
+  if (!sample.trim()) return false;
+
+  const pdfMarkers = [
+    '%PDF-',
+    'endobj',
+    'stream',
+    'endstream',
+    'xref',
+    'MediaBox',
+    'ViewerPreferences',
+    'ProcSet',
+    'StructParents',
+  ];
+
+  const markerHits = pdfMarkers.reduce(
+    (count, marker) => count + (sample.includes(marker) ? 1 : 0),
+    0
+  );
+
+  const weirdChars = (sample.match(/[^\x09\x0A\x0D\x20-\x7E]/g) || []).length;
+  const weirdRatio = sample.length ? weirdChars / sample.length : 0;
+
+  return markerHits >= 3 || weirdRatio > 0.12;
+};
+
+const normalizeExperienceItems = (items: any[] = []) =>
+  (Array.isArray(items) ? items : []).map((item) => ({
+    company: item?.company || '',
+    role: item?.role || '',
+    start: item?.start || '',
+    end: item?.end || '',
+    location: item?.location || '',
+    description: item?.description || '',
+    bullets: Array.isArray(item?.bullets) ? item.bullets.filter(Boolean) : [],
+  }));
+
+const experienceSignature = (items: any[] = []) =>
+  JSON.stringify(
+    normalizeExperienceItems(items).map((item) => ({
+      company: item.company,
+      role: item.role,
+      start: item.start,
+      end: item.end,
+      location: item.location,
+      description: item.description,
+      bullets: item.bullets,
+    }))
+  );
 
 const BulletsField: React.FC<{
   name: `experience.${number}.bullets` | `projects.${number}.bullets`;
@@ -185,7 +258,6 @@ const SectionCard: React.FC<SectionCardProps> = ({
           <p className="mt-1 text-xs text-gray-500 dark:text-white/60">{subtitle}</p>
         ) : null}
       </button>
-
       {right ? <div className="shrink-0">{right}</div> : null}
     </div>
 
@@ -202,6 +274,7 @@ const pillPrimary = `${pillBtn} border-transparent bg-primary text-white hover:o
 const CvForm: React.FC = () => {
   const { register, control, setValue, getValues, reset } = useFormContext<CvDraft>();
   const { backendUrl, token } = useShopContext() as any;
+
   const [skillInput, setSkillInput] = useState('');
   const [uploadMode, setUploadMode] = useState<'merge' | 'replace'>('merge');
   const [cvFile, setCvFile] = useState<File | null>(null);
@@ -215,11 +288,14 @@ const CvForm: React.FC = () => {
   } | null>(null);
   const [hasAppliedUpload, setHasAppliedUpload] = useState(false);
   const [importUndoSnapshot, setImportUndoSnapshot] = useState<CvDraft | null>(null);
+  const [experienceRenderKey, setExperienceRenderKey] = useState(0);
+  const [improvingExperienceIndex, setImprovingExperienceIndex] = useState<number | null>(null);
+const [improvingAllExperience, setImprovingAllExperience] = useState(false);
+const [experienceAiError, setExperienceAiError] = useState<string | null>(null);
 
-  // one-time guard so we don’t preload multiple times
   const didAutoPreloadRef = useRef(false);
+  const lastExperienceSyncSigRef = useRef('');
 
-  // Watch what we need for status + controls
   const basics = useWatch({ control, name: 'basics' });
   const summary = useWatch({ control, name: 'summary' });
   const skills = useWatch({ control, name: 'skills' }) || [];
@@ -231,14 +307,12 @@ const CvForm: React.FC = () => {
   const sectionVisibility =
     useWatch({ control, name: 'sectionVisibility' }) || demoResume.sectionVisibility;
 
-  // Field arrays (needed for replace() preload)
   const linksField = useFieldArray({ control, name: 'basics.links' });
   const experienceField = useFieldArray({ control, name: 'experience' });
   const educationField = useFieldArray({ control, name: 'education' });
   const projectsField = useFieldArray({ control, name: 'projects' });
   const certificationsField = useFieldArray({ control, name: 'certifications' });
 
-  // UI: collapsed sections
   const [open, setOpen] = useState<Record<string, boolean>>({
     basics: true,
     summary: true,
@@ -259,7 +333,53 @@ const CvForm: React.FC = () => {
     });
   };
 
-  // ---------- Section status (✅ Completed / ⚠ Missing) ----------
+  useEffect(() => {
+    debugCvImport('EXPERIENCE_RENDER_STATE', {
+      watchedExperienceLength: Array.isArray(experience) ? experience.length : 0,
+      fieldArrayLength: experienceField.fields.length,
+      watchedExperience: normalizeExperienceItems(experience as any[]),
+      fieldArrayItems: experienceField.fields.map((item: any) => ({
+        id: item.id,
+        company: item.company || '',
+        role: item.role || '',
+        start: item.start || '',
+        end: item.end || '',
+        location: item.location || '',
+        description: item.description || '',
+        bullets: Array.isArray(item.bullets) ? item.bullets : [],
+      })),
+    });
+  }, [experience, experienceField.fields]);
+
+  useEffect(() => {
+    const watchedNormalized = normalizeExperienceItems(experience as any[]);
+    const watchedSig = experienceSignature(watchedNormalized);
+    const fieldSig = experienceSignature(experienceField.fields as any[]);
+
+    if (!hasAppliedUpload) return;
+    if (!watchedNormalized.length) return;
+    if (watchedSig === fieldSig) return;
+    if (lastExperienceSyncSigRef.current === watchedSig) return;
+
+    lastExperienceSyncSigRef.current = watchedSig;
+
+    debugCvImport('EXPERIENCE_SYNC_MISMATCH', {
+      watchedSig,
+      fieldSig,
+      watchedNormalized,
+      fieldFields: experienceField.fields,
+    });
+
+    experienceField.replace(watchedNormalized as any);
+    setExperienceRenderKey((k) => k + 1);
+
+    requestAnimationFrame(() => {
+      debugCvImport('EXPERIENCE_SYNC_AFTER_REPLACE', {
+        getValuesExperience: normalizeExperienceItems(getValues('experience') as any[]),
+      });
+    });
+  }, [experience, experienceField.fields, hasAppliedUpload, experienceField, getValues]);
+
   const statuses = useMemo(() => {
     const basicsDone =
       hasText(basics?.name) ||
@@ -280,6 +400,7 @@ const CvForm: React.FC = () => {
           hasText(e?.location) ||
           hasText(e?.start) ||
           hasText(e?.end) ||
+          hasText(e?.description) ||
           (e?.bullets?.some((b: any) => hasText(b)) ?? false)
       ) || false;
 
@@ -328,12 +449,10 @@ const CvForm: React.FC = () => {
       ? 'You’ve entered some data here.'
       : 'Nothing entered yet — you can hide or clear this section if you don’t need it.';
 
-  // ---------- Demo preload helper (supports "auto" vs "button") ----------
   const preloadFromDemo = (opts?: { markDirty?: boolean }) => {
     const markDirty = opts?.markDirty ?? true;
     const current = getValues();
 
-    // Non-array fields
     setValue('meta.isDemoSeeded' as any, true, {
       shouldDirty: markDirty,
       shouldTouch: false,
@@ -355,7 +474,6 @@ const CvForm: React.FC = () => {
       'basics',
       {
         ...demoResume.basics,
-        // links handled via fieldArray.replace below
         links: current.basics?.links ?? demoResume.basics.links,
       } as any,
       {
@@ -366,6 +484,12 @@ const CvForm: React.FC = () => {
     );
 
     setValue('summary', demoResume.summary as any, {
+      shouldDirty: markDirty,
+      shouldTouch: false,
+      shouldValidate: false,
+    });
+
+    setValue('richText.summary' as any, demoResume.summary as any, {
       shouldDirty: markDirty,
       shouldTouch: false,
       shouldValidate: false,
@@ -395,15 +519,14 @@ const CvForm: React.FC = () => {
       { shouldDirty: markDirty, shouldTouch: false, shouldValidate: false }
     );
 
-    // ✅ Field arrays MUST use replace() so UI immediately reflects items
     linksField.replace((demoResume.basics.links as any) || []);
-    experienceField.replace((demoResume.experience as any) || []);
+    experienceField.replace(normalizeExperienceItems(demoResume.experience as any[]) as any);
     educationField.replace((demoResume.education as any) || []);
     projectsField.replace((demoResume.projects as any) || []);
     certificationsField.replace((demoResume.certifications as any) || []);
+    setExperienceRenderKey((k) => k + 1);
   };
 
-  // ✅ AUTO: Start from demo by default (ONLY if user has no data)
   useEffect(() => {
     if (didAutoPreloadRef.current || hasAppliedUpload) return;
 
@@ -412,8 +535,6 @@ const CvForm: React.FC = () => {
 
     if (!hasUser) {
       didAutoPreloadRef.current = true;
-
-      // ✅ defer to next tick so field arrays are initialized before we replace()
       setTimeout(() => {
         preloadFromDemo({ markDirty: false });
       }, 0);
@@ -421,7 +542,6 @@ const CvForm: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasAppliedUpload]);
 
-  // ---------- Clear helpers ----------
   const clearAllContent = () => {
     setValue('title', '', { shouldDirty: true });
     setValue('meta.isDemoSeeded' as any, false, { shouldDirty: true });
@@ -443,12 +563,14 @@ const CvForm: React.FC = () => {
     linksField.replace([] as any);
 
     setValue('summary', '', { shouldDirty: true });
+    setValue('richText.summary' as any, '', { shouldDirty: true });
     setValue('skills', [], { shouldDirty: true });
 
     experienceField.replace([] as any);
     educationField.replace([] as any);
     projectsField.replace([] as any);
     certificationsField.replace([] as any);
+    setExperienceRenderKey((k) => k + 1);
 
     setValue('extras', { languages: [], interests: [] } as any, { shouldDirty: true });
 
@@ -479,6 +601,7 @@ const CvForm: React.FC = () => {
     switch (key) {
       case 'summary':
         setValue('summary', '', { shouldDirty: true, shouldTouch: true });
+        setValue('richText.summary' as any, '', { shouldDirty: true, shouldTouch: true });
         break;
       case 'skills':
         setValue('skills', [], { shouldDirty: true, shouldTouch: true });
@@ -486,6 +609,7 @@ const CvForm: React.FC = () => {
       case 'experience':
         experienceField.replace([] as any);
         setValue('experience', [] as any, { shouldDirty: true, shouldTouch: true });
+        setExperienceRenderKey((k) => k + 1);
         break;
       case 'education':
         educationField.replace([] as any);
@@ -506,7 +630,6 @@ const CvForm: React.FC = () => {
     }
   };
 
-  // ---------- Skills helpers ----------
   const addSkill = () => {
     const trimmed = skillInput.trim();
     if (!trimmed) return;
@@ -549,6 +672,7 @@ const CvForm: React.FC = () => {
     isDemoSeeded: boolean
   ) => {
     if (mode === 'replace') return incoming;
+
     const incomingMeaningful = isMeaningful(incoming);
     if (!incomingMeaningful) return existing;
 
@@ -559,231 +683,183 @@ const CvForm: React.FC = () => {
     return existingFromDemo ? incoming : existing;
   };
 
-  const applyExtractedToForm = (extracted: Partial<CvDraft>, mode: 'merge' | 'replace') => {
-    const current = getValues();
-    const isDemoSeeded = Boolean(current.meta?.isDemoSeeded);
-    debugCvImport('FORM_APPLY_PAYLOAD', { mode, extracted });
+  
 
-    if (mode === 'replace') {
-      const replaced = {
-        ...current,
-        basics: {
-          ...current.basics,
-          ...(extracted.basics || {}),
-          links: extracted.basics?.links || [],
-        },
-        summary: extracted.summary || '',
-        skills: extracted.skills || [],
-        experience: extracted.experience || [],
-        education: extracted.education || [],
-        projects: extracted.projects || [],
-        certifications: extracted.certifications || [],
-        extras: {
-          languages: extracted.extras?.languages || [],
-          interests: extracted.extras?.interests || [],
-        },
-        meta: {
-          ...(current.meta || {}),
-          isDemoSeeded: false,
-          hasImportedCv: true,
-          importedAt: new Date().toISOString(),
-          importMode: mode,
-        },
-      } as CvDraft;
-      reset(replaced, { keepDefaultValues: false });
-      didAutoPreloadRef.current = true;
-      setHasAppliedUpload(true);
-      return;
-    }
+const applyExtractedToForm = (extracted: Partial<CvDraft>, mode: 'merge' | 'replace') => {
+  const current = getValues();
+  const isDemoSeeded = Boolean(current.meta?.isDemoSeeded);
 
-    const nextBasics = {
-      ...current.basics,
-      name: chooseField(
-        'basics.name',
-        current.basics?.name,
-        extracted.basics?.name || '',
-        mode,
-        isDemoSeeded
-      ),
-      headline: chooseField(
-        'basics.headline',
-        current.basics?.headline,
-        extracted.basics?.headline || '',
-        mode,
-        isDemoSeeded
-      ),
-      email: chooseField(
-        'basics.email',
-        current.basics?.email,
-        extracted.basics?.email || '',
-        mode,
-        isDemoSeeded
-      ),
-      phone: chooseField(
-        'basics.phone',
-        current.basics?.phone,
-        extracted.basics?.phone || '',
-        mode,
-        isDemoSeeded
-      ),
-      location: chooseField(
-        'basics.location',
-        current.basics?.location,
-        extracted.basics?.location || '',
-        mode,
-        isDemoSeeded
-      ),
-      links: chooseField(
-        'basics.links',
-        current.basics?.links || [],
-        extracted.basics?.links || [],
-        mode,
-        isDemoSeeded
-      ),
-    } as any;
+  debugCvImport('FORM_APPLY_PAYLOAD', { mode, extracted, current });
 
-    setValue('basics', nextBasics, { shouldDirty: true, shouldTouch: true });
-    linksField.replace(nextBasics.links || []);
+  const choose = (path: string, existing: any, incoming: any) =>
+    chooseField(path, existing, incoming, mode, isDemoSeeded);
 
-    const summaryValue = chooseField(
-      'summary',
-      current.summary || '',
-      extracted.summary || '',
-      mode,
-      isDemoSeeded
-    );
-    setValue('summary', summaryValue as any, { shouldDirty: true, shouldTouch: true });
-    setValue('richText.summary' as any, summaryValue as any, {
-      shouldDirty: true,
-      shouldTouch: true,
-    });
-
-    const mergedSkills =
-      mode === 'replace'
-        ? extracted.skills || []
-        : Array.from(
-            new Set([
-              ...(chooseField(
-                'skills',
-                current.skills || [],
-                extracted.skills || [],
-                mode,
-                isDemoSeeded
-              ) || []),
-            ])
-          );
-    setValue('skills', mergedSkills as any, { shouldDirty: true, shouldTouch: true });
-
-    const exp = chooseField(
-      'experience',
-      current.experience || [],
-      extracted.experience || [],
-      mode,
-      isDemoSeeded
-    ) as any[];
-    const edu = chooseField(
-      'education',
-      current.education || [],
-      extracted.education || [],
-      mode,
-      isDemoSeeded
-    ) as any[];
-    const proj = chooseField(
-      'projects',
-      current.projects || [],
-      extracted.projects || [],
-      mode,
-      isDemoSeeded
-    ) as any[];
-    const cert = chooseField(
-      'certifications',
-      current.certifications || [],
-      extracted.certifications || [],
-      mode,
-      isDemoSeeded
-    ) as any[];
-
-    experienceField.replace(exp as any);
-    educationField.replace(edu as any);
-    projectsField.replace(proj as any);
-    certificationsField.replace(cert as any);
-
-    setValue('experience', exp as any, { shouldDirty: true, shouldTouch: true });
-    setValue('education', edu as any, { shouldDirty: true, shouldTouch: true });
-    setValue('projects', proj as any, { shouldDirty: true, shouldTouch: true });
-    setValue('certifications', cert as any, { shouldDirty: true, shouldTouch: true });
-
-    const extraLanguages = chooseField(
-      'extras.languages',
-      current.extras?.languages || [],
-      extracted.extras?.languages || [],
-      mode,
-      isDemoSeeded
-    );
-    const extraInterests = chooseField(
-      'extras.interests',
-      current.extras?.interests || [],
-      extracted.extras?.interests || [],
-      mode,
-      isDemoSeeded
-    );
-
-    setValue('extras.languages', extraLanguages as any, { shouldDirty: true, shouldTouch: true });
-    setValue('extras.interests', extraInterests as any, { shouldDirty: true, shouldTouch: true });
-
-    if (!current.title?.trim() || (isDemoSeeded && isSameAsDemo('title', current.title))) {
-      const suggestedTitle = (extracted.basics?.name || nextBasics.name || 'My CV').trim();
-      setValue('title', `${suggestedTitle} CV` as any, { shouldDirty: true, shouldTouch: true });
-    }
-
-    const nextVisibility = { ...(current.sectionVisibility || {}) } as Record<
-      CvSectionKey,
-      boolean
-    >;
-    const extractedHas = {
-      summary: Boolean((extracted.summary || '').trim()),
-      skills: Boolean(extracted.skills?.length),
-      experience: Boolean(extracted.experience?.length),
-      education: Boolean(extracted.education?.length),
-      projects: Boolean(extracted.projects?.length),
-      certifications: Boolean(extracted.certifications?.length),
-      extras: Boolean(extracted.extras?.languages?.length || extracted.extras?.interests?.length),
-    };
-    (Object.keys(extractedHas) as CvSectionKey[]).forEach((key) => {
-      if (mode === 'replace') nextVisibility[key] = extractedHas[key];
-      else if (extractedHas[key]) nextVisibility[key] = true;
-    });
-    setValue('sectionVisibility', nextVisibility as any, { shouldDirty: true, shouldTouch: true });
-
-    setValue('meta.isDemoSeeded' as any, false, { shouldDirty: true, shouldTouch: false });
-    setValue('meta.hasImportedCv' as any, true, { shouldDirty: true, shouldTouch: false });
-    setValue('meta.importedAt' as any, new Date().toISOString(), {
-      shouldDirty: true,
-      shouldTouch: false,
-    });
-    setValue('meta.importMode' as any, mode, { shouldDirty: true, shouldTouch: false });
-
-    didAutoPreloadRef.current = true;
-    setHasAppliedUpload(true);
+  const chooseImportedArray = <T,>(existing: T[] = [], incoming: T[] = []) => {
+    return incoming.length ? incoming : existing;
   };
+
+  const nextBasics = {
+    ...current.basics,
+    name: choose('basics.name', current.basics?.name, extracted.basics?.name || ''),
+    headline: choose('basics.headline', current.basics?.headline, extracted.basics?.headline || ''),
+    email: choose('basics.email', current.basics?.email, extracted.basics?.email || ''),
+    phone: choose('basics.phone', current.basics?.phone, extracted.basics?.phone || ''),
+    location: choose('basics.location', current.basics?.location, extracted.basics?.location || ''),
+    links: choose('basics.links', current.basics?.links || [], extracted.basics?.links || []),
+  };
+
+  const nextSummary = choose('summary', current.summary || '', extracted.summary || '');
+
+  const nextSkills =
+    mode === 'replace'
+      ? extracted.skills || []
+      : Array.from(
+          new Set([...(choose('skills', current.skills || [], extracted.skills || []) || [])])
+        );
+
+  const nextExperience = normalizeExperienceItems(
+    chooseImportedArray(current.experience || [], extracted.experience || [])
+  ) as any[];
+
+  const nextEducation = chooseImportedArray(
+    current.education || [],
+    extracted.education || []
+  ) as any[];
+
+  const nextProjects = chooseImportedArray(
+    current.projects || [],
+    extracted.projects || []
+  ) as any[];
+
+  const nextCertifications = chooseImportedArray(
+    current.certifications || [],
+    extracted.certifications || []
+  ) as any[];
+
+  const nextLanguages = choose(
+    'extras.languages',
+    current.extras?.languages || [],
+    extracted.extras?.languages || []
+  );
+
+  const nextInterests = choose(
+    'extras.interests',
+    current.extras?.interests || [],
+    extracted.extras?.interests || []
+  );
+
+  const nextVisibility = {
+    ...(current.sectionVisibility || {}),
+  } as Record<CvSectionKey, boolean>;
+
+  const extractedHas = {
+    summary: Boolean((extracted.summary || '').trim()),
+    skills: Boolean(extracted.skills?.length),
+    experience: Boolean(extracted.experience?.length),
+    education: Boolean(extracted.education?.length),
+    projects: Boolean(extracted.projects?.length),
+    certifications: Boolean(extracted.certifications?.length),
+    extras: Boolean(extracted.extras?.languages?.length || extracted.extras?.interests?.length),
+  };
+
+  (Object.keys(extractedHas) as CvSectionKey[]).forEach((key) => {
+    if (mode === 'replace') nextVisibility[key] = extractedHas[key];
+    else if (extractedHas[key]) nextVisibility[key] = true;
+  });
+
+  const suggestedTitle =
+    !current.title?.trim() || (isDemoSeeded && isSameAsDemo('title', current.title))
+      ? `${(extracted.basics?.name || nextBasics.name || 'My CV').trim()} CV`
+      : current.title;
+
+  const nextDraft: CvDraft = {
+    ...current,
+    title: suggestedTitle,
+    basics: nextBasics,
+    summary: nextSummary,
+    skills: nextSkills,
+    experience: nextExperience,
+    education: nextEducation,
+    projects: nextProjects,
+    certifications: nextCertifications,
+    extras: {
+      languages: nextLanguages || [],
+      interests: nextInterests || [],
+    },
+    richText: {
+      ...(current.richText || {}),
+      summary: nextSummary || '',
+    },
+    sectionVisibility: nextVisibility,
+    meta: {
+      ...(current.meta || {}),
+      isDemoSeeded: false,
+      hasImportedCv: true,
+      importedAt: new Date().toISOString(),
+      importMode: mode,
+    },
+  };
+
+  debugCvImport('FORM_APPLY_NEXT_DRAFT', nextDraft);
+  debugCvImport('FORM_APPLY_NEXT_EXPERIENCE', nextExperience);
+
+  reset(nextDraft, {
+    keepDefaultValues: false,
+  });
+
+  setTimeout(() => {
+    linksField.replace((nextDraft.basics?.links || []) as any);
+    experienceField.replace((nextDraft.experience || []) as any);
+    educationField.replace((nextDraft.education || []) as any);
+    projectsField.replace((nextDraft.projects || []) as any);
+    certificationsField.replace((nextDraft.certifications || []) as any);
+    setExperienceRenderKey((k) => k + 1);
+
+    debugCvImport('POST_RESET_EXPERIENCE_VALUES', {
+      watched: normalizeExperienceItems(getValues('experience') as any[]),
+      replacingWith: nextDraft.experience,
+    });
+
+    requestAnimationFrame(() => {
+      debugCvImport('POST_RESET_EXPERIENCE_FIELDS', {
+        fieldArrayLength: experienceField.fields.length,
+        getValuesExperience: normalizeExperienceItems(getValues('experience') as any[]),
+      });
+    });
+  }, 0);
+
+  didAutoPreloadRef.current = true;
+  setHasAppliedUpload(true);
+  setOpen((prev) => ({ ...prev, experience: true }));
+};
 
   const onExtractCv = async () => {
     if (!backendUrl || !token || !cvFile) return;
+
     setParseState('loading');
     setParseError(null);
     setParsedPreview(null);
+
     try {
       const parsed = await parseUploadedCv({ backendUrl, token, file: cvFile, mode: uploadMode });
       const extracted = parsed.extracted || null;
+
       if (extracted && looksLikePdfJunk(extracted)) {
-        throw new Error('Extraction output appears corrupted. Please retry with a text-based PDF or DOCX.');
+        throw new Error(
+          'Extraction output appears corrupted. Please retry with a text-based PDF or DOCX.'
+        );
       }
+
       setParsedPreview(extracted);
       setDiagnostics(parsed.diagnostics || null);
+
+      debugCvImport('PARSED_EXTRACTED_PRE_APPLY', extracted);
+
       if (extracted) {
         setImportUndoSnapshot(getValues() as CvDraft);
         applyExtractedToForm(extracted, uploadMode);
       }
+
       setParseState('success');
     } catch (err: any) {
       setParseError(err?.response?.data?.error || err?.message || 'Failed to parse CV');
@@ -791,7 +867,6 @@ const CvForm: React.FC = () => {
     }
   };
 
-  // ---------- Pills ----------
   const includePill = (key: CvSectionKey) => (
     <button
       type="button"
@@ -809,7 +884,6 @@ const CvForm: React.FC = () => {
     </button>
   );
 
-  // ---------- Top helper banner ----------
   const topActions = useMemo(
     () => (
       <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/5">
@@ -845,6 +919,134 @@ const CvForm: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
+
+  const normalizeBulletLines = (items: string[] = []) =>
+  Array.from(
+    new Set(
+      items
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+    )
+  ).slice(0, 12);
+
+const improveSingleExperience = async (index: number) => {
+  if (!backendUrl || !token) return;
+
+  const entry = getValues(`experience.${index}` as const);
+  if (!entry) return;
+
+  setExperienceAiError(null);
+  setImprovingExperienceIndex(index);
+
+  try {
+    const res = await improveExperienceEntry({
+      backendUrl,
+      token,
+      experience: {
+        company: entry.company || '',
+        role: entry.role || '',
+        start: entry.start || '',
+        end: entry.end || '',
+        location: entry.location || '',
+        description: entry.description || '',
+        bullets: Array.isArray(entry.bullets) ? entry.bullets : [],
+      },
+      wholeCvContext: {
+        summary: getValues('summary') || '',
+        skills: getValues('skills') || [],
+      },
+    });
+
+    const improved = res?.improved;
+    if (!improved) throw new Error('No improved experience was returned.');
+
+    setValue(
+      `experience.${index}.description`,
+      improved.description || '',
+      { shouldDirty: true, shouldTouch: true, shouldValidate: false }
+    );
+
+    setValue(
+      `experience.${index}.bullets`,
+      normalizeBulletLines(improved.bullets || []),
+      { shouldDirty: true, shouldTouch: true, shouldValidate: false }
+    );
+
+    setOpen((prev) => ({ ...prev, experience: true }));
+  } catch (err: any) {
+    setExperienceAiError(
+      err?.response?.data?.error || err?.message || 'Failed to improve experience entry.'
+    );
+  } finally {
+    setImprovingExperienceIndex(null);
+  }
+};
+
+const improveAllExperience = async () => {
+  if (!backendUrl || !token) return;
+
+  const items = (getValues('experience') || []) as any[];
+  if (!items.length) return;
+
+  setExperienceAiError(null);
+  setImprovingAllExperience(true);
+
+  try {
+    for (let index = 0; index < items.length; index += 1) {
+      const entry = getValues(`experience.${index}` as const);
+      if (!entry) continue;
+
+      const hasContent =
+        hasText(entry.company) ||
+        hasText(entry.role) ||
+        hasText(entry.description) ||
+        (Array.isArray(entry.bullets) && entry.bullets.some((b: string) => hasText(b)));
+
+      if (!hasContent) continue;
+
+      const res = await improveExperienceEntry({
+        backendUrl,
+        token,
+        experience: {
+          company: entry.company || '',
+          role: entry.role || '',
+          start: entry.start || '',
+          end: entry.end || '',
+          location: entry.location || '',
+          description: entry.description || '',
+          bullets: Array.isArray(entry.bullets) ? entry.bullets : [],
+        },
+        wholeCvContext: {
+          summary: getValues('summary') || '',
+          skills: getValues('skills') || [],
+        },
+      });
+
+      const improved = res?.improved;
+      if (!improved) continue;
+
+      setValue(
+        `experience.${index}.description`,
+        improved.description || '',
+        { shouldDirty: true, shouldTouch: true, shouldValidate: false }
+      );
+
+      setValue(
+        `experience.${index}.bullets`,
+        normalizeBulletLines(improved.bullets || []),
+        { shouldDirty: true, shouldTouch: true, shouldValidate: false }
+      );
+    }
+
+    setOpen((prev) => ({ ...prev, experience: true }));
+  } catch (err: any) {
+    setExperienceAiError(
+      err?.response?.data?.error || err?.message || 'Failed to improve all experience entries.'
+    );
+  } finally {
+    setImprovingAllExperience(false);
+  }
+};
 
   return (
     <div className="space-y-6">
@@ -927,6 +1129,7 @@ const CvForm: React.FC = () => {
                       reset(importUndoSnapshot);
                       setHasAppliedUpload(Boolean(importUndoSnapshot.meta?.hasImportedCv));
                       setImportUndoSnapshot(null);
+                      setExperienceRenderKey((k) => k + 1);
                     }
                   }}
                   className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 disabled:opacity-50"
@@ -939,7 +1142,6 @@ const CvForm: React.FC = () => {
         </div>
       </SectionCard>
 
-      {/* BASICS */}
       <SectionCard
         title="Basics"
         subtitle="Your name, contact info, links."
@@ -994,7 +1196,6 @@ const CvForm: React.FC = () => {
         </div>
       </SectionCard>
 
-      {/* SUMMARY */}
       <SectionCard
         title="Summary"
         subtitle="A short professional pitch."
@@ -1016,7 +1217,6 @@ const CvForm: React.FC = () => {
         />
       </SectionCard>
 
-      {/* SKILLS */}
       <SectionCard
         title="Skills"
         subtitle="Add only what you want recruiters to see."
@@ -1064,7 +1264,6 @@ const CvForm: React.FC = () => {
         </div>
       </SectionCard>
 
-      {/* EXPERIENCE */}
       <SectionCard
         title="Experience"
         subtitle="Jobs, internships, freelance — keep it relevant."
@@ -1079,66 +1278,121 @@ const CvForm: React.FC = () => {
           </div>
         }
       >
-        <div className="mb-3 flex items-center justify-between">
-          <p className="text-xs text-gray-500 dark:text-white/60">
-            Add roles you want included. Remove the rest.
-          </p>
-          <button
-            type="button"
-            onClick={() =>
-              experienceField.append({
-                company: '',
-                role: '',
-                start: '',
-                end: '',
-                location: '',
-                bullets: [],
-              } as any)
-            }
-            className="text-xs font-semibold text-primary"
-          >
-            + Add experience
-          </button>
-        </div>
+       <div key={`experience-render-${experienceRenderKey}`} className="space-y-4">
+  <div className="mb-3 flex items-center justify-between gap-3">
+    <p className="text-xs text-gray-500 dark:text-white/60">
+      Add roles you want included. Remove the rest. You can improve duties with AI.
+    </p>
 
-        <div className="space-y-4">
-          {experienceField.fields.map((field, index) => (
-            <div
-              key={field.id}
-              className="rounded-xl border border-gray-100 p-3 dark:border-white/10"
-            >
-              <div className="grid gap-2 md:grid-cols-2">
-                <Input
-                  placeholder="Company"
-                  {...register(`experience.${index}.company` as const)}
-                />
-                <Input placeholder="Role" {...register(`experience.${index}.role` as const)} />
-                <Input placeholder="Start" {...register(`experience.${index}.start` as const)} />
-                <Input placeholder="End" {...register(`experience.${index}.end` as const)} />
-                <Input
-                  placeholder="Location"
-                  {...register(`experience.${index}.location` as const)}
-                />
-              </div>
-              <div className="mt-3">
-                <BulletsField name={`experience.${index}.bullets`} />
-              </div>
-              <button
-                type="button"
-                onClick={() => experienceField.remove(index)}
-                className="mt-2 text-xs text-gray-400 hover:text-rose-500"
-              >
-                Remove this role
-              </button>
-            </div>
-          ))}
-          {experienceField.fields.length === 0 && (
-            <p className="text-xs text-gray-400">No experience entries yet.</p>
-          )}
-        </div>
+    <div className="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        onClick={improveAllExperience}
+        disabled={improvingAllExperience || !experienceField.fields.length}
+        className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-white"
+      >
+        {improvingAllExperience ? 'Improving all...' : 'Improve all with AI'}
+      </button>
+
+      <button
+        type="button"
+        onClick={() =>
+          experienceField.append({
+            company: '',
+            role: '',
+            start: '',
+            end: '',
+            location: '',
+            description: '',
+            bullets: [],
+          } as any)
+        }
+        className="text-xs font-semibold text-primary"
+      >
+        + Add experience
+      </button>
+    </div>
+  </div>
+
+  <div className="rounded-lg border border-dashed border-gray-200 p-2 text-[11px] text-gray-500 dark:border-white/10 dark:text-white/60">
+    UI debug: watched={Array.isArray(experience) ? experience.length : 0} · fields=
+    {experienceField.fields.length}
+  </div>
+
+  {experienceAiError ? (
+    <div className="rounded-lg border border-rose-200 bg-rose-50 p-2 text-[11px] text-rose-700">
+      {experienceAiError}
+    </div>
+  ) : null}
+
+  {experienceField.fields.map((field, index) => (
+    <div
+      key={field.id}
+      className="rounded-xl border border-gray-100 p-3 dark:border-white/10"
+    >
+      <div className="mb-2 text-[11px] text-gray-400">
+        #{index + 1} · {String((field as any).company || '') || 'Untitled'}
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-2">
+        <Input
+          placeholder="Company"
+          {...register(`experience.${index}.company` as const)}
+        />
+        <Input placeholder="Role" {...register(`experience.${index}.role` as const)} />
+        <Input placeholder="Start" {...register(`experience.${index}.start` as const)} />
+        <Input placeholder="End" {...register(`experience.${index}.end` as const)} />
+        <Input
+          placeholder="Location"
+          {...register(`experience.${index}.location` as const)}
+        />
+      </div>
+
+      <div className="mt-3">
+        <Textarea
+          placeholder="Short description"
+          {...register(`experience.${index}.description` as const)}
+        />
+      </div>
+
+      <div className="mt-3">
+        <BulletsField name={`experience.${index}.bullets`} />
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => improveSingleExperience(index)}
+          disabled={improvingExperienceIndex === index || improvingAllExperience}
+          className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+        >
+          {improvingExperienceIndex === index ? 'Improving...' : 'Improve duties with AI'}
+        </button>
+
+        <span className="text-[11px] text-gray-500 dark:text-white/60">
+          Rewrites description and bullets without changing the facts.
+        </span>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => {
+          experienceField.remove(index);
+          setExperienceRenderKey((k) => k + 1);
+        }}
+        className="mt-2 text-xs text-gray-400 hover:text-rose-500"
+      >
+        Remove this role
+      </button>
+    </div>
+  ))}
+
+  {experienceField.fields.length === 0 && (
+    <p className="text-xs text-gray-400">No experience entries yet.</p>
+  )}
+</div>
       </SectionCard>
 
-      {/* EDUCATION */}
       <SectionCard
         title="Education"
         subtitle="School, degree, and anything worth mentioning."
@@ -1205,7 +1459,6 @@ const CvForm: React.FC = () => {
         </div>
       </SectionCard>
 
-      {/* PROJECTS */}
       <SectionCard
         title="Projects"
         subtitle="Side projects, work projects, open source."
@@ -1272,7 +1525,6 @@ const CvForm: React.FC = () => {
         </div>
       </SectionCard>
 
-      {/* CERTIFICATIONS */}
       <SectionCard
         title="Certifications"
         subtitle="Only include what helps for the role."
@@ -1330,7 +1582,6 @@ const CvForm: React.FC = () => {
         </div>
       </SectionCard>
 
-      {/* EXTRAS */}
       <SectionCard
         title="Extras"
         subtitle="Languages + interests (optional)."

@@ -21,6 +21,7 @@ const experienceSchema = Joi.object({
   start: Joi.string().allow(''),
   end: Joi.string().allow(''),
   location: Joi.string().allow(''),
+  description: Joi.string().allow(''),
   bullets: Joi.array().items(Joi.string().allow('')),
 });
 

@@ -1373,6 +1373,7 @@ __metadata:
     nodemailer: "npm:^6.9.16"
     nodemon: "npm:^3.1.4"
     openai: "npm:^4"
+    pdf-parse: "npm:^2.4.5"
     pdfkit: "npm:^0.17.2"
     pg: "npm:^8.16.0"
     playwright: "npm:^1.58.2"
@@ -3683,7 +3684,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@napi-rs/canvas@npm:^0.1.80":
+"@napi-rs/canvas@npm:0.1.80, @napi-rs/canvas@npm:^0.1.80":
   version: 0.1.80
   resolution: "@napi-rs/canvas@npm:0.1.80"
   dependencies:
@@ -15077,6 +15078,18 @@ __metadata:
   version: 4.0.0
   resolution: "path-type@npm:4.0.0"
   checksum: 10c0/666f6973f332f27581371efaf303fd6c272cc43c2057b37aa99e3643158c7e4b2626549555d88626e99ea9e046f82f32e41bbde5f1508547e9a11b149b52387c
+  languageName: node
+  linkType: hard
+
+"pdf-parse@npm:^2.4.5":
+  version: 2.4.5
+  resolution: "pdf-parse@npm:2.4.5"
+  dependencies:
+    "@napi-rs/canvas": "npm:0.1.80"
+    pdfjs-dist: "npm:5.4.296"
+  bin:
+    pdf-parse: bin/cli.mjs
+  checksum: 10c0/0bf737c8405994a232e5ce11c6bd80016942cad291debcfe40afa9365e864de9f3f704ef2931e66a84512e28e8c3a9cff6537cc84d2981a39a6f0447a4389036
   languageName: node
   linkType: hard
 
