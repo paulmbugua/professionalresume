@@ -54,6 +54,7 @@ const typographySchema = Joi.object({
   h2Size: Joi.number().min(10).max(24),
   h3Size: Joi.number().min(9).max(20),
   bodySize: Joi.number().min(10).max(16),
+  lineHeight: Joi.number().min(1.3).max(1.65),
   fontFamily: Joi.string().max(120).allow(''),
 });
 

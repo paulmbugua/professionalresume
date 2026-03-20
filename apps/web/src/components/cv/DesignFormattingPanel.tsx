@@ -42,6 +42,7 @@ const DEFAULT_TYPOGRAPHY: CvTypography = {
   h2Size: 13,
   h3Size: 11,
   bodySize: 12,
+  lineHeight: 1.48,
   fontFamily: 'Inter, system-ui, Segoe UI, Arial',
 };
 
@@ -89,10 +90,12 @@ const DesignFormattingPanel: React.FC = () => {
 
     // Safety clamps (optional)
     if (key === 'baseFontSize') next.baseFontSize = clamp(Number(next.baseFontSize), 10, 16);
+    if (key === 'baseFontSize') next.bodySize = clamp(Number(next.baseFontSize), 10, 16);
     if (key === 'bodySize') next.bodySize = clamp(Number(next.bodySize), 10, 16);
     if (key === 'h1Size') next.h1Size = clamp(Number(next.h1Size), 18, 34);
     if (key === 'h2Size') next.h2Size = clamp(Number(next.h2Size), 11, 22);
     if (key === 'h3Size') next.h3Size = clamp(Number(next.h3Size), 10, 18);
+    if (key === 'lineHeight') next.lineHeight = clamp(Number(next.lineHeight), 1.3, 1.65);
 
     setValue('typography', next, { shouldDirty: true, shouldTouch: true, shouldValidate: false });
   };
@@ -156,6 +159,19 @@ const DesignFormattingPanel: React.FC = () => {
             max={34}
             value={typography.h1Size}
             onChange={(e) => setTypography('h1Size', Number(e.target.value))}
+            className="mt-1 w-full"
+          />
+        </label>
+
+        <label className="block text-xs text-gray-600 dark:text-white/80">
+          Line height ({Number(typography.lineHeight ?? 1.48).toFixed(2)})
+          <input
+            type="range"
+            min={1.3}
+            max={1.65}
+            step={0.01}
+            value={typography.lineHeight ?? 1.48}
+            onChange={(e) => setTypography('lineHeight', Number(e.target.value))}
             className="mt-1 w-full"
           />
         </label>

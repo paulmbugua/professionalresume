@@ -45,6 +45,7 @@ export type CvTypography = {
   h2Size: number;
   h3Size: number;
   bodySize: number;
+  lineHeight?: number;
   fontFamily?: string;
 };
 

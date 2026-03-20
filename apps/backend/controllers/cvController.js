@@ -123,8 +123,27 @@ export async function exportCv(req, res) {
 
     let draft = value.cvJson || null;
     if (value.draftId) {
-      draft = await getDraftForUser(req.user.id, value.draftId);
-      if (!draft) return res.status(404).json({ error: 'Draft not found' });
+      const persisted = await getDraftForUser(req.user.id, value.draftId);
+      if (!persisted) return res.status(404).json({ error: 'Draft not found' });
+      draft = value.cvJson
+        ? {
+            ...persisted,
+            ...value.cvJson,
+            basics: { ...(persisted.basics || {}), ...(value.cvJson.basics || {}) },
+            extras: { ...(persisted.extras || {}), ...(value.cvJson.extras || {}) },
+            sectionVisibility: {
+              ...(persisted.sectionVisibility || {}),
+              ...(value.cvJson.sectionVisibility || {}),
+            },
+            typography: { ...(persisted.typography || {}), ...(value.cvJson.typography || {}) },
+            formatting: { ...(persisted.formatting || {}), ...(value.cvJson.formatting || {}) },
+            templateTheme: {
+              ...(persisted.templateTheme || {}),
+              ...(value.cvJson.templateTheme || {}),
+            },
+            richText: { ...(persisted.richText || {}), ...(value.cvJson.richText || {}) },
+          }
+        : persisted;
       console.info('[exportCv] source=db draftId=', value.draftId);
     } else {
       console.info('[exportCv] source=request cvJson=true');

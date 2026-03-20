@@ -73,9 +73,10 @@ export function normalizeDraft(draft: CvDraft): CvDraft {
     typography: {
       baseFontSize: 12,
       h1Size: 28,
-      h2Size: 12,
+      h2Size: 13,
       h3Size: 11,
-      bodySize: 11,
+      bodySize: 12,
+      lineHeight: 1.48,
       fontFamily: 'Inter, system-ui, Arial',
       ...(draft.typography || {}),
     },
