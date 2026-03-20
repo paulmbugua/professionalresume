@@ -3,6 +3,7 @@ import {
   buildCssVars as buildCssVarsJs,
   normalizeCvDraft as normalizeCvDraftJs,
   paginationCss as paginationCssJs,
+  resolveTemplateTypography as resolveTemplateTypographyJs,
   renderCvHtmlByTemplate as renderCvHtmlByTemplateJs,
   renderersById as renderersByIdJs,
   sanitizeRichTextHtml as sanitizeRichTextHtmlJs,
@@ -17,4 +18,6 @@ export const renderersById: Record<string, CvRenderer> = renderersByIdJs;
 export const sanitizeRichTextHtml: (input?: string) => string = sanitizeRichTextHtmlJs;
 export const buildCssVars: (draft: CvDraft) => string = buildCssVarsJs;
 export const paginationCss: string = paginationCssJs;
+export const resolveTemplateTypography: (draft?: CvDraft) => Record<string, number> =
+  resolveTemplateTypographyJs;
 export const templateMarkersById: Record<string, string[]> = templateMarkersByIdJs;

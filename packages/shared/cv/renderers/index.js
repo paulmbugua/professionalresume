@@ -2,6 +2,7 @@ import {
   buildCssVars,
   normalizeCvDraft,
   paginationCss,
+  resolveTemplateTypography,
   sanitizeRichTextHtml,
 } from './templates/helpers.js';
 import {
@@ -17,7 +18,7 @@ import {
   templateMarkersById,
 } from './templates/renderers.js';
 
-export { normalizeCvDraft, sanitizeRichTextHtml, buildCssVars, paginationCss, templateMarkersById };
+export { normalizeCvDraft, sanitizeRichTextHtml, buildCssVars, paginationCss, resolveTemplateTypography, templateMarkersById };
 
 export const renderersById = {
   'ats-minimal': renderAtsMinimalHtml,

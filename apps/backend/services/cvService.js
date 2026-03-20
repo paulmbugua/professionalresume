@@ -31,7 +31,7 @@ export function buildDefaultDraft({ userId, templateId, title }) {
     projects: [],
     certifications: [],
     extras: { languages: [], interests: [] },
-    typography: { baseFontSize: 12, h1Size: 28, h2Size: 12, h3Size: 11, bodySize: 11, fontFamily: 'Inter, system-ui, Arial' },
+    typography: { baseFontSize: 12, h1Size: 28, h2Size: 13, h3Size: 11, bodySize: 12, lineHeight: 1.48, fontFamily: 'Inter, system-ui, Arial' },
     formatting: { textColor: '#0f172a', mutedTextColor: '#475569', linkColor: '#0f766e' },
     templateTheme: { primary: '#0f172a', accent: '#0f766e' },
     richText: {},

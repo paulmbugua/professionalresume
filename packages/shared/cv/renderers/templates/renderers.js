@@ -15,6 +15,15 @@ const PAGE_SHELL = `
 .page{width:var(--page-width);min-height:var(--page-height);margin:16px auto;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.12)}
 @media print{.page{margin:0 !important;box-shadow:none !important}}
 `;
+const TYPOGRAPHY_BASE = `
+h1{margin:0;font-size:var(--resolvedNameSize);line-height:1.1}
+h2{font-size:var(--resolvedSectionTitleSize);letter-spacing:.1em;text-transform:uppercase}
+h3{margin:0;font-size:var(--resolvedH3Size)}
+p,li{font-size:var(--resolvedBodySize);line-height:var(--lineHeight)}
+.muted{font-size:var(--resolvedMetaSize);color:var(--mutedTextColor)}
+section{margin-bottom:var(--resolvedSectionGap)}
+.item{margin-bottom:var(--resolvedItemGap)}
+`;
 
 function renderSectionMap(d) {
   return {
@@ -91,7 +100,7 @@ export function renderModernSidebarHtml(draft = {}) {
   return doc(
     d,
     `<main class="page modernSidebarLayout"><aside class="sidebar"><h1>${esc(d.basics.name || 'Your Name')}</h1><p class="headline">${esc(d.basics.headline || '')}</p><p class="contact">${contactLine(d.basics)}</p>${sidebar}</aside><section class="content">${main}</section></main>`,
-    `body{background:#e2e8f0;font-family:var(--fontFamily);font-size:11.3px;color:var(--textColor)}.page{display:grid;grid-template-columns:33% 1fr}.sidebar{background:var(--sidebarBg);color:var(--sidebarText);padding:14.5mm 9mm}.content{padding:14.5mm 11mm}.headline,.contact{color:#cbd5e1}.sidebar h2{color:#e2e8f0}.content h2{color:var(--accent)}h1{margin:0;font-size:calc(var(--h1Size) + 2px)}h2{margin:10px 0 6px;font-size:calc(var(--h3Size) + .2px);text-transform:uppercase;letter-spacing:.11em}h3{margin:0;font-size:12.4px}.muted{font-size:10.8px;color:#64748b}p{margin:3px 0;line-height:1.45}ul{margin:5px 0 0;padding-left:16px}`
+    `${TYPOGRAPHY_BASE}body{background:#e2e8f0;font-family:var(--fontFamily);color:var(--textColor)}.page{display:grid;grid-template-columns:33% 1fr}.sidebar{background:var(--sidebarBg);color:var(--sidebarText);padding:14.5mm 9mm}.content{padding:14.5mm 11mm}.headline{margin:5px 0 0;color:#cbd5e1;font-size:var(--resolvedHeadlineSize)}.contact{margin:4px 0 0;color:#cbd5e1;font-size:var(--resolvedSidebarMetaSize)}.sidebar p,.sidebar li{font-size:var(--resolvedSidebarBodySize)}.sidebar .muted{font-size:var(--resolvedSidebarMetaSize);color:#cbd5e1}.sidebar h2{color:#e2e8f0}.content h2{color:var(--accent)}h2{margin:10px 0 6px;letter-spacing:.11em}ul{margin:5px 0 0;padding-left:16px}`
   );
 }
 
@@ -101,7 +110,7 @@ export function renderBoldHeaderHtml(draft = {}) {
   return doc(
     d,
     `<main class="page boldHeaderLayout"><header class="heroHeader"><h1>${esc(d.basics.name || 'Your Name')}</h1><p>${esc(d.basics.headline || '')}</p><div>${contactLine(d.basics)}</div></header><section class="content">${sections}</section></main>`,
-    `body{background:#e2e8f0;font-family:var(--fontFamily);color:var(--textColor)}.heroHeader{background:var(--headerBg);color:var(--headerText);padding:12mm}.content{padding:10.5mm 12mm}h1{margin:0;font-size:calc(var(--h1Size) + 3px)}h2{margin:0 0 6px;font-size:calc(var(--h3Size) + .3px);text-transform:uppercase;letter-spacing:.12em;color:var(--accent)}section{margin-bottom:10px}h3{margin:0;font-size:12.2px}.muted{color:var(--mutedTextColor);font-size:10.8px}`
+    `${TYPOGRAPHY_BASE}body{background:#e2e8f0;font-family:var(--fontFamily);color:var(--textColor)}.heroHeader{background:var(--headerBg);color:var(--headerText);padding:12mm}.heroHeader p{font-size:var(--resolvedHeadlineSize);margin:4px 0 0}.heroHeader div{font-size:var(--resolvedMetaSize);margin-top:4px}.content{padding:10.5mm 12mm}h2{margin:0 0 6px;letter-spacing:.12em;color:var(--accent)}`
   );
 }
 
@@ -113,7 +122,7 @@ export function renderModernTealHtml(draft = {}) {
   return doc(
     d,
     `<main class="page modernTealLayout"><div class="inner"><h1 class="name">${esc(d.basics.name || 'Your Name')}</h1><p class="headline">${esc(d.basics.headline || '')}</p><div class="accent"></div><div class="grid"><aside>${left.map((k) => (sectionVisible(d, k) ? m[k] || '' : '')).join('')}</aside><section>${right.map((k) => (sectionVisible(d, k) ? m[k] || '' : '')).join('')}</section></div></div></main>`,
-    `body{background:#f1f5f9;font-family:var(--fontFamily)}.inner{padding:11.5mm}.name{margin:0;font-size:calc(var(--h1Size) + 3px);font-weight:800;line-height:1.1}.headline{margin:4px 0 0;color:var(--mutedTextColor);font-size:13px}.accent{height:5px;background:var(--accent);margin:8px 0 0}.grid{display:grid;grid-template-columns:67mm 1fr;gap:9mm;margin-top:9mm}h2{font-size:calc(var(--h3Size) + .2px);letter-spacing:.12em;text-transform:uppercase;color:var(--primary);border-bottom:2px solid rgba(14,165,165,.35);padding-bottom:5px}.item{margin-bottom:6px}.muted{font-size:10.8px;color:var(--mutedTextColor)}p,li{font-size:11.3px;line-height:1.44}`
+    `${TYPOGRAPHY_BASE}body{background:#f1f5f9;font-family:var(--fontFamily)}.inner{padding:11.5mm}.name{font-weight:800}.headline{margin:4px 0 0;color:var(--mutedTextColor);font-size:var(--resolvedHeadlineSize)}.accent{height:5px;background:var(--accent);margin:8px 0 0}.grid{display:grid;grid-template-columns:67mm 1fr;gap:9mm;margin-top:9mm}h2{letter-spacing:.12em;color:var(--primary);border-bottom:2px solid rgba(14,165,165,.35);padding-bottom:5px}`
   );
 }
 
@@ -151,7 +160,7 @@ export function renderAtsMinimalHtml(draft = {}) {
   return doc(
     d,
     `<main class="page atsMinimalLayout"><div class="inner"><header><h1>${esc(d.basics.name || 'Your Name')}</h1><p>${esc(d.basics.headline || '')}</p><p class="muted">${contactLine(d.basics)}</p></header>${sections}</div></main>`,
-    `body{background:#fff;font-family:Arial,sans-serif;color:#111}.inner{padding:11.5mm 12mm}header{border-bottom:1.5px solid #111;padding-bottom:7px;margin-bottom:9px}h1{font-size:29px;margin:0}h2{font-size:calc(var(--h3Size) + .5px);letter-spacing:.08em;text-transform:uppercase;border-top:1px solid #222;padding-top:5px;margin-top:9px}h3{font-size:12.2px;margin:0}.muted{font-size:10.8px;color:#444}p,li{font-size:11.4px;line-height:1.44}`
+    `${TYPOGRAPHY_BASE}body{background:#fff;font-family:Arial,sans-serif;color:#111}.inner{padding:11.5mm 12mm}header{border-bottom:1.5px solid #111;padding-bottom:7px;margin-bottom:9px}header p{margin:4px 0 0;font-size:var(--resolvedHeadlineSize)}h2{letter-spacing:.08em;border-top:1px solid #222;padding-top:5px;margin-top:9px}`
   );
 }
 
@@ -161,7 +170,7 @@ export function renderAtsCompactHtml(draft = {}) {
   return doc(
     d,
     `<main class="page atsCompactLayout"><div class="inner"><header><h1>${esc(d.basics.name || 'Your Name')}</h1><div>${contactLine(d.basics)}</div></header>${sections}</div></main>`,
-    `body{font-family:Inter,Arial,sans-serif;background:#fff}.inner{padding:10.5mm 12mm}header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1px solid #ddd;padding-bottom:6px}h1{margin:0;font-size:29px}h2{font-size:calc(var(--h3Size) + .4px);letter-spacing:.09em;text-transform:uppercase;margin:8px 0 5px;color:#111}.item{margin-bottom:5px}.muted{font-size:10.7px;color:#666}`
+    `${TYPOGRAPHY_BASE}body{font-family:Inter,Arial,sans-serif;background:#fff}.inner{padding:10.5mm 12mm}header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1px solid #ddd;padding-bottom:6px}header div{font-size:var(--resolvedMetaSize)}h2{letter-spacing:.09em;margin:8px 0 5px;color:#111}`
   );
 }
 
@@ -171,7 +180,7 @@ export function renderElegantSerifHtml(draft = {}) {
   return doc(
     d,
     `<main class="page elegantSerifLayout"><div class="inner"><header><h1>${esc(d.basics.name || 'Your Name')}</h1><p>${esc(d.basics.headline || '')}</p></header>${sections}</div></main>`,
-    `body{background:#f8fafc;font-family:Georgia,'Times New Roman',serif;color:#1f2937}.inner{padding:12.5mm}header{text-align:center;border-bottom:1px solid #d1d5db;padding-bottom:8px;margin-bottom:9px}h1{margin:0;font-size:33px;line-height:1.08}h2{font-size:calc(var(--h3Size) + .3px);letter-spacing:.11em;text-transform:uppercase;color:#374151}h3{margin:0;font-size:12.4px}p,li{font-size:11.3px;line-height:1.44}`
+    `${TYPOGRAPHY_BASE}body{background:#f8fafc;font-family:Georgia,'Times New Roman',serif;color:#1f2937}.inner{padding:12.5mm}header{text-align:center;border-bottom:1px solid #d1d5db;padding-bottom:8px;margin-bottom:9px}header p{margin:4px 0 0;font-size:var(--resolvedHeadlineSize)}h2{letter-spacing:.11em;color:#374151}`
   );
 }
 
@@ -186,7 +195,7 @@ export function renderCreativeTimelineHtml(draft = {}) {
       .filter((k) => k !== 'experience')
       .map((k) => (sectionVisible(d, k) ? m[k] || '' : ''))
       .join('')}</div></main>`,
-    `body{background:#eef2ff;font-family:var(--fontFamily)}.inner{padding:12.5mm}h1{font-size:calc(var(--h1Size) + 4px);margin:0}h2{font-size:calc(var(--h3Size) + .5px);text-transform:uppercase;letter-spacing:.13em;color:#4338ca}.item{position:relative;padding-left:14px}.item:before{content:'';position:absolute;left:0;top:5px;width:8px;height:8px;border-radius:999px;background:#6366f1}`
+    `${TYPOGRAPHY_BASE}body{background:#eef2ff;font-family:var(--fontFamily)}.inner{padding:12.5mm}header p{margin:4px 0 0;font-size:var(--resolvedHeadlineSize)}h2{letter-spacing:.13em;color:#4338ca}.item{position:relative;padding-left:14px}.item:before{content:'';position:absolute;left:0;top:5px;width:8px;height:8px;border-radius:999px;background:#6366f1}`
   );
 }
 
@@ -196,7 +205,7 @@ export function renderCompactOnePagerHtml(draft = {}) {
   return doc(
     d,
     `<main class="page compactOnePagerLayout"><div class="inner"><header><h1>${esc(d.basics.name || 'Your Name')}</h1><p>${esc(d.basics.headline || '')}</p><p class="muted">${contactLine(d.basics)}</p></header>${sections}</div></main>`,
-    `body{background:#f8fafc;font-family:var(--fontFamily)}.inner{padding:10mm 11mm}header{margin-bottom:7px}h1{margin:0;font-size:28px}h2{margin:7px 0 4px;font-size:11.6px;letter-spacing:.1em;text-transform:uppercase;color:#0f172a}p,li{font-size:11px;line-height:1.42}.item{margin-bottom:3px}.muted{color:#64748b;font-size:10.8px}`
+    `${TYPOGRAPHY_BASE}body{background:#f8fafc;font-family:var(--fontFamily)}.inner{padding:10mm 11mm}header{margin-bottom:7px}header p{margin:4px 0 0;font-size:var(--resolvedHeadlineSize)}h2{margin:7px 0 4px;letter-spacing:.1em;color:#0f172a}.muted{color:#64748b}`
   );
 }
 
