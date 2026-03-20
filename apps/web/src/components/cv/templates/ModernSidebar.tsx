@@ -27,7 +27,10 @@ export function renderModernSidebarHtml(draft: CvDraft): string {
   const { cssVarBlock } = resolveDraftStyles(draft);
 
   const sectionMap: Record<CvSectionKey, string> = {
-    summary: (draft.summary?.trim() || draft.richText?.summary?.trim()) ? `<section><h2>Summary</h2><p>${renderRichText(draft, 'summary', draft.summary || '')}</p></section>` : '',
+    summary:
+      draft.summary?.trim() || draft.richText?.summary?.trim()
+        ? `<section><h2>Summary</h2><p>${renderRichText(draft, 'summary', draft.summary || '')}</p></section>`
+        : '',
     skills: draft.skills?.length
       ? `<section><h2>Skills</h2><div class="chips">${draft.skills.map((s) => `<span>${esc(s)}</span>`).join('')}</div></section>`
       : '',
@@ -35,7 +38,10 @@ export function renderModernSidebarHtml(draft: CvDraft): string {
       ? `<section><h2>Experience</h2><div class="stack">${draft.experience
           .map((exp, idx) => {
             const bullets = exp.bullets?.length
-              ? `<ul>${exp.bullets.filter(Boolean).map((bullet) => `<li>${esc(bullet)}</li>`).join('')}</ul>`
+              ? `<ul>${exp.bullets
+                  .filter(Boolean)
+                  .map((bullet) => `<li>${esc(bullet)}</li>`)
+                  .join('')}</ul>`
               : '';
             return `<article data-k="${esc(`${safeKey(exp.company)}|${idx}`)}"><h3>${esc(exp.role || 'Role')} · ${esc(exp.company || 'Company')}</h3><div class="meta">${esc(exp.start || '')}${exp.start || exp.end ? ' - ' : ''}${esc(exp.end || '')}${exp.location ? ` • ${esc(exp.location)}` : ''}</div>${bullets}</article>`;
           })
@@ -43,14 +49,20 @@ export function renderModernSidebarHtml(draft: CvDraft): string {
       : '',
     education: draft.education?.length
       ? `<section><h2>Education</h2><div class="stack">${draft.education
-          .map((edu, idx) => `<article data-k="${esc(`${safeKey(edu.school)}|${idx}`)}"><h3>${esc(edu.program || 'Program')}</h3><div class="meta">${esc(edu.school || 'School')} · ${esc(edu.start || '')}${edu.start || edu.end ? ' - ' : ''}${esc(edu.end || '')}</div>${edu.details ? `<p>${esc(edu.details)}</p>` : ''}</article>`)
+          .map(
+            (edu, idx) =>
+              `<article data-k="${esc(`${safeKey(edu.school)}|${idx}`)}"><h3>${esc(edu.program || 'Program')}</h3><div class="meta">${esc(edu.school || 'School')} · ${esc(edu.start || '')}${edu.start || edu.end ? ' - ' : ''}${esc(edu.end || '')}</div>${edu.details ? `<p>${esc(edu.details)}</p>` : ''}</article>`
+          )
           .join('')}</div></section>`
       : '',
     projects: draft.projects?.length
       ? `<section><h2>Projects</h2><div class="stack">${draft.projects
           .map((project, idx) => {
             const bullets = project.bullets?.length
-              ? `<ul>${project.bullets.filter(Boolean).map((bullet) => `<li>${esc(bullet)}</li>`).join('')}</ul>`
+              ? `<ul>${project.bullets
+                  .filter(Boolean)
+                  .map((bullet) => `<li>${esc(bullet)}</li>`)
+                  .join('')}</ul>`
               : '';
             return `<article data-k="${esc(`${safeKey(project.name)}|${idx}`)}"><h3>${esc(project.name || 'Project')}</h3>${project.description ? `<p>${esc(project.description)}</p>` : ''}${bullets}</article>`;
           })
@@ -58,7 +70,10 @@ export function renderModernSidebarHtml(draft: CvDraft): string {
       : '',
     certifications: draft.certifications?.length
       ? `<section><h2>Certifications</h2><div class="stack">${draft.certifications
-          .map((cert, idx) => `<p data-k="${esc(`${safeKey(cert.name)}|${idx}`)}"><strong>${esc(cert.name || '')}</strong>${cert.issuer ? ` • ${esc(cert.issuer)}` : ''}${cert.year ? ` (${esc(cert.year)})` : ''}</p>`)
+          .map(
+            (cert, idx) =>
+              `<p data-k="${esc(`${safeKey(cert.name)}|${idx}`)}"><strong>${esc(cert.name || '')}</strong>${cert.issuer ? ` • ${esc(cert.issuer)}` : ''}${cert.year ? ` (${esc(cert.year)})` : ''}</p>`
+          )
           .join('')}</div></section>`
       : '',
     extras: draft.extras
@@ -85,21 +100,21 @@ export function renderModernSidebarHtml(draft: CvDraft): string {
   *{box-sizing:border-box}
   body{margin:0;background:#e2e8f0;font-family:var(--fontFamily);font-size:var(--baseFontSize);color:var(--textColor)}
   .page{width:210mm;min-height:297mm;margin:14px auto;display:grid;grid-template-columns:33% 1fr;background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.14)}
-  aside{background:var(--sidebarBg);color:var(--sidebarText);padding:16mm 9mm}
-  main{padding:16mm 12mm;display:grid;gap:13px;align-content:start}
+  aside{background:var(--sidebarBg);color:var(--sidebarText);padding:15mm 9mm}
+  main{padding:15mm 11.5mm;display:grid;gap:11px;align-content:start}
   h1{margin:0;font-size:var(--h1Size);line-height:1.1}
-  .headline{margin-top:4px;font-size:12px;color:#cbd5e1}
-  .contact{margin-top:10px;display:grid;gap:3px;font-size:10px;color:#cbd5e1}
-  section{margin-top:12px}
-  h2{margin:0 0 6px;font-size:var(--h3Size);text-transform:uppercase;letter-spacing:.12em;color:inherit;opacity:.9}
+  .headline{margin-top:4px;font-size:13px;color:#cbd5e1}
+  .contact{margin-top:10px;display:grid;gap:4px;font-size:10.8px;color:#cbd5e1}
+  section{margin-top:10px}
+  h2{margin:0 0 6px;font-size:calc(var(--h3Size) + .3px);text-transform:uppercase;letter-spacing:.12em;color:inherit;opacity:.9}
   aside p, aside li{color:#e2e8f0}
   .chips{display:flex;flex-wrap:wrap;gap:6px}
-  .chips span{font-size:10px;padding:3px 7px;border-radius:999px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22)}
-  .stack{display:grid;gap:10px}
+  .chips span{font-size:10.8px;padding:3px 8px;border-radius:999px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22)}
+  .stack{display:grid;gap:8px}
   h3{margin:0;font-size:var(--h2Size)}
-  .meta{font-size:10px;color:#64748b;margin-top:2px}
-  p{margin:3px 0 0;font-size:var(--bodySize);color:var(--textColor);line-height:1.45}
-  ul{margin:5px 0 0;padding-left:16px;font-size:11px;color:#475569}
+  .meta{font-size:10.8px;color:#64748b;margin-top:2px}
+  p{margin:3px 0 0;font-size:11.3px;color:var(--textColor);line-height:1.45}
+  ul{margin:5px 0 0;padding-left:16px;font-size:11.2px;color:#475569}
   li{margin:2px 0}
   @page{size:A4;margin:8mm}
 </style>
@@ -109,7 +124,16 @@ export function renderModernSidebarHtml(draft: CvDraft): string {
     <aside>
       <h1>${esc(b.name || 'Your Name')}</h1>
       <div class="headline">${esc(b.headline || 'Professional Headline')}</div>
-      <div class="contact">${[b.email, b.phone, b.location].filter(Boolean).map((item) => `<div>${esc(item)}</div>`).join('')}${(b.links || []).filter((l) => (l?.label || l?.url)?.trim()).map((l, idx) => `<div data-k="${esc(`${safeKey(l.label || l.url)}|${idx}`)}">${esc(l.label || l.url || '')}</div>`).join('')}</div>
+      <div class="contact">${[b.email, b.phone, b.location]
+        .filter(Boolean)
+        .map((item) => `<div>${esc(item)}</div>`)
+        .join('')}${(b.links || [])
+        .filter((l) => (l?.label || l?.url)?.trim())
+        .map(
+          (l, idx) =>
+            `<div data-k="${esc(`${safeKey(l.label || l.url)}|${idx}`)}">${esc(l.label || l.url || '')}</div>`
+        )
+        .join('')}</div>
       ${sidebar}
     </aside>
     <main>${main}</main>
@@ -129,7 +153,10 @@ const ModernSidebar: React.FC<Props> = ({ draft }) => {
     summary: draft.summary ? (
       <section>
         <h3 className="cv-section-title text-gray-800">Summary</h3>
-        <p className="cv-body" dangerouslySetInnerHTML={renderRichTextReact(draft, 'summary', draft.summary || '')} />
+        <p
+          className="cv-body"
+          dangerouslySetInnerHTML={renderRichTextReact(draft, 'summary', draft.summary || '')}
+        />
       </section>
     ) : null,
     skills: draft.skills?.length ? (
@@ -137,7 +164,7 @@ const ModernSidebar: React.FC<Props> = ({ draft }) => {
         <h3 className="cv-section-title text-gray-800">Skills</h3>
         <div className="flex flex-wrap gap-1">
           {draft.skills.map((skill) => (
-            <span key={skill} className="rounded-full bg-white/70 px-2 py-1 text-[10px]">
+            <span key={skill} className="rounded-full bg-white/70 px-2 py-1 text-[11px]">
               {skill}
             </span>
           ))}
@@ -153,10 +180,10 @@ const ModernSidebar: React.FC<Props> = ({ draft }) => {
               <div className="text-sm font-semibold">
                 {exp.role || 'Role'} · {exp.company || 'Company'}
               </div>
-              <div className="text-xs text-gray-500">
+              <div className="text-[11px] text-gray-500">
                 {exp.start} - {exp.end} {exp.location ? `• ${exp.location}` : ''}
               </div>
-              <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-gray-700">
+              <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] text-gray-700">
                 {exp.bullets?.map((bullet, bulletIdx) => (
                   <li key={`${exp.company}-${bulletIdx}`}>{bullet}</li>
                 ))}
@@ -173,10 +200,10 @@ const ModernSidebar: React.FC<Props> = ({ draft }) => {
           {draft.education.map((edu, idx) => (
             <div key={`${edu.school}-${idx}`}>
               <div className="text-sm font-semibold">{edu.program || 'Program'}</div>
-              <div className="text-xs text-gray-500">
+              <div className="text-[11px] text-gray-500">
                 {edu.school || 'School'} · {edu.start} - {edu.end}
               </div>
-              {edu.details && <p className="text-xs text-gray-600">{edu.details}</p>}
+              {edu.details && <p className="text-[11px] text-gray-600">{edu.details}</p>}
             </div>
           ))}
         </div>
@@ -190,9 +217,9 @@ const ModernSidebar: React.FC<Props> = ({ draft }) => {
             <div key={`${project.name}-${idx}`}>
               <div className="text-sm font-semibold">{project.name || 'Project'}</div>
               {project.description && (
-                <p className="text-xs text-gray-600">{project.description}</p>
+                <p className="text-[11px] text-gray-600">{project.description}</p>
               )}
-              <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-gray-700">
+              <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] text-gray-700">
                 {project.bullets?.map((bullet, bulletIdx) => (
                   <li key={`${project.name}-${bulletIdx}`}>{bullet}</li>
                 ))}
@@ -205,7 +232,7 @@ const ModernSidebar: React.FC<Props> = ({ draft }) => {
     certifications: draft.certifications?.length ? (
       <section>
         <h3 className="cv-section-title text-gray-800">Certifications</h3>
-        <div className="space-y-1 text-xs text-gray-700">
+        <div className="space-y-1 text-[11px] text-gray-700">
           {draft.certifications.map((cert, idx) => (
             <div key={`${cert.name}-${idx}`}>
               <span className="font-semibold">{cert.name}</span>
@@ -218,7 +245,7 @@ const ModernSidebar: React.FC<Props> = ({ draft }) => {
     extras: draft.extras ? (
       <section>
         <h3 className="cv-section-title text-gray-800">Extras</h3>
-        <div className="space-y-1 text-xs text-gray-700">
+        <div className="space-y-1 text-[11px] text-gray-700">
           {draft.extras.languages?.length ? (
             <p>Languages: {draft.extras.languages.join(', ')}</p>
           ) : null}
@@ -234,10 +261,19 @@ const ModernSidebar: React.FC<Props> = ({ draft }) => {
 
   return (
     <div className="grid min-h-[297mm] grid-cols-[32%_1fr]" style={cssVars as React.CSSProperties}>
-      <aside className="p-6" style={{ backgroundColor: 'var(--sidebarBg)', color: 'var(--sidebarText)', fontSize: 'var(--baseFontSize)' }}>
+      <aside
+        className="p-6"
+        style={{
+          backgroundColor: 'var(--sidebarBg)',
+          color: 'var(--sidebarText)',
+          fontSize: 'var(--baseFontSize)',
+        }}
+      >
         <h1 className="text-xl font-semibold">{draft.basics.name || 'Your Name'}</h1>
-        <p className="text-xs text-slate-300">{draft.basics.headline || 'Professional Headline'}</p>
-        <div className="mt-3 space-y-1 text-[10px] text-slate-200">
+        <p className="text-[11px] text-slate-300">
+          {draft.basics.headline || 'Professional Headline'}
+        </p>
+        <div className="mt-3 space-y-1 text-[11px] text-slate-200">
           <p>{draft.basics.email}</p>
           <p>{draft.basics.phone}</p>
           <p>{draft.basics.location}</p>
@@ -249,7 +285,10 @@ const ModernSidebar: React.FC<Props> = ({ draft }) => {
           {sidebarKeys.map((key) => (visible[key] !== false ? sectionMap[key] : null))}
         </div>
       </aside>
-      <main className="space-y-6 bg-white p-8" style={{ color: 'var(--textColor)', fontSize: 'var(--bodySize)' }}>
+      <main
+        className="space-y-6 bg-white p-8"
+        style={{ color: 'var(--textColor)', fontSize: 'var(--bodySize)' }}
+      >
         {mainKeys.map((key) => (visible[key] !== false ? sectionMap[key] : null))}
       </main>
     </div>

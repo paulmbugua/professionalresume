@@ -22,7 +22,9 @@ export function renderElegantSerifHtml(draft: CvDraft): string {
   const b = draft.basics || {};
 
   const sectionMap: Record<CvSectionKey, string> = {
-    summary: draft.summary?.trim() ? `<section><h2>Summary</h2><p>${esc(draft.summary)}</p></section>` : '',
+    summary: draft.summary?.trim()
+      ? `<section><h2>Summary</h2><p>${esc(draft.summary)}</p></section>`
+      : '',
     skills: draft.skills?.length
       ? `<section><h2>Skills</h2><p>${esc(draft.skills.join(' · '))}</p></section>`
       : '',
@@ -30,7 +32,10 @@ export function renderElegantSerifHtml(draft: CvDraft): string {
       ? `<section><h2>Experience</h2><div class="stack">${draft.experience
           .map((exp, idx) => {
             const bullets = exp.bullets?.length
-              ? `<ul>${exp.bullets.filter(Boolean).map((bullet) => `<li>${esc(bullet)}</li>`).join('')}</ul>`
+              ? `<ul>${exp.bullets
+                  .filter(Boolean)
+                  .map((bullet) => `<li>${esc(bullet)}</li>`)
+                  .join('')}</ul>`
               : '';
             return `<article data-k="${esc(`${safeKey(exp.company)}|${idx}`)}"><div class="row"><strong>${esc(exp.role || 'Role')} · ${esc(exp.company || 'Company')}</strong><span>${esc(exp.start || '')}${exp.start || exp.end ? ' - ' : ''}${esc(exp.end || '')}</span></div>${bullets}</article>`;
           })
@@ -38,17 +43,26 @@ export function renderElegantSerifHtml(draft: CvDraft): string {
       : '',
     education: draft.education?.length
       ? `<section><h2>Education</h2><div class="stack">${draft.education
-          .map((edu, idx) => `<article data-k="${esc(`${safeKey(edu.school)}|${idx}`)}"><div class="row"><strong>${esc(edu.program || 'Program')} · ${esc(edu.school || 'School')}</strong><span>${esc(edu.start || '')}${edu.start || edu.end ? ' - ' : ''}${esc(edu.end || '')}</span></div>${edu.details ? `<p>${esc(edu.details)}</p>` : ''}</article>`)
+          .map(
+            (edu, idx) =>
+              `<article data-k="${esc(`${safeKey(edu.school)}|${idx}`)}"><div class="row"><strong>${esc(edu.program || 'Program')} · ${esc(edu.school || 'School')}</strong><span>${esc(edu.start || '')}${edu.start || edu.end ? ' - ' : ''}${esc(edu.end || '')}</span></div>${edu.details ? `<p>${esc(edu.details)}</p>` : ''}</article>`
+          )
           .join('')}</div></section>`
       : '',
     projects: draft.projects?.length
       ? `<section><h2>Projects</h2><div class="stack">${draft.projects
-          .map((project, idx) => `<article data-k="${esc(`${safeKey(project.name)}|${idx}`)}"><strong>${esc(project.name || 'Project')}</strong>${project.description ? `<p>${esc(project.description)}</p>` : ''}</article>`)
+          .map(
+            (project, idx) =>
+              `<article data-k="${esc(`${safeKey(project.name)}|${idx}`)}"><strong>${esc(project.name || 'Project')}</strong>${project.description ? `<p>${esc(project.description)}</p>` : ''}</article>`
+          )
           .join('')}</div></section>`
       : '',
     certifications: draft.certifications?.length
       ? `<section><h2>Certifications</h2><div class="stack">${draft.certifications
-          .map((cert, idx) => `<p data-k="${esc(`${safeKey(cert.name)}|${idx}`)}">${esc(cert.name || '')}${cert.issuer ? ` · ${esc(cert.issuer)}` : ''}${cert.year ? ` (${esc(cert.year)})` : ''}</p>`)
+          .map(
+            (cert, idx) =>
+              `<p data-k="${esc(`${safeKey(cert.name)}|${idx}`)}">${esc(cert.name || '')}${cert.issuer ? ` · ${esc(cert.issuer)}` : ''}${cert.year ? ` (${esc(cert.year)})` : ''}</p>`
+          )
           .join('')}</div></section>`
       : '',
     extras: draft.extras
@@ -69,20 +83,20 @@ export function renderElegantSerifHtml(draft: CvDraft): string {
 <style>
   *{box-sizing:border-box}
   body{margin:0;background:#f8fafc;font-family:Georgia,'Times New Roman',serif;color:#111827}
-  .page{width:210mm;min-height:297mm;margin:14px auto;background:#fff;padding:16mm 15mm;box-shadow:0 10px 24px rgba(15,23,42,.08)}
+  .page{width:210mm;min-height:297mm;margin:14px auto;background:#fff;padding:14.5mm 14.5mm;box-shadow:0 10px 24px rgba(15,23,42,.08)}
   header{text-align:center;border-bottom:1px solid #d1d5db;padding-bottom:10px}
-  h1{margin:0;font-size:33px;font-weight:600}
-  .headline{margin-top:4px;font-size:13px;color:#4b5563}
-  .meta{margin-top:8px;display:flex;flex-wrap:wrap;justify-content:center;gap:8px 14px;font-size:11px;color:#6b7280}
-  main{margin-top:14px;display:grid;gap:14px}
-  h2{margin:0 0 6px;font-size:12px;letter-spacing:.12em;text-transform:uppercase;border-bottom:1px solid #e5e7eb;padding-bottom:3px}
-  p{margin:2px 0 0;font-size:12px;line-height:1.55;color:#374151}
-  .stack{display:grid;gap:10px}
+  h1{margin:0;font-size:34px;font-weight:600}
+  .headline{margin-top:4px;font-size:14px;color:#4b5563}
+  .meta{margin-top:8px;display:flex;flex-wrap:wrap;justify-content:center;gap:8px 13px;font-size:11.2px;color:#6b7280}
+  main{margin-top:12px;display:grid;gap:10px}
+  h2{margin:0 0 6px;font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;border-bottom:1px solid #e5e7eb;padding-bottom:3px}
+  p{margin:2px 0 0;font-size:11.4px;line-height:1.48;color:#374151}
+  .stack{display:grid;gap:8px}
   .row{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
-  strong{font-size:13px;font-weight:600}
-  span{font-size:11px;color:#6b7280}
-  ul{margin:6px 0 0;padding-left:18px;color:#374151;font-size:12px}
-  li{margin:3px 0}
+  strong{font-size:12.2px;font-weight:600}
+  span{font-size:10.8px;color:#6b7280}
+  ul{margin:6px 0 0;padding-left:18px;color:#374151;font-size:11.3px}
+  li{margin:2px 0}
   @page{size:A4;margin:12mm}
 </style>
 </head>
@@ -91,7 +105,16 @@ export function renderElegantSerifHtml(draft: CvDraft): string {
     <header>
       <h1>${esc(b.name || 'Your Name')}</h1>
       <div class="headline">${esc(b.headline || 'Professional Headline')}</div>
-      <div class="meta">${[b.email, b.phone, b.location].filter(Boolean).map((item) => `<span>${esc(item)}</span>`).join('')}${(b.links || []).filter((l) => (l?.label || l?.url)?.trim()).map((l, idx) => `<span data-k="${esc(`${safeKey(l.label || l.url)}|${idx}`)}">${esc(l.label || l.url || '')}</span>`).join('')}</div>
+      <div class="meta">${[b.email, b.phone, b.location]
+        .filter(Boolean)
+        .map((item) => `<span>${esc(item)}</span>`)
+        .join('')}${(b.links || [])
+        .filter((l) => (l?.label || l?.url)?.trim())
+        .map(
+          (l, idx) =>
+            `<span data-k="${esc(`${safeKey(l.label || l.url)}|${idx}`)}">${esc(l.label || l.url || '')}</span>`
+        )
+        .join('')}</div>
     </header>
     <main>${sections}</main>
   </div>
@@ -123,10 +146,14 @@ const ElegantSerif: React.FC<Props> = ({ draft }) => {
           {draft.experience.map((exp, idx) => (
             <div key={`${exp.company}-${idx}`}>
               <div className="flex flex-wrap items-center justify-between text-sm font-semibold">
-                <span>{exp.role || 'Role'} · {exp.company || 'Company'}</span>
-                <span className="text-xs text-gray-500">{exp.start} - {exp.end}</span>
+                <span>
+                  {exp.role || 'Role'} · {exp.company || 'Company'}
+                </span>
+                <span className="text-[11px] text-gray-500">
+                  {exp.start} - {exp.end}
+                </span>
               </div>
-              <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-gray-700">
+              <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] text-gray-700">
                 {exp.bullets?.map((bullet, bulletIdx) => (
                   <li key={`${exp.company}-${bulletIdx}`}>{bullet}</li>
                 ))}
@@ -143,10 +170,14 @@ const ElegantSerif: React.FC<Props> = ({ draft }) => {
           {draft.education.map((edu, idx) => (
             <div key={`${edu.school}-${idx}`}>
               <div className="flex flex-wrap items-center justify-between text-sm font-semibold">
-                <span>{edu.program || 'Program'} · {edu.school || 'School'}</span>
-                <span className="text-xs text-gray-500">{edu.start} - {edu.end}</span>
+                <span>
+                  {edu.program || 'Program'} · {edu.school || 'School'}
+                </span>
+                <span className="text-[11px] text-gray-500">
+                  {edu.start} - {edu.end}
+                </span>
               </div>
-              {edu.details && <p className="text-xs text-gray-600">{edu.details}</p>}
+              {edu.details && <p className="text-[11px] text-gray-600">{edu.details}</p>}
             </div>
           ))}
         </div>
@@ -159,7 +190,7 @@ const ElegantSerif: React.FC<Props> = ({ draft }) => {
           {draft.projects.map((project, idx) => (
             <div key={`${project.name}-${idx}`}>
               <div className="text-sm font-semibold">{project.name || 'Project'}</div>
-              <p className="text-xs text-gray-600">{project.description}</p>
+              <p className="text-[11px] text-gray-600">{project.description}</p>
             </div>
           ))}
         </div>
@@ -168,10 +199,11 @@ const ElegantSerif: React.FC<Props> = ({ draft }) => {
     certifications: draft.certifications?.length ? (
       <section>
         <h3 className="cv-section-title font-serif">Certifications</h3>
-        <div className="space-y-1 text-xs text-gray-600">
+        <div className="space-y-1 text-[11px] text-gray-600">
           {draft.certifications.map((cert, idx) => (
             <div key={`${cert.name}-${idx}`}>
-              {cert.name} {cert.issuer ? `· ${cert.issuer}` : ''} {cert.year ? `(${cert.year})` : ''}
+              {cert.name} {cert.issuer ? `· ${cert.issuer}` : ''}{' '}
+              {cert.year ? `(${cert.year})` : ''}
             </div>
           ))}
         </div>
@@ -180,7 +212,7 @@ const ElegantSerif: React.FC<Props> = ({ draft }) => {
     extras: draft.extras ? (
       <section>
         <h3 className="cv-section-title font-serif">Extras</h3>
-        <div className="space-y-1 text-xs text-gray-600">
+        <div className="space-y-1 text-[11px] text-gray-600">
           {draft.extras.languages?.length ? (
             <p>Languages: {draft.extras.languages.join(', ')}</p>
           ) : null}
@@ -197,7 +229,7 @@ const ElegantSerif: React.FC<Props> = ({ draft }) => {
       <header className="border-b border-gray-300 pb-4 text-center">
         <h1 className="text-3xl font-semibold">{draft.basics.name || 'Your Name'}</h1>
         <p className="text-sm text-gray-600">{draft.basics.headline || 'Professional Headline'}</p>
-        <div className="mt-2 flex flex-wrap justify-center gap-3 text-xs text-gray-500">
+        <div className="mt-2 flex flex-wrap justify-center gap-3 text-[11px] text-gray-500">
           <span>{draft.basics.email}</span>
           <span>{draft.basics.phone}</span>
           <span>{draft.basics.location}</span>
