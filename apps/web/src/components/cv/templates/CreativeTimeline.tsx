@@ -22,7 +22,9 @@ export function renderCreativeTimelineHtml(draft: CvDraft): string {
   const b = draft.basics || {};
 
   const sectionMap: Record<CvSectionKey, string> = {
-    summary: draft.summary?.trim() ? `<section><h2>Summary</h2><p>${esc(draft.summary)}</p></section>` : '',
+    summary: draft.summary?.trim()
+      ? `<section><h2>Summary</h2><p>${esc(draft.summary)}</p></section>`
+      : '',
     skills: draft.skills?.length
       ? `<section><h2>Skills</h2><div class="chips">${draft.skills.map((s) => `<span>${esc(s)}</span>`).join('')}</div></section>`
       : '',
@@ -30,7 +32,10 @@ export function renderCreativeTimelineHtml(draft: CvDraft): string {
       ? `<section><h2>Experience Timeline</h2><div class="timeline">${draft.experience
           .map((exp, idx) => {
             const bullets = exp.bullets?.length
-              ? `<ul>${exp.bullets.filter(Boolean).map((bullet) => `<li>${esc(bullet)}</li>`).join('')}</ul>`
+              ? `<ul>${exp.bullets
+                  .filter(Boolean)
+                  .map((bullet) => `<li>${esc(bullet)}</li>`)
+                  .join('')}</ul>`
               : '';
             return `<article data-k="${esc(`${safeKey(exp.company)}|${idx}`)}"><h3>${esc(exp.role || 'Role')} · ${esc(exp.company || 'Company')}</h3><div class="meta">${esc(exp.start || '')}${exp.start || exp.end ? ' - ' : ''}${esc(exp.end || '')}${exp.location ? ` • ${esc(exp.location)}` : ''}</div>${bullets}</article>`;
           })
@@ -38,17 +43,26 @@ export function renderCreativeTimelineHtml(draft: CvDraft): string {
       : '',
     education: draft.education?.length
       ? `<section><h2>Education</h2><div class="stack">${draft.education
-          .map((edu, idx) => `<article data-k="${esc(`${safeKey(edu.school)}|${idx}`)}"><h3>${esc(edu.program || 'Program')}</h3><div class="meta">${esc(edu.school || 'School')} · ${esc(edu.start || '')}${edu.start || edu.end ? ' - ' : ''}${esc(edu.end || '')}</div></article>`)
+          .map(
+            (edu, idx) =>
+              `<article data-k="${esc(`${safeKey(edu.school)}|${idx}`)}"><h3>${esc(edu.program || 'Program')}</h3><div class="meta">${esc(edu.school || 'School')} · ${esc(edu.start || '')}${edu.start || edu.end ? ' - ' : ''}${esc(edu.end || '')}</div></article>`
+          )
           .join('')}</div></section>`
       : '',
     projects: draft.projects?.length
       ? `<section><h2>Projects</h2><div class="stack">${draft.projects
-          .map((project, idx) => `<article data-k="${esc(`${safeKey(project.name)}|${idx}`)}"><h3>${esc(project.name || 'Project')}</h3>${project.description ? `<p>${esc(project.description)}</p>` : ''}</article>`)
+          .map(
+            (project, idx) =>
+              `<article data-k="${esc(`${safeKey(project.name)}|${idx}`)}"><h3>${esc(project.name || 'Project')}</h3>${project.description ? `<p>${esc(project.description)}</p>` : ''}</article>`
+          )
           .join('')}</div></section>`
       : '',
     certifications: draft.certifications?.length
       ? `<section><h2>Certifications</h2><div class="stack">${draft.certifications
-          .map((cert) => `<p><strong>${esc(cert.name || '')}</strong>${cert.issuer ? ` · ${esc(cert.issuer)}` : ''}${cert.year ? ` (${esc(cert.year)})` : ''}</p>`)
+          .map(
+            (cert) =>
+              `<p><strong>${esc(cert.name || '')}</strong>${cert.issuer ? ` · ${esc(cert.issuer)}` : ''}${cert.year ? ` (${esc(cert.year)})` : ''}</p>`
+          )
           .join('')}</div></section>`
       : '',
     extras: draft.extras
@@ -69,24 +83,24 @@ export function renderCreativeTimelineHtml(draft: CvDraft): string {
 <style>
   *{box-sizing:border-box}
   body{margin:0;background:#eef2ff;font-family:Inter,system-ui,Arial;color:#0f172a}
-  .page{width:210mm;min-height:297mm;margin:12px auto;background:#fff;padding:14mm;box-shadow:0 10px 28px rgba(15,23,42,.12)}
+  .page{width:210mm;min-height:297mm;margin:12px auto;background:#fff;padding:13mm;box-shadow:0 10px 28px rgba(15,23,42,.12)}
   header{padding:14px 16px;border-radius:16px;background:linear-gradient(90deg,#4f46e5,#7c3aed);color:#fff}
-  h1{margin:0;font-size:25px}
-  .headline{margin-top:4px;font-size:12px;color:#ddd6fe}
-  .contact{margin-top:8px;display:flex;flex-wrap:wrap;gap:8px 12px;font-size:10px;color:#e9d5ff}
-  main{margin-top:12px;display:grid;gap:12px}
-  h2{margin:0 0 7px;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
-  .timeline{position:relative;padding-left:18px;display:grid;gap:10px}
+  h1{margin:0;font-size:29px}
+  .headline{margin-top:4px;font-size:13px;color:#ddd6fe}
+  .contact{margin-top:8px;display:flex;flex-wrap:wrap;gap:7px 11px;font-size:10.8px;color:#e9d5ff}
+  main{margin-top:11px;display:grid;gap:10px}
+  h2{margin:0 0 6px;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase}
+  .timeline{position:relative;padding-left:18px;display:grid;gap:8px}
   .timeline:before{content:'';position:absolute;left:4px;top:2px;bottom:4px;width:2px;background:#c7d2fe}
   .timeline article{position:relative}
   .timeline article:before{content:'';position:absolute;left:-18px;top:4px;width:10px;height:10px;border-radius:999px;background:#4f46e5;border:2px solid #fff}
-  h3{margin:0;font-size:12px}
-  .meta{font-size:10px;color:#64748b;margin-top:2px}
-  p{margin:3px 0 0;font-size:11px;color:#475569;line-height:1.45}
+  h3{margin:0;font-size:12.6px}
+  .meta{font-size:10.8px;color:#64748b;margin-top:2px}
+  p{margin:3px 0 0;font-size:11.2px;color:#475569;line-height:1.44}
   .chips{display:flex;flex-wrap:wrap;gap:6px}
-  .chips span{padding:4px 8px;border:1px solid #dbeafe;border-radius:999px;font-size:10px;background:#f8fafc}
-  ul{margin:5px 0 0;padding-left:16px;font-size:11px;color:#475569}
-  .stack{display:grid;gap:9px}
+  .chips span{padding:4px 8px;border:1px solid #dbeafe;border-radius:999px;font-size:10.8px;background:#f8fafc}
+  ul{margin:5px 0 0;padding-left:16px;font-size:11.1px;color:#475569}
+  .stack{display:grid;gap:8px}
   @page{size:A4;margin:10mm}
 </style>
 </head>
@@ -95,7 +109,16 @@ export function renderCreativeTimelineHtml(draft: CvDraft): string {
     <header>
       <h1>${esc(b.name || 'Your Name')}</h1>
       <div class="headline">${esc(b.headline || 'Professional Headline')}</div>
-      <div class="contact">${[b.email, b.phone, b.location].filter(Boolean).map((item) => `<span>${esc(item)}</span>`).join('')}${(b.links || []).filter((l) => (l?.label || l?.url)?.trim()).map((l, idx) => `<span data-k="${esc(`${safeKey(l.label || l.url)}|${idx}`)}">${esc(l.label || l.url || '')}</span>`).join('')}</div>
+      <div class="contact">${[b.email, b.phone, b.location]
+        .filter(Boolean)
+        .map((item) => `<span>${esc(item)}</span>`)
+        .join('')}${(b.links || [])
+        .filter((l) => (l?.label || l?.url)?.trim())
+        .map(
+          (l, idx) =>
+            `<span data-k="${esc(`${safeKey(l.label || l.url)}|${idx}`)}">${esc(l.label || l.url || '')}</span>`
+        )
+        .join('')}</div>
     </header>
     <main>${sections}</main>
   </div>
@@ -119,7 +142,7 @@ const CreativeTimeline: React.FC<Props> = ({ draft }) => {
         <h3 className="cv-section-title">Skills</h3>
         <div className="flex flex-wrap gap-2">
           {draft.skills.map((skill) => (
-            <span key={skill} className="rounded-full border border-gray-200 px-3 py-1 text-[10px]">
+            <span key={skill} className="rounded-full border border-gray-200 px-3 py-1 text-[11px]">
               {skill}
             </span>
           ))}
@@ -136,10 +159,10 @@ const CreativeTimeline: React.FC<Props> = ({ draft }) => {
               <div className="text-sm font-semibold">
                 {exp.role || 'Role'} · {exp.company || 'Company'}
               </div>
-              <div className="text-xs text-gray-500">
+              <div className="text-[11px] text-gray-500">
                 {exp.start} - {exp.end} {exp.location ? `• ${exp.location}` : ''}
               </div>
-              <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-gray-600">
+              <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] text-gray-600">
                 {exp.bullets?.map((bullet, bulletIdx) => (
                   <li key={`${exp.company}-${bulletIdx}`}>{bullet}</li>
                 ))}
@@ -156,7 +179,7 @@ const CreativeTimeline: React.FC<Props> = ({ draft }) => {
           {draft.education.map((edu, idx) => (
             <div key={`${edu.school}-${idx}`}>
               <div className="text-sm font-semibold">{edu.program || 'Program'}</div>
-              <div className="text-xs text-gray-500">
+              <div className="text-[11px] text-gray-500">
                 {edu.school || 'School'} · {edu.start} - {edu.end}
               </div>
             </div>
@@ -171,7 +194,7 @@ const CreativeTimeline: React.FC<Props> = ({ draft }) => {
           {draft.projects.map((project, idx) => (
             <div key={`${project.name}-${idx}`}>
               <div className="text-sm font-semibold">{project.name || 'Project'}</div>
-              <p className="text-xs text-gray-600">{project.description}</p>
+              <p className="text-[11px] text-gray-600">{project.description}</p>
             </div>
           ))}
         </div>
@@ -180,10 +203,11 @@ const CreativeTimeline: React.FC<Props> = ({ draft }) => {
     certifications: draft.certifications?.length ? (
       <section>
         <h3 className="cv-section-title">Certifications</h3>
-        <div className="space-y-1 text-xs text-gray-600">
+        <div className="space-y-1 text-[11px] text-gray-600">
           {draft.certifications.map((cert, idx) => (
             <div key={`${cert.name}-${idx}`}>
-              {cert.name} {cert.issuer ? `· ${cert.issuer}` : ''} {cert.year ? `(${cert.year})` : ''}
+              {cert.name} {cert.issuer ? `· ${cert.issuer}` : ''}{' '}
+              {cert.year ? `(${cert.year})` : ''}
             </div>
           ))}
         </div>
@@ -192,7 +216,7 @@ const CreativeTimeline: React.FC<Props> = ({ draft }) => {
     extras: draft.extras ? (
       <section>
         <h3 className="cv-section-title">Extras</h3>
-        <div className="space-y-1 text-xs text-gray-600">
+        <div className="space-y-1 text-[11px] text-gray-600">
           {draft.extras.languages?.length ? (
             <p>Languages: {draft.extras.languages.join(', ')}</p>
           ) : null}
@@ -209,7 +233,7 @@ const CreativeTimeline: React.FC<Props> = ({ draft }) => {
       <header className="rounded-2xl bg-gradient-to-r from-primary to-secondary p-6 text-white">
         <h1 className="text-2xl font-semibold">{draft.basics.name || 'Your Name'}</h1>
         <p className="text-sm text-white/80">{draft.basics.headline || 'Professional Headline'}</p>
-        <div className="mt-2 flex flex-wrap gap-3 text-xs text-white/70">
+        <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-white/70">
           <span>{draft.basics.email}</span>
           <span>{draft.basics.phone}</span>
           <span>{draft.basics.location}</span>

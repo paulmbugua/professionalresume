@@ -241,27 +241,27 @@ export function renderBoldHeaderHtml(draft: CvDraft) {
   :root{ --text:#0f172a; --muted:#475569; --border:#e5e7eb; --soft:#f8fafc; }
   *{ box-sizing:border-box; }
   body{ margin:0; background:#fff; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; color:var(--text); }
-  .wrap{ padding:28px; }
-  .hero{ border-radius:18px; padding:18px 18px 14px; background:var(--headerBg); color:var(--headerText); }
-  .hero h1{ margin:0; font-size:26px; line-height:1.1; letter-spacing:-0.02em; }
-  .hero .sub{ margin:6px 0 0; font-size:12px; color:#cbd5e1; }
-  .meta{ margin-top:10px; display:flex; flex-wrap:wrap; gap:10px 16px; font-size:11px; color:#94a3b8; }
+  .wrap{ padding:24px; }
+  .hero{ border-radius:18px; padding:17px 18px 13px; background:var(--headerBg); color:var(--headerText); }
+  .hero h1{ margin:0; font-size:30px; line-height:1.08; letter-spacing:-0.02em; }
+  .hero .sub{ margin:6px 0 0; font-size:13px; color:#cbd5e1; }
+  .meta{ margin-top:9px; display:flex; flex-wrap:wrap; gap:8px 14px; font-size:11.2px; color:#94a3b8; }
   .meta span{ white-space:nowrap; }
-  .grid{ margin-top:16px; display:grid; gap:12px; }
-  .card{ border:1px solid var(--border); border-radius:14px; padding:12px; background:#fff; }
+  .grid{ margin-top:14px; display:grid; gap:10px; }
+  .card{ border:1px solid var(--border); border-radius:14px; padding:11px; background:#fff; }
   .card.muted{ background:var(--soft); }
-  .title{ margin:0 0 8px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; }
-  .body{ margin:0; font-size:12px; line-height:1.5; color:var(--muted); }
+  .title{ margin:0 0 7px; font-size:11.5px; letter-spacing:.08em; text-transform:uppercase; }
+  .body{ margin:0; font-size:11.4px; line-height:1.45; color:var(--muted); }
   .chips{ display:flex; flex-wrap:wrap; gap:6px; }
-  .chip{ background:#fff; border:1px solid var(--border); border-radius:999px; padding:4px 8px; font-size:10px; font-weight:600; color:#334155; }
-  .stack{ display:flex; flex-direction:column; gap:10px; }
+  .chip{ background:#fff; border:1px solid var(--border); border-radius:999px; padding:4px 8px; font-size:10.8px; font-weight:600; color:#334155; }
+  .stack{ display:flex; flex-direction:column; gap:8px; }
   .item{ }
   .row{ display:flex; justify-content:space-between; gap:10px; align-items:baseline; }
-  .strong{ font-weight:700; font-size:12px; }
-  .dates{ font-size:11px; color:var(--muted); white-space:nowrap; text-align:right; }
+  .strong{ font-weight:700; font-size:11.4px; }
+  .dates{ font-size:10.8px; color:var(--muted); white-space:nowrap; text-align:right; }
   .mutedText{ font-size:11px; color:var(--muted); }
-  .list{ margin:8px 0 0; padding-left:18px; font-size:11px; color:var(--muted); line-height:1.45; }
-  .list li{ margin:4px 0; }
+  .list{ margin:7px 0 0; padding-left:18px; font-size:11px; color:var(--muted); line-height:1.42; }
+  .list li{ margin:3px 0; }
 </style>
 </head>
 <body>
@@ -307,7 +307,7 @@ const BoldHeader: React.FC<Props> = ({ draft }) => {
           {draft.skills.map((skill) => (
             <span
               key={skill}
-              className="rounded-full bg-white px-3 py-1 text-[10px] font-semibold text-gray-700"
+              className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-gray-700"
             >
               {skill}
             </span>
@@ -326,12 +326,14 @@ const BoldHeader: React.FC<Props> = ({ draft }) => {
                 <span>
                   {exp.role || 'Role'} · {exp.company || 'Company'}
                 </span>
-                <span className="text-xs text-gray-500">
+                <span className="text-[11px] text-gray-500">
                   {exp.start} - {exp.end}
                 </span>
               </div>
-              {exp.location ? <div className="text-xs text-gray-500">{exp.location}</div> : null}
-              <ul className="list-disc space-y-1 pl-4 text-xs text-gray-600">
+              {exp.location ? (
+                <div className="text-[11px] text-gray-500">{exp.location}</div>
+              ) : null}
+              <ul className="list-disc space-y-1 pl-4 text-[11px] text-gray-600">
                 {exp.bullets?.filter(Boolean).map((bullet, bulletIdx) => (
                   <li key={`${exp.company}-${bulletIdx}`}>{bullet}</li>
                 ))}
@@ -352,11 +354,11 @@ const BoldHeader: React.FC<Props> = ({ draft }) => {
                 <span>
                   {edu.program || 'Program'} · {edu.school || 'School'}
                 </span>
-                <span className="text-xs text-gray-500">
+                <span className="text-[11px] text-gray-500">
                   {edu.start} - {edu.end}
                 </span>
               </div>
-              {edu.details && <p className="text-xs text-gray-600">{edu.details}</p>}
+              {edu.details && <p className="text-[11px] text-gray-600">{edu.details}</p>}
             </div>
           ))}
         </div>
@@ -371,9 +373,9 @@ const BoldHeader: React.FC<Props> = ({ draft }) => {
             <div key={`${project.name}-${idx}`}>
               <div className="text-sm font-semibold">{project.name || 'Project'}</div>
               {project.description ? (
-                <p className="text-xs text-gray-600">{project.description}</p>
+                <p className="text-[11px] text-gray-600">{project.description}</p>
               ) : null}
-              <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-gray-600">
+              <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] text-gray-600">
                 {project.bullets?.filter(Boolean).map((bullet, bulletIdx) => (
                   <li key={`${project.name}-${bulletIdx}`}>{bullet}</li>
                 ))}
@@ -387,7 +389,7 @@ const BoldHeader: React.FC<Props> = ({ draft }) => {
     certifications: draft.certifications?.length ? (
       <section className="rounded-xl border border-gray-100 bg-gray-50 p-4">
         <h3 className="cv-section-title">Certifications</h3>
-        <div className="space-y-1 text-xs text-gray-600">
+        <div className="space-y-1 text-[11px] text-gray-600">
           {draft.certifications.map((cert, idx) => (
             <div key={`${cert.name}-${idx}`} className="flex items-center justify-between gap-3">
               <span className="font-semibold">{cert.name}</span>
@@ -403,7 +405,7 @@ const BoldHeader: React.FC<Props> = ({ draft }) => {
     extras: draft.extras ? (
       <section className="rounded-xl border border-gray-100 bg-gray-50 p-4">
         <h3 className="cv-section-title">Extras</h3>
-        <div className="space-y-1 text-xs text-gray-600">
+        <div className="space-y-1 text-[11px] text-gray-600">
           {draft.extras.languages?.length ? (
             <p>Languages: {draft.extras.languages.join(', ')}</p>
           ) : null}
@@ -427,7 +429,7 @@ const BoldHeader: React.FC<Props> = ({ draft }) => {
         <p className="text-sm text-slate-200">
           {draft.basics?.headline || 'Professional Headline'}
         </p>
-        <div className="mt-3 flex flex-wrap gap-4 text-xs text-slate-300">
+        <div className="mt-3 flex flex-wrap gap-4 text-[11px] text-slate-300">
           {draft.basics?.email ? <span>{draft.basics.email}</span> : null}
           {draft.basics?.phone ? <span>{draft.basics.phone}</span> : null}
           {draft.basics?.location ? <span>{draft.basics.location}</span> : null}

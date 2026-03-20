@@ -238,7 +238,7 @@ body{
   min-height:297mm;
   margin:18px auto;
   background:var(--paper);
-  padding:18mm 16mm;
+  padding:16.5mm 15mm;
   box-shadow:0 12px 35px rgba(2,6,23,.10);
 }
 
@@ -249,7 +249,7 @@ header{
 
 h1{
   margin:0;
-  font-size:28px;
+  font-size:30px;
   letter-spacing:-.03em;
   line-height:1.1;
 }
@@ -257,7 +257,7 @@ h1{
 .headline{
   margin:6px 0 0;
   color:var(--muted);
-  font-size:13px;
+  font-size:14px;
   font-weight:500;
 }
 
@@ -267,7 +267,7 @@ h1{
   flex-wrap:wrap;
   gap:8px 14px;
   color:var(--muted);
-  font-size:12px;
+  font-size:11.5px;
 }
 
 .contact span{
@@ -282,15 +282,15 @@ h1{
 }
 
 .sec{
-  margin:16px 0 8px;
-  font-size:11px;
+  margin:15px 0 7px;
+  font-size:11.5px;
   text-transform:uppercase;
   letter-spacing:.12em;
   font-weight:700;
   color:#0f172a;
 }
 
-.stack{ display:flex; flex-direction:column; gap:12px; }
+.stack{ display:flex; flex-direction:column; gap:10px; }
 
 .row{
   display:grid;
@@ -301,22 +301,22 @@ h1{
 
 .strong{ font-weight:700; }
 .dates{
-  font-size:11px;
+  font-size:10.8px;
   color:var(--muted);
   white-space:nowrap;
   text-align:right;
 }
 
 .muted{ color:var(--muted); }
-.small{ font-size:11px; }
+.small{ font-size:10.8px; }
 
-p{ margin:0; font-size:12px; line-height:1.55; }
+p{ margin:0; font-size:11.5px; line-height:1.5; }
 
 ul{
   margin:8px 0 0;
   padding-left:18px;
-  font-size:12px;
-  line-height:1.5;
+  font-size:11.4px;
+  line-height:1.45;
 }
 li{ margin:4px 0; }
 

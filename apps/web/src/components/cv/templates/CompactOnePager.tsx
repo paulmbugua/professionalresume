@@ -21,13 +21,20 @@ export function renderCompactOnePagerHtml(draft: CvDraft): string {
   const isVisible = (k: CvSectionKey) => visibility[k] !== false;
   const b = draft.basics || {};
 
-  const contact = [b.email, b.phone, b.location].filter(Boolean).map((item) => `<span>${esc(item)}</span>`);
+  const contact = [b.email, b.phone, b.location]
+    .filter(Boolean)
+    .map((item) => `<span>${esc(item)}</span>`);
   const links = (b.links || [])
     .filter((l) => (l?.label || l?.url)?.trim())
-    .map((l, idx) => `<span data-k="${esc(`${safeKey(l.label || l.url)}|${idx}`)}">${esc(l.label || l.url || '')}</span>`);
+    .map(
+      (l, idx) =>
+        `<span data-k="${esc(`${safeKey(l.label || l.url)}|${idx}`)}">${esc(l.label || l.url || '')}</span>`
+    );
 
   const sectionMap: Record<CvSectionKey, string> = {
-    summary: draft.summary?.trim() ? `<section><h2>Summary</h2><p>${esc(draft.summary)}</p></section>` : '',
+    summary: draft.summary?.trim()
+      ? `<section><h2>Summary</h2><p>${esc(draft.summary)}</p></section>`
+      : '',
     skills: draft.skills?.length
       ? `<section><h2>Skills</h2><p>${esc(draft.skills.join(' • '))}</p></section>`
       : '',
@@ -35,7 +42,10 @@ export function renderCompactOnePagerHtml(draft: CvDraft): string {
       ? `<section><h2>Experience</h2><div class="stack">${draft.experience
           .map((exp, idx) => {
             const bullets = exp.bullets?.length
-              ? `<ul>${exp.bullets.filter(Boolean).map((bullet) => `<li>${esc(bullet)}</li>`).join('')}</ul>`
+              ? `<ul>${exp.bullets
+                  .filter(Boolean)
+                  .map((bullet) => `<li>${esc(bullet)}</li>`)
+                  .join('')}</ul>`
               : '';
             return `<article data-k="${esc(`${safeKey(exp.company)}|${safeKey(exp.role)}|${idx}`)}"><div class="row"><strong>${esc(exp.role || 'Role')} · ${esc(exp.company || 'Company')}</strong><span>${esc(exp.start || '')}${exp.start || exp.end ? ' - ' : ''}${esc(exp.end || '')}</span></div>${bullets}</article>`;
           })
@@ -51,12 +61,18 @@ export function renderCompactOnePagerHtml(draft: CvDraft): string {
       : '',
     projects: draft.projects?.length
       ? `<section><h2>Projects</h2><div class="stack">${draft.projects
-          .map((project, idx) => `<article data-k="${esc(`${safeKey(project.name)}|${idx}`)}"><strong>${esc(project.name || 'Project')}</strong>${project.description ? `<p>${esc(project.description)}</p>` : ''}</article>`)
+          .map(
+            (project, idx) =>
+              `<article data-k="${esc(`${safeKey(project.name)}|${idx}`)}"><strong>${esc(project.name || 'Project')}</strong>${project.description ? `<p>${esc(project.description)}</p>` : ''}</article>`
+          )
           .join('')}</div></section>`
       : '',
     certifications: draft.certifications?.length
       ? `<section><h2>Certifications</h2><div class="stack">${draft.certifications
-          .map((cert, idx) => `<p data-k="${esc(`${safeKey(cert.name)}|${idx}`)}"><strong>${esc(cert.name || '')}</strong>${cert.issuer ? ` · ${esc(cert.issuer)}` : ''}${cert.year ? ` (${esc(cert.year)})` : ''}</p>`)
+          .map(
+            (cert, idx) =>
+              `<p data-k="${esc(`${safeKey(cert.name)}|${idx}`)}"><strong>${esc(cert.name || '')}</strong>${cert.issuer ? ` · ${esc(cert.issuer)}` : ''}${cert.year ? ` (${esc(cert.year)})` : ''}</p>`
+          )
           .join('')}</div></section>`
       : '',
     extras: draft.extras
@@ -77,18 +93,18 @@ export function renderCompactOnePagerHtml(draft: CvDraft): string {
 <style>
   *{box-sizing:border-box}
   body{margin:0;background:#f8fafc;font-family:Inter,system-ui,Arial;color:#0f172a}
-  .page{width:210mm;min-height:297mm;margin:10px auto;background:#fff;padding:12mm;box-shadow:0 8px 24px rgba(2,6,23,.10)}
+  .page{width:210mm;min-height:297mm;margin:10px auto;background:#fff;padding:11.5mm 12mm;box-shadow:0 8px 24px rgba(2,6,23,.10)}
   header{text-align:center;border-bottom:1px solid #e2e8f0;padding-bottom:8px}
   h1{margin:0;font-size:24px;line-height:1.1}
-  .headline{margin-top:3px;color:#475569;font-size:12px}
-  .meta{margin-top:6px;display:flex;flex-wrap:wrap;justify-content:center;gap:6px 12px;font-size:10px;color:#64748b}
-  main{display:grid;gap:10px;margin-top:10px}
-  h2{margin:0 0 4px;font-size:10px;letter-spacing:.1em;text-transform:uppercase}
-  p{margin:0;font-size:10px;line-height:1.35;color:#475569}
-  .stack{display:grid;gap:6px}
-  .row{display:flex;justify-content:space-between;gap:8px;align-items:baseline;font-size:10px}
-  strong{font-size:10px;color:#0f172a}
-  ul{margin:4px 0 0;padding-left:16px;font-size:10px;line-height:1.35;color:#475569}
+  .headline{margin-top:4px;color:#475569;font-size:13px}
+  .meta{margin-top:7px;display:flex;flex-wrap:wrap;justify-content:center;gap:6px 12px;font-size:11px;color:#64748b}
+  main{display:grid;gap:9px;margin-top:10px}
+  h2{margin:0 0 4px;font-size:11.5px;letter-spacing:.1em;text-transform:uppercase}
+  p{margin:0;font-size:11px;line-height:1.42;color:#475569}
+  .stack{display:grid;gap:5px}
+  .row{display:flex;justify-content:space-between;gap:8px;align-items:baseline;font-size:11px}
+  strong{font-size:11.2px;color:#0f172a}
+  ul{margin:4px 0 0;padding-left:16px;font-size:11px;line-height:1.4;color:#475569}
   li{margin:2px 0}
   @page{size:A4;margin:10mm}
 </style>
@@ -120,7 +136,7 @@ const CompactOnePager: React.FC<Props> = ({ draft }) => {
     skills: draft.skills?.length ? (
       <section>
         <h3 className="cv-section-title">Skills</h3>
-        <p className="text-[10px] text-gray-600">{draft.skills.join(' • ')}</p>
+        <p className="text-[11px] text-gray-600">{draft.skills.join(' • ')}</p>
       </section>
     ) : null,
     experience: draft.experience?.length ? (
@@ -132,10 +148,10 @@ const CompactOnePager: React.FC<Props> = ({ draft }) => {
               <div className="text-[11px] font-semibold">
                 {exp.role || 'Role'} · {exp.company || 'Company'}
               </div>
-              <div className="text-[10px] text-gray-500">
+              <div className="text-[11px] text-gray-500">
                 {exp.start} - {exp.end}
               </div>
-              <ul className="mt-1 list-disc space-y-1 pl-4 text-[10px] text-gray-600">
+              <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] text-gray-600">
                 {exp.bullets?.map((bullet, bulletIdx) => (
                   <li key={`${exp.company}-${bulletIdx}`}>{bullet}</li>
                 ))}
@@ -148,12 +164,15 @@ const CompactOnePager: React.FC<Props> = ({ draft }) => {
     education: draft.education?.length ? (
       <section>
         <h3 className="cv-section-title">Education</h3>
-        <div className="space-y-2 text-[10px] text-gray-600">
+        <div className="space-y-2 text-[11px] text-gray-600">
           {draft.education.map((edu, idx) => (
             <div key={`${edu.school}-${idx}`}>
               <span className="font-semibold">{edu.program || 'Program'}</span>
               <span> · {edu.school || 'School'}</span>
-              <span className="text-gray-400"> ({edu.start} - {edu.end})</span>
+              <span className="text-gray-400">
+                {' '}
+                ({edu.start} - {edu.end})
+              </span>
             </div>
           ))}
         </div>
@@ -162,7 +181,7 @@ const CompactOnePager: React.FC<Props> = ({ draft }) => {
     projects: draft.projects?.length ? (
       <section>
         <h3 className="cv-section-title">Projects</h3>
-        <div className="space-y-2 text-[10px] text-gray-600">
+        <div className="space-y-2 text-[11px] text-gray-600">
           {draft.projects.map((project, idx) => (
             <div key={`${project.name}-${idx}`}>
               <span className="font-semibold">{project.name || 'Project'}</span>
@@ -175,7 +194,7 @@ const CompactOnePager: React.FC<Props> = ({ draft }) => {
     certifications: draft.certifications?.length ? (
       <section>
         <h3 className="cv-section-title">Certifications</h3>
-        <div className="space-y-1 text-[10px] text-gray-600">
+        <div className="space-y-1 text-[11px] text-gray-600">
           {draft.certifications.map((cert, idx) => (
             <div key={`${cert.name}-${idx}`}>
               {cert.name} {cert.year ? `(${cert.year})` : ''}
@@ -187,7 +206,7 @@ const CompactOnePager: React.FC<Props> = ({ draft }) => {
     extras: draft.extras ? (
       <section>
         <h3 className="cv-section-title">Extras</h3>
-        <div className="space-y-1 text-[10px] text-gray-600">
+        <div className="space-y-1 text-[11px] text-gray-600">
           {draft.extras.languages?.length ? (
             <p>Languages: {draft.extras.languages.join(', ')}</p>
           ) : null}
@@ -203,8 +222,10 @@ const CompactOnePager: React.FC<Props> = ({ draft }) => {
     <div className="grid gap-4 p-6 text-[11px]">
       <header className="text-center">
         <h1 className="text-2xl font-semibold">{draft.basics.name || 'Your Name'}</h1>
-        <p className="text-xs text-gray-600">{draft.basics.headline || 'Professional Headline'}</p>
-        <div className="mt-1 flex flex-wrap justify-center gap-3 text-[10px] text-gray-500">
+        <p className="text-[11px] text-gray-600">
+          {draft.basics.headline || 'Professional Headline'}
+        </p>
+        <div className="mt-1 flex flex-wrap justify-center gap-3 text-[11px] text-gray-500">
           <span>{draft.basics.email}</span>
           <span>{draft.basics.phone}</span>
           <span>{draft.basics.location}</span>
