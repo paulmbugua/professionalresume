@@ -100,22 +100,22 @@ export function renderModernSidebarHtml(draft: CvDraft): string {
   *{box-sizing:border-box}
   body{margin:0;background:#e2e8f0;font-family:var(--fontFamily);font-size:var(--baseFontSize);color:var(--textColor)}
   .page{width:210mm;min-height:297mm;margin:14px auto;display:grid;grid-template-columns:33% 1fr;background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.14)}
-  aside{background:var(--sidebarBg);color:var(--sidebarText);padding:15mm 9mm}
-  main{padding:15mm 11.5mm;display:grid;gap:11px;align-content:start}
-  h1{margin:0;font-size:var(--h1Size);line-height:1.1}
-  .headline{margin-top:4px;font-size:13px;color:#cbd5e1}
-  .contact{margin-top:10px;display:grid;gap:4px;font-size:10.8px;color:#cbd5e1}
-  section{margin-top:10px}
-  h2{margin:0 0 6px;font-size:calc(var(--h3Size) + .3px);text-transform:uppercase;letter-spacing:.12em;color:inherit;opacity:.9}
+  aside{background:var(--sidebarBg);color:var(--sidebarText);padding:14mm 8.5mm}
+  main{padding:14mm 11mm;display:grid;gap:11px;align-content:start}
+  h1{margin:0;font-size:calc(var(--h1Size) + 2px);line-height:1.04}
+  .headline{margin-top:5px;font-size:14px;color:#cbd5e1}
+  .contact{margin-top:11px;display:grid;gap:5px;font-size:11.4px;color:#d7e1ef;line-height:1.4}
+  section{margin-top:11px}
+  h2{margin:0 0 7px;font-size:calc(var(--h3Size) + .9px);text-transform:uppercase;letter-spacing:.11em;color:inherit;opacity:.95}
   aside p, aside li{color:#e2e8f0}
   .chips{display:flex;flex-wrap:wrap;gap:6px}
-  .chips span{font-size:10.8px;padding:3px 8px;border-radius:999px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22)}
-  .stack{display:grid;gap:8px}
-  h3{margin:0;font-size:var(--h2Size)}
-  .meta{font-size:10.8px;color:#64748b;margin-top:2px}
-  p{margin:3px 0 0;font-size:11.3px;color:var(--textColor);line-height:1.45}
-  ul{margin:5px 0 0;padding-left:16px;font-size:11.2px;color:#475569}
-  li{margin:2px 0}
+  .chips span{font-size:11.3px;padding:4px 9px;border-radius:999px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22)}
+  .stack{display:grid;gap:9px}
+  h3{margin:0;font-size:calc(var(--h2Size) + .6px)}
+  .meta{font-size:11.2px;color:#64748b;margin-top:3px}
+  p{margin:3px 0 0;font-size:12px;color:var(--textColor);line-height:1.5}
+  ul{margin:6px 0 0;padding-left:18px;font-size:11.9px;color:#475569;line-height:1.48}
+  li{margin:3px 0}
   @page{size:A4;margin:8mm}
 </style>
 </head>

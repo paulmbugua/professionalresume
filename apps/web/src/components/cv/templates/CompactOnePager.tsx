@@ -93,18 +93,18 @@ export function renderCompactOnePagerHtml(draft: CvDraft): string {
 <style>
   *{box-sizing:border-box}
   body{margin:0;background:#f8fafc;font-family:Inter,system-ui,Arial;color:#0f172a}
-  .page{width:210mm;min-height:297mm;margin:10px auto;background:#fff;padding:11.5mm 12mm;box-shadow:0 8px 24px rgba(2,6,23,.10)}
-  header{text-align:center;border-bottom:1px solid #e2e8f0;padding-bottom:8px}
-  h1{margin:0;font-size:24px;line-height:1.1}
-  .headline{margin-top:4px;color:#475569;font-size:13px}
-  .meta{margin-top:7px;display:flex;flex-wrap:wrap;justify-content:center;gap:6px 12px;font-size:11px;color:#64748b}
-  main{display:grid;gap:9px;margin-top:10px}
-  h2{margin:0 0 4px;font-size:11.5px;letter-spacing:.1em;text-transform:uppercase}
-  p{margin:0;font-size:11px;line-height:1.42;color:#475569}
-  .stack{display:grid;gap:5px}
-  .row{display:flex;justify-content:space-between;gap:8px;align-items:baseline;font-size:11px}
-  strong{font-size:11.2px;color:#0f172a}
-  ul{margin:4px 0 0;padding-left:16px;font-size:11px;line-height:1.4;color:#475569}
+  .page{width:210mm;min-height:297mm;margin:10px auto;background:#fff;padding:11mm 11.5mm;box-shadow:0 8px 24px rgba(2,6,23,.10)}
+  header{text-align:center;border-bottom:1px solid #e2e8f0;padding-bottom:9px}
+  h1{margin:0;font-size:26px;line-height:1.08}
+  .headline{margin-top:5px;color:#475569;font-size:13.8px}
+  .meta{margin-top:8px;display:flex;flex-wrap:wrap;justify-content:center;gap:6px 11px;font-size:11.6px;color:#64748b}
+  main{display:grid;gap:8px;margin-top:9px}
+  h2{margin:0 0 4px;font-size:12.1px;letter-spacing:.09em;text-transform:uppercase}
+  p{margin:0;font-size:11.8px;line-height:1.48;color:#475569}
+  .stack{display:grid;gap:6px}
+  .row{display:flex;justify-content:space-between;gap:8px;align-items:baseline;font-size:11.6px}
+  strong{font-size:11.9px;color:#0f172a}
+  ul{margin:4px 0 0;padding-left:17px;font-size:11.7px;line-height:1.45;color:#475569}
   li{margin:2px 0}
   @page{size:A4;margin:10mm}
 </style>

@@ -107,19 +107,19 @@ export function renderAtsCompactHtml(draft: CvDraft) {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap');
-:root{--ink:#0f172a;--muted:#475569;--line:#cbd5e1;--paper:#fff}
+:root{--ink:#0f172a;--muted:#475569;--line:#cbd5e1;--paper:#fff;--body:12.4px;--meta:11.5px;--section:12.2px}
 *{box-sizing:border-box}
 body{margin:0;background:#f1f5f9;font-family:'Source Sans 3',system-ui,Segoe UI,Arial;color:var(--ink)}
-.page{width:210mm;min-height:297mm;margin:16px auto;background:var(--paper);padding:13mm 13.5mm;box-shadow:0 12px 30px rgba(2,6,23,.10)}
-header{border-bottom:2px solid #0f172a;padding-bottom:8px}
-.name{margin:0;font-size:31px;line-height:1.05}.headline{margin:4px 0 0;font-size:14px;color:var(--muted)}
-.contact{margin-top:7px;font-size:11.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:8px}.sep{opacity:.6}
-.links{margin-top:4px;font-size:11px;color:var(--muted)}
-.sec{margin-top:10px}h2{margin:0 0 5px;font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;padding-bottom:4px;border-bottom:1px solid var(--line)}
-p,li,div{font-size:11.5px;line-height:1.45}
-.skills-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px 12px}
-.item{margin-bottom:6px}.row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:baseline}.muted{color:var(--muted);font-size:10.6px}
-ul{margin:4px 0 0;padding-left:17px}li{margin:2px 0}
+.page{width:210mm;min-height:297mm;margin:16px auto;background:var(--paper);padding:12.5mm 13mm;box-shadow:0 12px 30px rgba(2,6,23,.10)}
+header{border-bottom:2px solid #0f172a;padding-bottom:9px}
+.name{margin:0;font-size:33px;line-height:1.04}.headline{margin:5px 0 0;font-size:15px;color:var(--muted)}
+.contact{margin-top:8px;font-size:var(--meta);color:var(--muted);display:flex;flex-wrap:wrap;gap:8px 11px}.sep{opacity:.65}
+.links{margin-top:5px;font-size:11.3px;color:var(--muted);line-height:1.35}
+.sec{margin-top:11px}h2{margin:0 0 6px;font-size:var(--section);letter-spacing:.12em;text-transform:uppercase;padding-bottom:5px;border-bottom:1px solid var(--line)}
+p,li,div{font-size:var(--body);line-height:1.5}
+.skills-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 13px}
+.item{margin-bottom:7px}.row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:baseline}.muted{color:var(--muted);font-size:11.2px}
+ul{margin:5px 0 0;padding-left:18px}li{margin:3px 0}
 @page{size:A4;margin:12mm}
 @media print{body{background:#fff}.page{margin:0;box-shadow:none;width:auto;min-height:auto;padding:0}}
 </style>

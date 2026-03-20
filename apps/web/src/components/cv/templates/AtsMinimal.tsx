@@ -223,6 +223,9 @@ export function renderAtsMinimalHtml(draft: CvDraft) {
   --muted:#475569;
   --hair:#e2e8f0;
   --paper:#ffffff;
+  --body:12.5px;
+  --meta:11.6px;
+  --section:12.1px;
 }
 
 *{ box-sizing:border-box; }
@@ -238,7 +241,7 @@ body{
   min-height:297mm;
   margin:18px auto;
   background:var(--paper);
-  padding:16.5mm 15mm;
+  padding:15.5mm 14.5mm;
   box-shadow:0 12px 35px rgba(2,6,23,.10);
 }
 
@@ -249,25 +252,25 @@ header{
 
 h1{
   margin:0;
-  font-size:30px;
+  font-size:32px;
   letter-spacing:-.03em;
-  line-height:1.1;
+  line-height:1.06;
 }
 
 .headline{
-  margin:6px 0 0;
+  margin:7px 0 0;
   color:var(--muted);
-  font-size:14px;
+  font-size:14.8px;
   font-weight:500;
 }
 
 .contact{
-  margin-top:10px;
+  margin-top:11px;
   display:flex;
   flex-wrap:wrap;
-  gap:8px 14px;
+  gap:8px 13px;
   color:var(--muted);
-  font-size:11.5px;
+  font-size:var(--meta);
 }
 
 .contact span{
@@ -282,15 +285,15 @@ h1{
 }
 
 .sec{
-  margin:15px 0 7px;
-  font-size:11.5px;
+  margin:14px 0 8px;
+  font-size:var(--section);
   text-transform:uppercase;
-  letter-spacing:.12em;
+  letter-spacing:.11em;
   font-weight:700;
   color:#0f172a;
 }
 
-.stack{ display:flex; flex-direction:column; gap:10px; }
+.stack{ display:flex; flex-direction:column; gap:11px; }
 
 .row{
   display:grid;
@@ -301,22 +304,22 @@ h1{
 
 .strong{ font-weight:700; }
 .dates{
-  font-size:10.8px;
+  font-size:11.2px;
   color:var(--muted);
   white-space:nowrap;
   text-align:right;
 }
 
 .muted{ color:var(--muted); }
-.small{ font-size:10.8px; }
+.small{ font-size:11.2px; }
 
-p{ margin:0; font-size:11.5px; line-height:1.5; }
+p{ margin:0; font-size:var(--body); line-height:1.56; }
 
 ul{
   margin:8px 0 0;
-  padding-left:18px;
-  font-size:11.4px;
-  line-height:1.45;
+  padding-left:19px;
+  font-size:12px;
+  line-height:1.5;
 }
 li{ margin:4px 0; }
 
