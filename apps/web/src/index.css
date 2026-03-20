@@ -16,11 +16,12 @@
     font-size: 16.5px;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+    background-color: #F7F8FB;
   }
 
   /* Light mode defaults */
   body {
-    @apply font-sans text-darkText bg-softGray antialiased;
+    @apply font-sans text-darkText bg-site antialiased;
     font-family: 'Poppins', sans-serif;
     font-size: 1rem;
     line-height: 1.55;
@@ -97,7 +98,8 @@ section[id] { scroll-margin-top: 80px; }
    --------------------------- */
 @layer components {
   /* App wrappers */
-  .app-body { @apply text-darkText bg-softGray dark:bg-darkBg dark:text-darkTextPrimary; }
+  .app-body { @apply text-darkText bg-site dark:bg-darkBg dark:text-darkTextPrimary; }
+  .app-shell { @apply min-h-screen bg-site text-darkText dark:bg-darkBg dark:text-darkTextPrimary; }
   .app-heading { @apply text-plum font-display font-semibold dark:text-darkTextPrimary; }
 
   /* Theme-aware panel */

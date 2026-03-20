@@ -10,7 +10,7 @@ import { withPreviewEnhancements } from '../../../utils/cvHtmlEnhance';
 
 export default function PaginationDebugPage() {
   return (
-    <main className="min-h-screen bg-slate-100 p-6">
+    <main className="min-h-screen bg-site p-6">
       <div className="mx-auto mb-6 max-w-6xl rounded-xl bg-white p-4 shadow">
         <h1 className="text-lg font-semibold">Pagination Debug</h1>
         <p className="text-sm text-slate-600">

@@ -60,7 +60,7 @@ const Messages: React.FC = () => {
 
   if (!myProfile) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-softGray dark:bg-darkBg text-darkText dark:text-darkTextPrimary">
+      <div className="flex items-center justify-center min-h-screen bg-site dark:bg-darkBg text-darkText dark:text-darkTextPrimary">
         <p>Loading…</p>
       </div>
     );
@@ -81,7 +81,7 @@ const Messages: React.FC = () => {
         flex
         flex-col
         min-h-screen
-        bg-softGray
+        bg-site
         text-darkText
         dark:bg-darkBg
         dark:text-darkTextPrimary

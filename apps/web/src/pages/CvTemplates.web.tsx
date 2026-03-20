@@ -91,8 +91,8 @@ function LogoMarquee({
         <Row />
         <Row dup />
       </div>
-      <div className="pointer-events-none absolute inset-y-0 left-0 w-10 sm:w-14 bg-gradient-to-r from-[#f7f8fb] via-[#f7f8fb]/70 to-transparent" />
-      <div className="pointer-events-none absolute inset-y-0 right-0 w-10 sm:w-14 bg-gradient-to-l from-[#f7f8fb] via-[#f7f8fb]/70 to-transparent" />
+      <div className="pointer-events-none absolute inset-y-0 left-0 w-10 sm:w-14 bg-gradient-to-r from-site via-site/70 to-transparent" />
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-10 sm:w-14 bg-gradient-to-l from-site via-site/70 to-transparent" />
     </div>
   );
 }
@@ -248,7 +248,7 @@ function WhyChooseSection() {
   ];
 
   return (
-    <section className="bg-[#f7f8fb] py-12 sm:py-16">
+    <section className="bg-site py-12 sm:py-16">
       <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
         <h2 className="text-center text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900">
           Why choose our AI-powered resume builder
@@ -281,7 +281,7 @@ function StepsSection({ onCta }: { onCta: () => void }) {
   ];
 
   return (
-    <section className="bg-[#f7f8fb] pb-14 sm:pb-16 pt-8 sm:pt-10">
+    <section className="bg-site pb-14 sm:pb-16 pt-8 sm:pt-10">
       <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
         <h2 className="text-center text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900">
           4 easy steps to create a resume
@@ -328,7 +328,7 @@ function FAQSection({ onCta }: { onCta: () => void }) {
   ];
 
   return (
-    <section className="bg-[#f7f8fb] pb-16 sm:pb-20 pt-8 sm:pt-10">
+    <section className="bg-site pb-16 sm:pb-20 pt-8 sm:pt-10">
       <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
         <h2 className="text-center text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900">
           Frequently asked questions
@@ -449,7 +449,7 @@ const CvTemplatesPage: React.FC = () => {
   );
 
   return (
-    <div className="min-h-screen bg-[#f7f8fb] text-gray-900">
+    <div className="min-h-screen bg-site text-gray-900">
       <style jsx global>{`
         @keyframes cvpro-marquee {
           0% {
@@ -594,7 +594,7 @@ const CvTemplatesPage: React.FC = () => {
         </div>
 
         {/* Full-width logos */}
-<div className="w-full bg-[#f7f8fb] pb-10">
+<div className="w-full bg-site pb-10">
   <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
     <div className="text-center text-xs font-semibold text-gray-500">
       Our customers have been hired at<sup>1</sup>
@@ -612,7 +612,7 @@ const CvTemplatesPage: React.FC = () => {
       </section>
 
       {/* Full-width testimonials */}
-      <section className="w-full bg-[#f7f8fb] pb-12 pt-2">
+      <section className="w-full bg-site pb-12 pt-2">
         <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
           <div className="text-center">
             <h2 className="text-xl sm:text-2xl font-extrabold">CVPro, as told by our users</h2>
@@ -656,7 +656,7 @@ const CvTemplatesPage: React.FC = () => {
       </section>
 
       {/* Templates carousel */}
-      <section className="bg-[#f7f8fb] pb-12 pt-8">
+      <section className="bg-site pb-12 pt-8">
         <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
           <div className="text-center">
             <h2 className="text-xl sm:text-2xl font-extrabold">
