@@ -11,7 +11,7 @@ const Landing: React.FC = () => {
   const hasDrafts = drafts.length > 0;
 
   return (
-    <div className="bg-softGray dark:bg-darkBg">
+    <div className="bg-site dark:bg-darkBg">
       <section className="mx-auto flex w-full max-w-screen-2xl flex-col gap-10 px-4 pb-16 pt-16 lg:flex-row lg:items-center lg:justify-between lg:px-8">
         <div className="max-w-2xl space-y-6">
           <p className="text-xs uppercase tracking-[0.3em] text-gray-400">CVPro Builder</p>

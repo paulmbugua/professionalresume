@@ -27,6 +27,7 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        site: '#F7F8FB',
         primary: '#2563EB',
         secondary: '#1D4ED8',
         plum: '#2A1E5C',

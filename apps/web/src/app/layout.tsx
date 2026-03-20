@@ -13,7 +13,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className="app-body">
         <Providers>
-          <div className="min-h-screen bg-softGray dark:bg-darkBg text-darkText dark:text-darkTextPrimary">
+          <div className="app-shell">
             <CvTopNav />
             <main>{children}</main>
           </div>
