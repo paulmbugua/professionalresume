@@ -50,10 +50,12 @@ body[data-template-id="${templateId}"] .page{
   html,body{
     -webkit-print-color-adjust:exact;
     print-color-adjust:exact;
-    background-image:linear-gradient(to right,var(--sidebarBg) 0 var(--cv-sidebar-width),#fff var(--cv-sidebar-width) 100%);
-    background-repeat:repeat-y;
-    background-size:100% var(--cv-page-height);
-    background-position:top left;
+    /* Shared renderer base CSS applies background:#fff !important for print.
+       Keep sidebar background paint alive by overriding with matching priority. */
+    background-image:linear-gradient(to right,var(--sidebarBg) 0 var(--cv-sidebar-width),#fff var(--cv-sidebar-width) 100%) !important;
+    background-repeat:repeat-y !important;
+    background-size:100% var(--cv-page-height) !important;
+    background-position:top left !important;
   }
 
   /* avoid double-painting if templates also set .page bg */
@@ -106,7 +108,7 @@ h2,h3{break-after:avoid;page-break-after:avoid}
 ul{break-inside:auto;page-break-inside:auto}
 li{break-inside:avoid;page-break-inside:avoid}
 @media print{
-  html,body{background:#fff !important;overflow:visible !important}
+  html,body{background-color:#fff !important;overflow:visible !important}
   .page{margin:0 !important;box-shadow:none !important;overflow:visible !important}
 }
 ${sidebarPagedBackgroundCss}
