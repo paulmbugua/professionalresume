@@ -83,20 +83,20 @@ export function renderElegantSerifHtml(draft: CvDraft): string {
 <style>
   *{box-sizing:border-box}
   body{margin:0;background:#f8fafc;font-family:Georgia,'Times New Roman',serif;color:#111827}
-  .page{width:210mm;min-height:297mm;margin:14px auto;background:#fff;padding:14.5mm 14.5mm;box-shadow:0 10px 24px rgba(15,23,42,.08)}
-  header{text-align:center;border-bottom:1px solid #d1d5db;padding-bottom:10px}
-  h1{margin:0;font-size:34px;font-weight:600}
-  .headline{margin-top:4px;font-size:14px;color:#4b5563}
-  .meta{margin-top:8px;display:flex;flex-wrap:wrap;justify-content:center;gap:8px 13px;font-size:11.2px;color:#6b7280}
-  main{margin-top:12px;display:grid;gap:10px}
-  h2{margin:0 0 6px;font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;border-bottom:1px solid #e5e7eb;padding-bottom:3px}
-  p{margin:2px 0 0;font-size:11.4px;line-height:1.48;color:#374151}
-  .stack{display:grid;gap:8px}
+  .page{width:210mm;min-height:297mm;margin:14px auto;background:#fff;padding:14mm 14mm;box-shadow:0 10px 24px rgba(15,23,42,.08)}
+  header{text-align:center;border-bottom:1px solid #d1d5db;padding-bottom:11px}
+  h1{margin:0;font-size:36px;font-weight:600;line-height:1.02}
+  .headline{margin-top:5px;font-size:14.8px;color:#4b5563}
+  .meta{margin-top:9px;display:flex;flex-wrap:wrap;justify-content:center;gap:8px 12px;font-size:11.7px;color:#6b7280}
+  main{margin-top:12px;display:grid;gap:11px}
+  h2{margin:0 0 7px;font-size:13px;letter-spacing:.11em;text-transform:uppercase;border-bottom:1px solid #e5e7eb;padding-bottom:4px}
+  p{margin:2px 0 0;font-size:12px;line-height:1.54;color:#374151}
+  .stack{display:grid;gap:9px}
   .row{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
-  strong{font-size:12.2px;font-weight:600}
-  span{font-size:10.8px;color:#6b7280}
-  ul{margin:6px 0 0;padding-left:18px;color:#374151;font-size:11.3px}
-  li{margin:2px 0}
+  strong{font-size:12.7px;font-weight:600}
+  span{font-size:11.4px;color:#6b7280}
+  ul{margin:6px 0 0;padding-left:19px;color:#374151;font-size:11.9px;line-height:1.5}
+  li{margin:3px 0}
   @page{size:A4;margin:12mm}
 </style>
 </head>

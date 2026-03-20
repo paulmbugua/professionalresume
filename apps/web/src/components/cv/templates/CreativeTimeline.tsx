@@ -83,23 +83,23 @@ export function renderCreativeTimelineHtml(draft: CvDraft): string {
 <style>
   *{box-sizing:border-box}
   body{margin:0;background:#eef2ff;font-family:Inter,system-ui,Arial;color:#0f172a}
-  .page{width:210mm;min-height:297mm;margin:12px auto;background:#fff;padding:13mm;box-shadow:0 10px 28px rgba(15,23,42,.12)}
-  header{padding:14px 16px;border-radius:16px;background:linear-gradient(90deg,#4f46e5,#7c3aed);color:#fff}
-  h1{margin:0;font-size:29px}
-  .headline{margin-top:4px;font-size:13px;color:#ddd6fe}
-  .contact{margin-top:8px;display:flex;flex-wrap:wrap;gap:7px 11px;font-size:10.8px;color:#e9d5ff}
-  main{margin-top:11px;display:grid;gap:10px}
-  h2{margin:0 0 6px;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase}
-  .timeline{position:relative;padding-left:18px;display:grid;gap:8px}
+  .page{width:210mm;min-height:297mm;margin:12px auto;background:#fff;padding:12.5mm;box-shadow:0 10px 28px rgba(15,23,42,.12)}
+  header{padding:15px 17px;border-radius:16px;background:linear-gradient(90deg,#4f46e5,#7c3aed);color:#fff}
+  h1{margin:0;font-size:32px;line-height:1.04}
+  .headline{margin-top:5px;font-size:14px;color:#ddd6fe}
+  .contact{margin-top:9px;display:flex;flex-wrap:wrap;gap:7px 10px;font-size:11.4px;color:#e9d5ff}
+  main{margin-top:12px;display:grid;gap:11px}
+  h2{margin:0 0 7px;font-size:12.1px;letter-spacing:.08em;text-transform:uppercase}
+  .timeline{position:relative;padding-left:19px;display:grid;gap:9px}
   .timeline:before{content:'';position:absolute;left:4px;top:2px;bottom:4px;width:2px;background:#c7d2fe}
   .timeline article{position:relative}
   .timeline article:before{content:'';position:absolute;left:-18px;top:4px;width:10px;height:10px;border-radius:999px;background:#4f46e5;border:2px solid #fff}
-  h3{margin:0;font-size:12.6px}
-  .meta{font-size:10.8px;color:#64748b;margin-top:2px}
-  p{margin:3px 0 0;font-size:11.2px;color:#475569;line-height:1.44}
+  h3{margin:0;font-size:13px}
+  .meta{font-size:11.2px;color:#64748b;margin-top:2px}
+  p{margin:3px 0 0;font-size:11.9px;color:#475569;line-height:1.5}
   .chips{display:flex;flex-wrap:wrap;gap:6px}
-  .chips span{padding:4px 8px;border:1px solid #dbeafe;border-radius:999px;font-size:10.8px;background:#f8fafc}
-  ul{margin:5px 0 0;padding-left:16px;font-size:11.1px;color:#475569}
+  .chips span{padding:4px 8px;border:1px solid #dbeafe;border-radius:999px;font-size:11.4px;background:#f8fafc}
+  ul{margin:5px 0 0;padding-left:18px;font-size:11.8px;line-height:1.48;color:#475569}
   .stack{display:grid;gap:8px}
   @page{size:A4;margin:10mm}
 </style>
