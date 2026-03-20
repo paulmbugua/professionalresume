@@ -22,14 +22,16 @@ body[data-template-id="${templateId}"]{
   html,body{
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    background-image:linear-gradient(
+    /* paginationCss uses background:#fff !important in base template CSS.
+       Force the repeating sidebar layer to win in print/export. */
+    background-image: linear-gradient(
       to right,
       var(--sidebarBg) 0 var(--cv-sidebar-width),
       #fff var(--cv-sidebar-width) 100%
-    );
-    background-repeat:repeat-y;
-    background-size:100% var(--cv-page-height);
-    background-position:top left;
+    ) !important;
+    background-repeat: repeat-y !important;
+    background-size: 100% var(--cv-page-height) !important;
+    background-position: top left !important;
   }
 
   /* ✅ prevent template .page background (often light gray) from showing */
