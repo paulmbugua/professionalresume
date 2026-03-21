@@ -392,7 +392,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
 
             <div className="mt-6 flex items-center justify-end">
               <Link
-                href="/templates/all"
+                href="/templates"
                 className="text-sm font-semibold text-blue-600 transition hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200"
               >
                 View all templates →

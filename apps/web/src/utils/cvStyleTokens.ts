@@ -2,11 +2,11 @@ import type { CvDraft } from '@cvpro/shared/types';
 
 export function resolveDraftStyles(draft: CvDraft) {
   const typography = draft.typography || {
-    baseFontSize: 11,
+    baseFontSize: 14,
     h1Size: 26,
     h2Size: 13,
     h3Size: 12,
-    bodySize: 11,
+    bodySize: 14,
     fontFamily: 'Inter,system-ui,Arial',
   };
 
@@ -19,11 +19,11 @@ export function resolveDraftStyles(draft: CvDraft) {
   const theme = draft.templateTheme || { primary: '#0f172a', accent: '#0f766e' };
 
   const cssVars = {
-    '--baseFontSize': `${typography.baseFontSize || 12}px`,
+    '--baseFontSize': `${typography.baseFontSize || 14}px`,
     '--h1Size': `${typography.h1Size || 28}px`,
     '--h2Size': `${typography.h2Size || 12}px`,
     '--h3Size': `${typography.h3Size || 11}px`,
-    '--bodySize': `${typography.bodySize || typography.baseFontSize || 11}px`,
+    '--bodySize': `${typography.bodySize || typography.baseFontSize || 14}px`,
     '--fontFamily': typography.fontFamily || 'Inter,system-ui,Arial',
     '--textColor': formatting.textColor || '#0f172a',
     '--mutedTextColor': formatting.mutedTextColor || '#475569',
