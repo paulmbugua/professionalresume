@@ -290,7 +290,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
           </div>
         </div>
 
-        <div className="w-full bg-site pb-10">
+        <div className="w-full bg-site pb-10 dark:bg-slate-950">
           <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
             <div className="text-center text-xs font-semibold text-slate-500 dark:text-slate-300">
               Our customers have been hired at<sup>1</sup>
@@ -305,7 +305,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
         </div>
       </section>
 
-      <section className="w-full bg-site pb-12 pt-2">
+      <section className="w-full bg-site pb-12 pt-2 dark:bg-slate-950">
         <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
           <div className="text-center">
             <h2 className="text-xl sm:text-2xl font-extrabold">CVPro, as told by our users</h2>
@@ -354,7 +354,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
         </div>
       </section>
 
-      <section className="bg-site pb-12 pt-8">
+      <section className="bg-site pb-12 pt-8 dark:bg-slate-950">
         <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
           <div className="text-center">
             <h2 className="text-xl sm:text-2xl font-extrabold">

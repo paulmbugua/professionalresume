@@ -90,8 +90,8 @@ export function LogoMarquee({
         <Row />
         <Row dup />
       </div>
-      <div className="pointer-events-none absolute inset-y-0 left-0 w-10 sm:w-14 bg-gradient-to-r from-site via-site/70 to-transparent" />
-      <div className="pointer-events-none absolute inset-y-0 right-0 w-10 sm:w-14 bg-gradient-to-l from-site via-site/70 to-transparent" />
+      <div className="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-site via-site/70 to-transparent dark:from-slate-950 dark:via-slate-950/70 sm:w-14" />
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-site via-site/70 to-transparent dark:from-slate-950 dark:via-slate-950/70 sm:w-14" />
     </div>
   );
 }
@@ -276,7 +276,7 @@ export function WhyChooseSection() {
   ];
 
   return (
-    <section className="bg-site py-12 sm:py-16">
+    <section className="bg-site py-12 dark:bg-slate-950 sm:py-16">
       <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
         <h2 className="text-center text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white">
           Why choose our AI-powered resume builder
@@ -335,7 +335,7 @@ export function StepsSection({ onCta }: { onCta: () => void }) {
   ];
 
   return (
-    <section className="bg-site pb-14 sm:pb-16 pt-8 sm:pt-10">
+    <section className="bg-site pb-14 pt-8 dark:bg-slate-950 sm:pb-16 sm:pt-10">
       <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
         <h2 className="text-center text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white">
           4 easy steps to create a resume
@@ -403,7 +403,7 @@ export function FAQSection({ onCta }: { onCta: () => void }) {
   ];
 
   return (
-    <section className="bg-site pb-16 sm:pb-20 pt-8 sm:pt-10">
+    <section className="bg-site pb-16 pt-8 dark:bg-slate-950 sm:pb-20 sm:pt-10">
       <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
         <h2 className="text-center text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white">
           Frequently asked questions
