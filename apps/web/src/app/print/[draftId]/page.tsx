@@ -15,6 +15,13 @@ export default function CvPrintPage() {
   const hasTriggeredPrintRef = useRef(false);
 
   useEffect(() => {
+    document.body.classList.add('cv-print-route');
+    return () => {
+      document.body.classList.remove('cv-print-route');
+    };
+  }, []);
+
+  useEffect(() => {
     const run = async () => {
       if (!backendUrl || !token || !draftId) return;
       try {
@@ -76,8 +83,26 @@ export default function CvPrintPage() {
     frameWindow.print();
   };
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const isPrintShortcut =
+        (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p';
+      if (!isPrintShortcut) return;
+
+      const frameWindow = iframeRef.current?.contentWindow;
+      if (!frameWindow) return;
+
+      event.preventDefault();
+      frameWindow.focus();
+      frameWindow.print();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   return (
-    <div className="cv-print-root min-h-screen bg-white">
+    <div className="cv-print-root bg-white">
       {error ? (
         <div className="p-6 text-sm text-rose-600">{error}</div>
       ) : (
@@ -85,8 +110,9 @@ export default function CvPrintPage() {
           ref={iframeRef}
           title="CV Print"
           srcDoc={html}
-          className="cv-print-frame h-screen w-full"
+          className="cv-print-frame"
           style={{ border: 0 }}
+          scrolling="no"
           onLoad={() => {
             void handleFrameLoad();
           }}
@@ -94,27 +120,55 @@ export default function CvPrintPage() {
         />
       )}
       <style jsx global>{`
+        html,
+        body {
+          margin: 0;
+          padding: 0;
+        }
+        body.cv-print-route {
+          overflow: hidden;
+          background: #fff !important;
+        }
+        body.cv-print-route .app-shell {
+          min-height: 100dvh;
+          background: #fff !important;
+        }
+        body.cv-print-route .app-shell > header {
+          display: none !important;
+        }
+        body.cv-print-route .app-shell > main {
+          margin: 0 !important;
+          padding: 0 !important;
+          max-width: none !important;
+        }
+        .cv-print-root {
+          width: 100%;
+          height: 100dvh;
+          overflow: hidden;
+          background: #fff;
+        }
+        .cv-print-frame {
+          display: block;
+          width: 100%;
+          height: 100%;
+          border: 0;
+          overflow: hidden;
+          background: #fff;
+        }
         @media print {
-          body > * {
-            visibility: hidden !important;
-          }
+          html,
+          body,
+          body.cv-print-route,
+          body.cv-print-route .app-shell,
+          body.cv-print-route .app-shell > main,
           .cv-print-root,
-          .cv-print-root * {
-            visibility: visible !important;
-          }
-          .cv-print-root {
-            position: fixed !important;
-            inset: 0 !important;
+          .cv-print-frame {
             margin: 0 !important;
             padding: 0 !important;
             width: 100% !important;
             height: 100% !important;
-            overflow: visible !important;
+            overflow: hidden !important;
             background: #fff !important;
-          }
-          .cv-print-frame {
-            width: 100% !important;
-            height: 100% !important;
           }
         }
       `}</style>

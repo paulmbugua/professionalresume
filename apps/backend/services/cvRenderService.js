@@ -40,10 +40,12 @@ body[data-template-id="${templateId}"]{
     box-decoration-break: clone;
     -webkit-box-decoration-break: clone;
   }
-}
 
-/* avoid double painting from aside */
-body[data-template-id="${templateId}"] aside{background:transparent !important}
+  /* avoid double painting from aside only while printing/exporting */
+  body[data-template-id="${templateId}"] aside{
+    background: transparent !important;
+  }
+}
 </style>`;
 }
 
