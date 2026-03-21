@@ -164,7 +164,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
     <div className="min-h-screen bg-site text-slate-900 transition-colors dark:text-white">
       <LandingKeyframes />
 
-      <section className="relative overflow-hidden">
+      <section className="relative overflow-hidden bg-slate-50 dark:bg-slate-950">
         <DotsBg isDark={isDark} />
 
         <div className="mx-auto w-full max-w-screen-2xl px-4 pb-8 pt-8 sm:pt-10 lg:px-8">
