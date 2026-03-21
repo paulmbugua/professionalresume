@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useFieldArray, useFormContext, Controller, useWatch } from 'react-hook-form';
 import type { CvDraft, CvSectionKey } from '@cvpro/shared/types';
 import { useShopContext } from '@cvpro/shared/context';
@@ -203,6 +203,9 @@ const CsvListField: React.FC<{ name: 'extras.languages' | 'extras.interests'; la
 
 type SectionStatus = 'done' | 'missing';
 
+const formatCountLabel = (count: number, singular: string, plural = `${singular}s`) =>
+  `${count} ${count === 1 ? singular : plural}`;
+
 const StatusPill: React.FC<{ status: SectionStatus; title?: string }> = ({ status, title }) => {
   const isDone = status === 'done';
   return (
@@ -210,12 +213,12 @@ const StatusPill: React.FC<{ status: SectionStatus; title?: string }> = ({ statu
       title={title}
       className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
         isDone
-          ? 'border border-emerald-200 bg-emerald-50 text-emerald-700'
-          : 'border border-amber-200 bg-amber-50 text-amber-800'
+          ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/40 dark:bg-emerald-500/15 dark:text-emerald-200'
+          : 'border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-300/30 dark:bg-amber-500/15 dark:text-amber-100'
       }`}
     >
-      <span className="leading-none">{isDone ? '✅' : '⚠'}</span>
-      <span className="uppercase tracking-wide">{isDone ? 'Completed' : 'Missing'}</span>
+      <span className="leading-none">{isDone ? '✓' : '•'}</span>
+      <span className="uppercase tracking-wide">{isDone ? 'Complete' : 'Empty'}</span>
     </span>
   );
 };
@@ -223,18 +226,21 @@ const StatusPill: React.FC<{ status: SectionStatus; title?: string }> = ({ statu
 type SectionCardProps = {
   title: string;
   subtitle?: string;
+  collapsedPreview?: string;
   isOpen: boolean;
-  onToggle: () => void;
+  onToggle?: () => void;
   right?: React.ReactNode;
   status?: SectionStatus;
   statusTitle?: string;
   children: React.ReactNode;
   className?: string;
+  collapsible?: boolean;
 };
 
 const SectionCard: React.FC<SectionCardProps> = ({
   title,
   subtitle,
+  collapsedPreview,
   isOpen,
   onToggle,
   right,
@@ -242,29 +248,74 @@ const SectionCard: React.FC<SectionCardProps> = ({
   statusTitle,
   children,
   className,
-}) => (
-  <div
-    className={`rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/5 ${className ?? ''}`}
-  >
-    <div className="flex items-start justify-between gap-3">
-      <button type="button" onClick={onToggle} className="flex-1 text-left" aria-expanded={isOpen}>
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h3>
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-            {isOpen ? 'Hide' : 'Show'}
-          </span>
-          {status ? <StatusPill status={status} title={statusTitle} /> : null}
-        </div>
-        {subtitle ? (
-          <p className="mt-1 text-xs text-gray-500 dark:text-white/60">{subtitle}</p>
-        ) : null}
-      </button>
-      {right ? <div className="shrink-0">{right}</div> : null}
-    </div>
+  collapsible = true,
+}) => {
+  const sectionId = useId();
+  const contentId = `${sectionId}-content`;
 
-    {isOpen ? <div className="mt-4">{children}</div> : null}
-  </div>
-);
+  return (
+    <div
+      className={`rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-colors dark:border-white/10 dark:bg-white/5 ${className ?? ''}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        {collapsible ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="group flex-1 text-left"
+            aria-expanded={isOpen}
+            aria-controls={contentId}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h3>
+              {status ? <StatusPill status={status} title={statusTitle} /> : null}
+              <span
+                aria-hidden
+                className={`ml-auto text-sm text-gray-400 transition-transform dark:text-white/40 ${
+                  isOpen ? 'rotate-180' : 'rotate-0'
+                }`}
+              >
+                ▾
+              </span>
+            </div>
+            {subtitle ? (
+              <p className="mt-1 text-xs text-gray-500 dark:text-white/60">{subtitle}</p>
+            ) : null}
+            {!isOpen && collapsedPreview ? (
+              <p className="mt-2 truncate text-xs text-gray-700 dark:text-white/70">
+                {collapsedPreview}
+              </p>
+            ) : null}
+          </button>
+        ) : (
+          <div className="flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h3>
+            </div>
+            {subtitle ? (
+              <p className="mt-1 text-xs text-gray-500 dark:text-white/60">{subtitle}</p>
+            ) : null}
+          </div>
+        )}
+
+        {right ? (
+          <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+            {right}
+          </div>
+        ) : null}
+      </div>
+
+      <div
+        id={contentId}
+        className={`grid overflow-hidden transition-all duration-300 ease-out ${
+          isOpen ? 'mt-4 grid-rows-[1fr] opacity-100' : 'mt-0 grid-rows-[0fr] opacity-0'
+        }`}
+      >
+        <div className="min-h-0">{children}</div>
+      </div>
+    </div>
+  );
+};
 
 const pillBtn =
   'rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide transition';
@@ -291,8 +342,8 @@ const CvForm: React.FC = () => {
   const [importUndoSnapshot, setImportUndoSnapshot] = useState<CvDraft | null>(null);
   const [experienceRenderKey, setExperienceRenderKey] = useState(0);
   const [improvingExperienceIndex, setImprovingExperienceIndex] = useState<number | null>(null);
-const [improvingAllExperience, setImprovingAllExperience] = useState(false);
-const [experienceAiError, setExperienceAiError] = useState<string | null>(null);
+  const [improvingAllExperience, setImprovingAllExperience] = useState(false);
+  const [experienceAiError, setExperienceAiError] = useState<string | null>(null);
   const [photoUploadState, setPhotoUploadState] = useState<'idle' | 'uploading' | 'error'>('idle');
   const [photoUploadError, setPhotoUploadError] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
@@ -320,17 +371,17 @@ const [experienceAiError, setExperienceAiError] = useState<string | null>(null);
   const projectsField = useFieldArray({ control, name: 'projects' });
   const certificationsField = useFieldArray({ control, name: 'certifications' });
 
-  const [open, setOpen] = useState<Record<string, boolean>>({
+  const [open, setOpen] = useState<Record<string, boolean>>(() => ({
     basics: true,
-    summary: true,
-    skills: true,
-    experience: true,
-    education: true,
-    projects: true,
-    certifications: true,
-    extras: true,
-    photo: true,
-  });
+    summary: false,
+    skills: false,
+    experience: false,
+    education: false,
+    projects: false,
+    certifications: false,
+    extras: false,
+    photo: false,
+  }));
   const toggle = (k: string) => setOpen((p) => ({ ...p, [k]: !p[k] }));
 
   const setSectionVisible = (key: CvSectionKey, visible: boolean) => {
@@ -456,6 +507,67 @@ const [experienceAiError, setExperienceAiError] = useState<string | null>(null);
     statuses[k] === 'done'
       ? 'You’ve entered some data here.'
       : 'Nothing entered yet — you can hide or clear this section if you don’t need it.';
+
+  const collapsedPreviews = useMemo(() => {
+    const basicsHeadline = [basics?.name?.trim(), basics?.headline?.trim()]
+      .filter(Boolean)
+      .join(' · ');
+    const firstSummaryLine = (summary || '').replace(/\s+/g, ' ').trim();
+
+    return {
+      basics: basicsHeadline || 'Add your name and headline to personalize your CV.',
+      photo: basicsPhotoUrl ? 'Photo uploaded' : 'No photo yet',
+      summary: firstSummaryLine ? firstSummaryLine.slice(0, 80) : 'No summary yet',
+      skills:
+        (skills as string[]).length > 0
+          ? formatCountLabel((skills as string[]).length, 'skill')
+          : 'No skills yet',
+      experience:
+        experienceField.fields.length > 0
+          ? formatCountLabel(experienceField.fields.length, 'entry')
+          : 'No experience entries',
+      education:
+        educationField.fields.length > 0
+          ? formatCountLabel(educationField.fields.length, 'entry')
+          : 'No education entries',
+      projects:
+        projectsField.fields.length > 0
+          ? formatCountLabel(projectsField.fields.length, 'project')
+          : 'No projects yet',
+      certifications:
+        certificationsField.fields.length > 0
+          ? formatCountLabel(certificationsField.fields.length, 'certification')
+          : 'No certifications yet',
+      extras:
+        extras?.languages?.length || extras?.interests?.length
+          ? `${formatCountLabel(extras?.languages?.length || 0, 'language')} · ${formatCountLabel(
+              extras?.interests?.length || 0,
+              'interest'
+            )}`
+          : 'No languages or interests yet',
+    };
+  }, [
+    basics?.headline,
+    basics?.name,
+    basicsPhotoUrl,
+    certificationsField.fields.length,
+    educationField.fields.length,
+    experienceField.fields.length,
+    extras?.interests?.length,
+    extras?.languages?.length,
+    projectsField.fields.length,
+    skills,
+    summary,
+  ]);
+
+  useEffect(() => {
+    if (open.summary) return;
+    const basicsComplete = statuses.basics === 'done';
+    const summaryEmpty = statuses.summary === 'missing';
+    if (basicsComplete && summaryEmpty) {
+      setOpen((prev) => ({ ...prev, summary: true }));
+    }
+  }, [open.summary, statuses.basics, statuses.summary]);
 
   const preloadFromDemo = (opts?: { markDirty?: boolean }) => {
     const markDirty = opts?.markDirty ?? true;
@@ -691,155 +803,174 @@ const [experienceAiError, setExperienceAiError] = useState<string | null>(null);
     return existingFromDemo ? incoming : existing;
   };
 
-  
+  const applyExtractedToForm = (extracted: Partial<CvDraft>, mode: 'merge' | 'replace') => {
+    const current = getValues();
+    const isDemoSeeded = Boolean(current.meta?.isDemoSeeded);
 
-const applyExtractedToForm = (extracted: Partial<CvDraft>, mode: 'merge' | 'replace') => {
-  const current = getValues();
-  const isDemoSeeded = Boolean(current.meta?.isDemoSeeded);
+    debugCvImport('FORM_APPLY_PAYLOAD', { mode, extracted, current });
 
-  debugCvImport('FORM_APPLY_PAYLOAD', { mode, extracted, current });
+    const choose = (path: string, existing: any, incoming: any) =>
+      chooseField(path, existing, incoming, mode, isDemoSeeded);
 
-  const choose = (path: string, existing: any, incoming: any) =>
-    chooseField(path, existing, incoming, mode, isDemoSeeded);
+    const chooseImportedArray = <T,>(existing: T[] = [], incoming: T[] = []) => {
+      return incoming.length ? incoming : existing;
+    };
 
-  const chooseImportedArray = <T,>(existing: T[] = [], incoming: T[] = []) => {
-    return incoming.length ? incoming : existing;
-  };
+    const nextBasics = {
+      ...current.basics,
+      name: choose('basics.name', current.basics?.name, extracted.basics?.name || ''),
+      headline: choose(
+        'basics.headline',
+        current.basics?.headline,
+        extracted.basics?.headline || ''
+      ),
+      email: choose('basics.email', current.basics?.email, extracted.basics?.email || ''),
+      phone: choose('basics.phone', current.basics?.phone, extracted.basics?.phone || ''),
+      location: choose(
+        'basics.location',
+        current.basics?.location,
+        extracted.basics?.location || ''
+      ),
+      links: choose('basics.links', current.basics?.links || [], extracted.basics?.links || []),
+    };
 
-  const nextBasics = {
-    ...current.basics,
-    name: choose('basics.name', current.basics?.name, extracted.basics?.name || ''),
-    headline: choose('basics.headline', current.basics?.headline, extracted.basics?.headline || ''),
-    email: choose('basics.email', current.basics?.email, extracted.basics?.email || ''),
-    phone: choose('basics.phone', current.basics?.phone, extracted.basics?.phone || ''),
-    location: choose('basics.location', current.basics?.location, extracted.basics?.location || ''),
-    links: choose('basics.links', current.basics?.links || [], extracted.basics?.links || []),
-  };
+    const nextSummary = choose('summary', current.summary || '', extracted.summary || '');
 
-  const nextSummary = choose('summary', current.summary || '', extracted.summary || '');
+    const nextSkills =
+      mode === 'replace'
+        ? extracted.skills || []
+        : Array.from(
+            new Set([...(choose('skills', current.skills || [], extracted.skills || []) || [])])
+          );
 
-  const nextSkills =
-    mode === 'replace'
-      ? extracted.skills || []
-      : Array.from(
-          new Set([...(choose('skills', current.skills || [], extracted.skills || []) || [])])
-        );
+    const nextExperience = normalizeExperienceItems(
+      chooseImportedArray(current.experience || [], extracted.experience || [])
+    ) as any[];
 
-  const nextExperience = normalizeExperienceItems(
-    chooseImportedArray(current.experience || [], extracted.experience || [])
-  ) as any[];
+    const nextEducation = chooseImportedArray(
+      current.education || [],
+      extracted.education || []
+    ) as any[];
 
-  const nextEducation = chooseImportedArray(
-    current.education || [],
-    extracted.education || []
-  ) as any[];
+    const nextProjects = chooseImportedArray(
+      current.projects || [],
+      extracted.projects || []
+    ) as any[];
 
-  const nextProjects = chooseImportedArray(
-    current.projects || [],
-    extracted.projects || []
-  ) as any[];
+    const nextCertifications = chooseImportedArray(
+      current.certifications || [],
+      extracted.certifications || []
+    ) as any[];
 
-  const nextCertifications = chooseImportedArray(
-    current.certifications || [],
-    extracted.certifications || []
-  ) as any[];
+    const nextLanguages = choose(
+      'extras.languages',
+      current.extras?.languages || [],
+      extracted.extras?.languages || []
+    );
 
-  const nextLanguages = choose(
-    'extras.languages',
-    current.extras?.languages || [],
-    extracted.extras?.languages || []
-  );
+    const nextInterests = choose(
+      'extras.interests',
+      current.extras?.interests || [],
+      extracted.extras?.interests || []
+    );
 
-  const nextInterests = choose(
-    'extras.interests',
-    current.extras?.interests || [],
-    extracted.extras?.interests || []
-  );
+    const nextVisibility = {
+      ...(current.sectionVisibility || {}),
+    } as Record<CvSectionKey, boolean>;
 
-  const nextVisibility = {
-    ...(current.sectionVisibility || {}),
-  } as Record<CvSectionKey, boolean>;
+    const extractedHas = {
+      summary: Boolean((extracted.summary || '').trim()),
+      skills: Boolean(extracted.skills?.length),
+      experience: Boolean(extracted.experience?.length),
+      education: Boolean(extracted.education?.length),
+      projects: Boolean(extracted.projects?.length),
+      certifications: Boolean(extracted.certifications?.length),
+      extras: Boolean(extracted.extras?.languages?.length || extracted.extras?.interests?.length),
+    };
 
-  const extractedHas = {
-    summary: Boolean((extracted.summary || '').trim()),
-    skills: Boolean(extracted.skills?.length),
-    experience: Boolean(extracted.experience?.length),
-    education: Boolean(extracted.education?.length),
-    projects: Boolean(extracted.projects?.length),
-    certifications: Boolean(extracted.certifications?.length),
-    extras: Boolean(extracted.extras?.languages?.length || extracted.extras?.interests?.length),
-  };
-
-  (Object.keys(extractedHas) as CvSectionKey[]).forEach((key) => {
-    if (mode === 'replace') nextVisibility[key] = extractedHas[key];
-    else if (extractedHas[key]) nextVisibility[key] = true;
-  });
-
-  const suggestedTitle =
-    !current.title?.trim() || (isDemoSeeded && isSameAsDemo('title', current.title))
-      ? `${(extracted.basics?.name || nextBasics.name || 'My CV').trim()} CV`
-      : current.title;
-
-  const nextDraft: CvDraft = {
-    ...current,
-    title: suggestedTitle,
-    basics: nextBasics,
-    summary: nextSummary,
-    skills: nextSkills,
-    experience: nextExperience,
-    education: nextEducation,
-    projects: nextProjects,
-    certifications: nextCertifications,
-    extras: {
-      languages: nextLanguages || [],
-      interests: nextInterests || [],
-    },
-    richText: {
-      ...(current.richText || {}),
-      summary: nextSummary || '',
-    },
-    sectionVisibility: nextVisibility,
-    meta: {
-      ...(current.meta || {}),
-      isDemoSeeded: false,
-      hasImportedCv: true,
-      importedAt: new Date().toISOString(),
-      importMode: mode,
-    },
-  };
-
-  debugCvImport('FORM_APPLY_NEXT_DRAFT', nextDraft);
-  debugCvImport('FORM_APPLY_NEXT_EXPERIENCE', nextExperience);
-
-  reset(nextDraft, {
-    keepDefaultValues: false,
-  });
-
-  setTimeout(() => {
-    linksField.replace((nextDraft.basics?.links || []) as any);
-    experienceField.replace((nextDraft.experience || []) as any);
-    educationField.replace((nextDraft.education || []) as any);
-    projectsField.replace((nextDraft.projects || []) as any);
-    certificationsField.replace((nextDraft.certifications || []) as any);
-    setExperienceRenderKey((k) => k + 1);
-
-    debugCvImport('POST_RESET_EXPERIENCE_VALUES', {
-      watched: normalizeExperienceItems(getValues('experience') as any[]),
-      replacingWith: nextDraft.experience,
+    (Object.keys(extractedHas) as CvSectionKey[]).forEach((key) => {
+      if (mode === 'replace') nextVisibility[key] = extractedHas[key];
+      else if (extractedHas[key]) nextVisibility[key] = true;
     });
 
-    requestAnimationFrame(() => {
-      debugCvImport('POST_RESET_EXPERIENCE_FIELDS', {
-        fieldArrayLength: experienceField.fields.length,
-        getValuesExperience: normalizeExperienceItems(getValues('experience') as any[]),
+    const suggestedTitle =
+      !current.title?.trim() || (isDemoSeeded && isSameAsDemo('title', current.title))
+        ? `${(extracted.basics?.name || nextBasics.name || 'My CV').trim()} CV`
+        : current.title;
+
+    const nextDraft: CvDraft = {
+      ...current,
+      title: suggestedTitle,
+      basics: nextBasics,
+      summary: nextSummary,
+      skills: nextSkills,
+      experience: nextExperience,
+      education: nextEducation,
+      projects: nextProjects,
+      certifications: nextCertifications,
+      extras: {
+        languages: nextLanguages || [],
+        interests: nextInterests || [],
+      },
+      richText: {
+        ...(current.richText || {}),
+        summary: nextSummary || '',
+      },
+      sectionVisibility: nextVisibility,
+      meta: {
+        ...(current.meta || {}),
+        isDemoSeeded: false,
+        hasImportedCv: true,
+        importedAt: new Date().toISOString(),
+        importMode: mode,
+      },
+    };
+
+    debugCvImport('FORM_APPLY_NEXT_DRAFT', nextDraft);
+    debugCvImport('FORM_APPLY_NEXT_EXPERIENCE', nextExperience);
+
+    reset(nextDraft, {
+      keepDefaultValues: false,
+    });
+
+    setTimeout(() => {
+      linksField.replace((nextDraft.basics?.links || []) as any);
+      experienceField.replace((nextDraft.experience || []) as any);
+      educationField.replace((nextDraft.education || []) as any);
+      projectsField.replace((nextDraft.projects || []) as any);
+      certificationsField.replace((nextDraft.certifications || []) as any);
+      setExperienceRenderKey((k) => k + 1);
+
+      debugCvImport('POST_RESET_EXPERIENCE_VALUES', {
+        watched: normalizeExperienceItems(getValues('experience') as any[]),
+        replacingWith: nextDraft.experience,
       });
-    });
-  }, 0);
 
-  didAutoPreloadRef.current = true;
-  setHasAppliedUpload(true);
-  setOpen((prev) => ({ ...prev, experience: true }));
-};
+      requestAnimationFrame(() => {
+        debugCvImport('POST_RESET_EXPERIENCE_FIELDS', {
+          fieldArrayLength: experienceField.fields.length,
+          getValuesExperience: normalizeExperienceItems(getValues('experience') as any[]),
+        });
+      });
+    }, 0);
+
+    didAutoPreloadRef.current = true;
+    setHasAppliedUpload(true);
+    setOpen((prev) => ({
+      ...prev,
+      basics: true,
+      summary:
+        Boolean(nextBasics.name?.trim() || nextBasics.headline?.trim()) &&
+        !Boolean(nextSummary?.trim()),
+      experience: Boolean(nextExperience.length),
+      education: false,
+      projects: false,
+      certifications: false,
+      skills: false,
+      extras: false,
+      photo: false,
+    }));
+  };
 
   const onExtractCv = async () => {
     if (!backendUrl || !token || !cvFile) return;
@@ -929,89 +1060,21 @@ const applyExtractedToForm = (extracted: Partial<CvDraft>, mode: 'merge' | 'repl
   );
 
   const normalizeBulletLines = (items: string[] = []) =>
-  Array.from(
-    new Set(
-      items
-        .map((item) => String(item || '').trim())
-        .filter(Boolean)
-    )
-  ).slice(0, 12);
-
-const improveSingleExperience = async (index: number) => {
-  if (!backendUrl || !token) return;
-
-  const entry = getValues(`experience.${index}` as const);
-  if (!entry) return;
-
-  setExperienceAiError(null);
-  setImprovingExperienceIndex(index);
-
-  try {
-    const res = await improveExperienceEntry({
-      backendUrl,
-      token,
-      experience: {
-        company: entry.company || '',
-        role: entry.role || '',
-        start: entry.start || '',
-        end: entry.end || '',
-        location: entry.location || '',
-        description: entry.description || '',
-        bullets: Array.isArray(entry.bullets) ? entry.bullets : [],
-      },
-      wholeCvContext: {
-        summary: getValues('summary') || '',
-        skills: getValues('skills') || [],
-      },
-    });
-
-    const improved = res?.improved;
-    if (!improved) throw new Error('No improved experience was returned.');
-
-    setValue(
-      `experience.${index}.description`,
-      improved.description || '',
-      { shouldDirty: true, shouldTouch: true, shouldValidate: false }
+    Array.from(new Set(items.map((item) => String(item || '').trim()).filter(Boolean))).slice(
+      0,
+      12
     );
 
-    setValue(
-      `experience.${index}.bullets`,
-      normalizeBulletLines(improved.bullets || []),
-      { shouldDirty: true, shouldTouch: true, shouldValidate: false }
-    );
+  const improveSingleExperience = async (index: number) => {
+    if (!backendUrl || !token) return;
 
-    setOpen((prev) => ({ ...prev, experience: true }));
-  } catch (err: any) {
-    setExperienceAiError(
-      err?.response?.data?.error || err?.message || 'Failed to improve experience entry.'
-    );
-  } finally {
-    setImprovingExperienceIndex(null);
-  }
-};
+    const entry = getValues(`experience.${index}` as const);
+    if (!entry) return;
 
-const improveAllExperience = async () => {
-  if (!backendUrl || !token) return;
+    setExperienceAiError(null);
+    setImprovingExperienceIndex(index);
 
-  const items = (getValues('experience') || []) as any[];
-  if (!items.length) return;
-
-  setExperienceAiError(null);
-  setImprovingAllExperience(true);
-
-  try {
-    for (let index = 0; index < items.length; index += 1) {
-      const entry = getValues(`experience.${index}` as const);
-      if (!entry) continue;
-
-      const hasContent =
-        hasText(entry.company) ||
-        hasText(entry.role) ||
-        hasText(entry.description) ||
-        (Array.isArray(entry.bullets) && entry.bullets.some((b: string) => hasText(b)));
-
-      if (!hasContent) continue;
-
+    try {
       const res = await improveExperienceEntry({
         backendUrl,
         token,
@@ -1031,30 +1094,95 @@ const improveAllExperience = async () => {
       });
 
       const improved = res?.improved;
-      if (!improved) continue;
+      if (!improved) throw new Error('No improved experience was returned.');
 
-      setValue(
-        `experience.${index}.description`,
-        improved.description || '',
-        { shouldDirty: true, shouldTouch: true, shouldValidate: false }
-      );
+      setValue(`experience.${index}.description`, improved.description || '', {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: false,
+      });
 
-      setValue(
-        `experience.${index}.bullets`,
-        normalizeBulletLines(improved.bullets || []),
-        { shouldDirty: true, shouldTouch: true, shouldValidate: false }
+      setValue(`experience.${index}.bullets`, normalizeBulletLines(improved.bullets || []), {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: false,
+      });
+
+      setOpen((prev) => ({ ...prev, experience: true }));
+    } catch (err: any) {
+      setExperienceAiError(
+        err?.response?.data?.error || err?.message || 'Failed to improve experience entry.'
       );
+    } finally {
+      setImprovingExperienceIndex(null);
     }
+  };
 
-    setOpen((prev) => ({ ...prev, experience: true }));
-  } catch (err: any) {
-    setExperienceAiError(
-      err?.response?.data?.error || err?.message || 'Failed to improve all experience entries.'
-    );
-  } finally {
-    setImprovingAllExperience(false);
-  }
-};
+  const improveAllExperience = async () => {
+    if (!backendUrl || !token) return;
+
+    const items = (getValues('experience') || []) as any[];
+    if (!items.length) return;
+
+    setExperienceAiError(null);
+    setImprovingAllExperience(true);
+
+    try {
+      for (let index = 0; index < items.length; index += 1) {
+        const entry = getValues(`experience.${index}` as const);
+        if (!entry) continue;
+
+        const hasContent =
+          hasText(entry.company) ||
+          hasText(entry.role) ||
+          hasText(entry.description) ||
+          (Array.isArray(entry.bullets) && entry.bullets.some((b: string) => hasText(b)));
+
+        if (!hasContent) continue;
+
+        const res = await improveExperienceEntry({
+          backendUrl,
+          token,
+          experience: {
+            company: entry.company || '',
+            role: entry.role || '',
+            start: entry.start || '',
+            end: entry.end || '',
+            location: entry.location || '',
+            description: entry.description || '',
+            bullets: Array.isArray(entry.bullets) ? entry.bullets : [],
+          },
+          wholeCvContext: {
+            summary: getValues('summary') || '',
+            skills: getValues('skills') || [],
+          },
+        });
+
+        const improved = res?.improved;
+        if (!improved) continue;
+
+        setValue(`experience.${index}.description`, improved.description || '', {
+          shouldDirty: true,
+          shouldTouch: true,
+          shouldValidate: false,
+        });
+
+        setValue(`experience.${index}.bullets`, normalizeBulletLines(improved.bullets || []), {
+          shouldDirty: true,
+          shouldTouch: true,
+          shouldValidate: false,
+        });
+      }
+
+      setOpen((prev) => ({ ...prev, experience: true }));
+    } catch (err: any) {
+      setExperienceAiError(
+        err?.response?.data?.error || err?.message || 'Failed to improve all experience entries.'
+      );
+    } finally {
+      setImprovingAllExperience(false);
+    }
+  };
 
   const onPickPhoto = () => {
     photoInputRef.current?.click();
@@ -1103,7 +1231,7 @@ const improveAllExperience = async () => {
         title="Upload your existing CV"
         subtitle="Upload PDF/DOCX and we’ll auto-fill the form."
         isOpen
-        onToggle={() => {}}
+        collapsible={false}
       >
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-3">
@@ -1192,6 +1320,7 @@ const improveAllExperience = async () => {
       <SectionCard
         title="Basics"
         subtitle="Your name, contact info, links."
+        collapsedPreview={collapsedPreviews.basics}
         isOpen={open.basics}
         onToggle={() => toggle('basics')}
         status={statuses.basics}
@@ -1247,8 +1376,11 @@ const improveAllExperience = async () => {
         <SectionCard
           title="Profile Photo"
           subtitle="Shown only in Modern Blue Sidebar."
+          collapsedPreview={collapsedPreviews.photo}
           isOpen={open.photo ?? true}
           onToggle={() => toggle('photo')}
+          status={basicsPhotoUrl ? 'done' : 'missing'}
+          statusTitle={basicsPhotoUrl ? 'Photo added to your profile.' : 'No photo uploaded yet.'}
         >
           <div className="space-y-3">
             <input
@@ -1282,8 +1414,8 @@ const improveAllExperience = async () => {
                     {photoUploadState === 'uploading'
                       ? 'Uploading...'
                       : basicsPhotoUrl
-                      ? 'Replace photo'
-                      : 'Upload photo'}
+                        ? 'Replace photo'
+                        : 'Upload photo'}
                   </button>
                   {basicsPhotoUrl ? (
                     <button
@@ -1307,6 +1439,7 @@ const improveAllExperience = async () => {
       <SectionCard
         title="Summary"
         subtitle="A short professional pitch."
+        collapsedPreview={collapsedPreviews.summary}
         isOpen={open.summary}
         onToggle={() => toggle('summary')}
         status={statuses.summary}
@@ -1328,6 +1461,7 @@ const improveAllExperience = async () => {
       <SectionCard
         title="Skills"
         subtitle="Add only what you want recruiters to see."
+        collapsedPreview={collapsedPreviews.skills}
         isOpen={open.skills}
         onToggle={() => toggle('skills')}
         status={statuses.skills}
@@ -1375,6 +1509,7 @@ const improveAllExperience = async () => {
       <SectionCard
         title="Experience"
         subtitle="Jobs, internships, freelance — keep it relevant."
+        collapsedPreview={collapsedPreviews.experience}
         isOpen={open.experience}
         onToggle={() => toggle('experience')}
         status={statuses.experience}
@@ -1386,124 +1521,125 @@ const improveAllExperience = async () => {
           </div>
         }
       >
-       <div key={`experience-render-${experienceRenderKey}`} className="space-y-4">
-  <div className="mb-3 flex items-center justify-between gap-3">
-    <p className="text-xs text-gray-500 dark:text-white/60">
-      Add roles you want included. Remove the rest. You can improve duties with AI.
-    </p>
+        <div key={`experience-render-${experienceRenderKey}`} className="space-y-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-xs text-gray-500 dark:text-white/60">
+              Add roles you want included. Remove the rest. You can improve duties with AI.
+            </p>
 
-    <div className="flex flex-wrap items-center gap-2">
-      <button
-        type="button"
-        onClick={improveAllExperience}
-        disabled={improvingAllExperience || !experienceField.fields.length}
-        className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-white"
-      >
-        {improvingAllExperience ? 'Improving all...' : 'Improve all with AI'}
-      </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={improveAllExperience}
+                disabled={improvingAllExperience || !experienceField.fields.length}
+                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-white"
+              >
+                {improvingAllExperience ? 'Improving all...' : 'Improve all with AI'}
+              </button>
 
-      <button
-        type="button"
-        onClick={() =>
-          experienceField.append({
-            company: '',
-            role: '',
-            start: '',
-            end: '',
-            location: '',
-            description: '',
-            bullets: [],
-          } as any)
-        }
-        className="text-xs font-semibold text-primary"
-      >
-        + Add experience
-      </button>
-    </div>
-  </div>
+              <button
+                type="button"
+                onClick={() =>
+                  experienceField.append({
+                    company: '',
+                    role: '',
+                    start: '',
+                    end: '',
+                    location: '',
+                    description: '',
+                    bullets: [],
+                  } as any)
+                }
+                className="text-xs font-semibold text-primary"
+              >
+                + Add experience
+              </button>
+            </div>
+          </div>
 
-  <div className="rounded-lg border border-dashed border-gray-200 p-2 text-[11px] text-gray-500 dark:border-white/10 dark:text-white/60">
-    UI debug: watched={Array.isArray(experience) ? experience.length : 0} · fields=
-    {experienceField.fields.length}
-  </div>
+          <div className="rounded-lg border border-dashed border-gray-200 p-2 text-[11px] text-gray-500 dark:border-white/10 dark:text-white/60">
+            UI debug: watched={Array.isArray(experience) ? experience.length : 0} · fields=
+            {experienceField.fields.length}
+          </div>
 
-  {experienceAiError ? (
-    <div className="rounded-lg border border-rose-200 bg-rose-50 p-2 text-[11px] text-rose-700">
-      {experienceAiError}
-    </div>
-  ) : null}
+          {experienceAiError ? (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 p-2 text-[11px] text-rose-700">
+              {experienceAiError}
+            </div>
+          ) : null}
 
-  {experienceField.fields.map((field, index) => (
-    <div
-      key={field.id}
-      className="rounded-xl border border-gray-100 p-3 dark:border-white/10"
-    >
-      <div className="mb-2 text-[11px] text-gray-400">
-        #{index + 1} · {String((field as any).company || '') || 'Untitled'}
-      </div>
+          {experienceField.fields.map((field, index) => (
+            <div
+              key={field.id}
+              className="rounded-xl border border-gray-100 p-3 dark:border-white/10"
+            >
+              <div className="mb-2 text-[11px] text-gray-400">
+                #{index + 1} · {String((field as any).company || '') || 'Untitled'}
+              </div>
 
-      <div className="grid gap-2 md:grid-cols-2">
-        <Input
-          placeholder="Company"
-          {...register(`experience.${index}.company` as const)}
-        />
-        <Input placeholder="Role" {...register(`experience.${index}.role` as const)} />
-        <Input placeholder="Start" {...register(`experience.${index}.start` as const)} />
-        <Input placeholder="End" {...register(`experience.${index}.end` as const)} />
-        <Input
-          placeholder="Location"
-          {...register(`experience.${index}.location` as const)}
-        />
-      </div>
+              <div className="grid gap-2 md:grid-cols-2">
+                <Input
+                  placeholder="Company"
+                  {...register(`experience.${index}.company` as const)}
+                />
+                <Input placeholder="Role" {...register(`experience.${index}.role` as const)} />
+                <Input placeholder="Start" {...register(`experience.${index}.start` as const)} />
+                <Input placeholder="End" {...register(`experience.${index}.end` as const)} />
+                <Input
+                  placeholder="Location"
+                  {...register(`experience.${index}.location` as const)}
+                />
+              </div>
 
-      <div className="mt-3">
-        <Textarea
-          placeholder="Short description"
-          {...register(`experience.${index}.description` as const)}
-        />
-      </div>
+              <div className="mt-3">
+                <Textarea
+                  placeholder="Short description"
+                  {...register(`experience.${index}.description` as const)}
+                />
+              </div>
 
-      <div className="mt-3">
-        <BulletsField name={`experience.${index}.bullets`} />
-      </div>
+              <div className="mt-3">
+                <BulletsField name={`experience.${index}.bullets`} />
+              </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => improveSingleExperience(index)}
-          disabled={improvingExperienceIndex === index || improvingAllExperience}
-          className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
-        >
-          {improvingExperienceIndex === index ? 'Improving...' : 'Improve duties with AI'}
-        </button>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => improveSingleExperience(index)}
+                  disabled={improvingExperienceIndex === index || improvingAllExperience}
+                  className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                >
+                  {improvingExperienceIndex === index ? 'Improving...' : 'Improve duties with AI'}
+                </button>
 
-        <span className="text-[11px] text-gray-500 dark:text-white/60">
-          Rewrites description and bullets without changing the facts.
-        </span>
-      </div>
+                <span className="text-[11px] text-gray-500 dark:text-white/60">
+                  Rewrites description and bullets without changing the facts.
+                </span>
+              </div>
 
-      <button
-        type="button"
-        onClick={() => {
-          experienceField.remove(index);
-          setExperienceRenderKey((k) => k + 1);
-        }}
-        className="mt-2 text-xs text-gray-400 hover:text-rose-500"
-      >
-        Remove this role
-      </button>
-    </div>
-  ))}
+              <button
+                type="button"
+                onClick={() => {
+                  experienceField.remove(index);
+                  setExperienceRenderKey((k) => k + 1);
+                }}
+                className="mt-2 text-xs text-gray-400 hover:text-rose-500"
+              >
+                Remove this role
+              </button>
+            </div>
+          ))}
 
-  {experienceField.fields.length === 0 && (
-    <p className="text-xs text-gray-400">No experience entries yet.</p>
-  )}
-</div>
+          {experienceField.fields.length === 0 && (
+            <p className="text-xs text-gray-400">No experience entries yet.</p>
+          )}
+        </div>
       </SectionCard>
 
       <SectionCard
         title="Education"
         subtitle="School, degree, and anything worth mentioning."
+        collapsedPreview={collapsedPreviews.education}
         isOpen={open.education}
         onToggle={() => toggle('education')}
         status={statuses.education}
@@ -1570,6 +1706,7 @@ const improveAllExperience = async () => {
       <SectionCard
         title="Projects"
         subtitle="Side projects, work projects, open source."
+        collapsedPreview={collapsedPreviews.projects}
         isOpen={open.projects}
         onToggle={() => toggle('projects')}
         status={statuses.projects}
@@ -1636,6 +1773,7 @@ const improveAllExperience = async () => {
       <SectionCard
         title="Certifications"
         subtitle="Only include what helps for the role."
+        collapsedPreview={collapsedPreviews.certifications}
         isOpen={open.certifications}
         onToggle={() => toggle('certifications')}
         status={statuses.certifications}
@@ -1693,6 +1831,7 @@ const improveAllExperience = async () => {
       <SectionCard
         title="Extras"
         subtitle="Languages + interests (optional)."
+        collapsedPreview={collapsedPreviews.extras}
         isOpen={open.extras}
         onToggle={() => toggle('extras')}
         status={statuses.extras}
