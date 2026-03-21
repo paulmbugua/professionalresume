@@ -8,6 +8,47 @@ import { templateRegistryById } from '../../templates/registry';
 
 import type { AnyTemplate } from './types';
 
+const sectionCardClass =
+  'rounded-2xl border border-slate-200/80 bg-white/92 shadow-[0_10px_28px_rgba(15,23,42,0.06)] backdrop-blur dark:border-white/10 dark:bg-[#0B1220]/80 dark:shadow-[0_12px_34px_rgba(0,0,0,0.28)]';
+
+const softCardClass =
+  'rounded-2xl border border-slate-200/80 bg-slate-50/95 shadow-sm dark:border-white/10 dark:bg-white/5';
+
+const primaryButtonClass =
+  'rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 dark:bg-blue-500 dark:shadow-[0_10px_24px_rgba(37,99,235,0.35)] dark:hover:bg-blue-400';
+
+const navButtonClass =
+  'absolute top-1/2 z-10 -translate-y-1/2 rounded-xl border border-slate-200/80 bg-white/90 px-2.5 py-2 text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:opacity-40 dark:border-white/10 dark:bg-[#0B1220]/90 dark:text-slate-100 dark:hover:bg-white/10';
+
+function IconChip({
+  children,
+  tone = 'neutral',
+}: {
+  children: React.ReactNode;
+  tone?: 'neutral' | 'emerald' | 'orange' | 'purple' | 'amber' | 'blue';
+}) {
+  const toneClass =
+    tone === 'emerald'
+      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
+      : tone === 'orange'
+        ? 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300'
+        : tone === 'purple'
+          ? 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300'
+          : tone === 'amber'
+            ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300'
+            : tone === 'blue'
+              ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
+              : 'bg-slate-200 text-slate-700 dark:bg-white/10 dark:text-slate-200';
+
+  return (
+    <span
+      className={`inline-flex size-10 items-center justify-center rounded-xl text-lg ${toneClass}`}
+    >
+      {children}
+    </span>
+  );
+}
+
 export function LandingKeyframes() {
   return (
     <style jsx global>{`
@@ -59,7 +100,7 @@ export function LogoMarquee({
   speedSec?: number;
 }) {
   const Row = ({ dup }: { dup?: boolean }) => (
-    <div className="flex items-center gap-10 sm:gap-12 pr-10 sm:pr-12">
+    <div className="flex items-center gap-10 pr-10 sm:gap-12 sm:pr-12">
       {items.map((it, idx) => (
         <div
           key={`${dup ? 'dup-' : ''}${idx}-${it.label}`}
@@ -70,11 +111,11 @@ export function LogoMarquee({
             <img
               src={it.src}
               alt={it.label}
-              className="h-8 sm:h-10 md:h-11 w-auto select-none object-contain opacity-95 transition hover:opacity-100 dark:brightness-125"
+              className="h-8 w-auto select-none object-contain opacity-95 transition hover:opacity-100 dark:brightness-125 sm:h-10 md:h-11"
               draggable={false}
             />
           ) : (
-            <span className="select-none text-sm sm:text-base font-semibold text-gray-400 dark:text-slate-400">
+            <span className="select-none text-sm font-semibold text-slate-400 dark:text-slate-400 sm:text-base">
               {it.label}
             </span>
           )}
@@ -155,21 +196,22 @@ export function TemplatesCarousel({
         aria-label="Previous"
         onClick={() => setPage((p) => Math.max(0, p - 1))}
         disabled={page <= 0}
-        className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-md bg-gray-200/80 px-2 py-2 text-gray-700 shadow-sm transition hover:bg-gray-200 disabled:opacity-40 dark:bg-white/15 dark:text-slate-100 dark:hover:bg-white/20"
+        className={`${navButtonClass} left-0`}
       >
         ‹
       </button>
+
       <button
         type="button"
         aria-label="Next"
         onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
         disabled={page >= pageCount - 1}
-        className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-md bg-gray-200/80 px-2 py-2 text-gray-700 shadow-sm transition hover:bg-gray-200 disabled:opacity-40 dark:bg-white/15 dark:text-slate-100 dark:hover:bg-white/20"
+        className={`${navButtonClass} right-0`}
       >
         ›
       </button>
 
-      <div className="mx-9 sm:mx-10 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="mx-9 grid gap-4 sm:mx-10 md:grid-cols-2 lg:grid-cols-4">
         {visible.map((template) => {
           const html = thumbHtmlById.get(template.id) ?? null;
 
@@ -178,19 +220,20 @@ export function TemplatesCarousel({
               key={template.id}
               type="button"
               onClick={() => onChoose(template)}
-              className="group relative overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 transition hover:-translate-y-1 hover:shadow-md dark:bg-white/10 dark:ring-white/10"
+              className="group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white/92 text-left shadow-[0_10px_26px_rgba(15,23,42,0.06)] ring-0 transition hover:-translate-y-1 hover:shadow-[0_16px_34px_rgba(15,23,42,0.10)] dark:border-white/10 dark:bg-[#0B1220]/80 dark:shadow-[0_12px_30px_rgba(0,0,0,0.28)] dark:hover:bg-[#0F172A]"
             >
               <div className="relative">
                 <TemplateThumbnail html={html ?? undefined} label={template.name} />
-                <div className="pointer-events-none absolute inset-0 bg-black/20 opacity-0 transition group-hover:opacity-100" />
+                <div className="pointer-events-none absolute inset-0 bg-slate-950/25 opacity-0 transition group-hover:opacity-100 dark:bg-black/35" />
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition group-hover:opacity-100">
-                  <span className="pointer-events-auto rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow">
+                  <span className="pointer-events-auto rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm dark:bg-blue-500">
                     Choose template
                   </span>
                 </div>
               </div>
-              <div className="px-4 py-3 text-left">
-                <div className="text-sm font-semibold text-gray-900 dark:text-white">
+
+              <div className="px-4 py-3">
+                <div className="text-sm font-semibold text-slate-900 dark:text-white">
                   {template.name}
                 </div>
               </div>
@@ -209,8 +252,8 @@ export function TemplatesCarousel({
             className={[
               'size-2.5 rounded-full border transition',
               i === page
-                ? 'border-blue-600 bg-blue-600'
-                : 'border-gray-300 bg-white dark:border-white/20 dark:bg-white/10',
+                ? 'border-blue-600 bg-blue-600 dark:border-blue-400 dark:bg-blue-400'
+                : 'border-slate-300 bg-white dark:border-white/20 dark:bg-white/10',
             ].join(' ')}
           />
         ))}
@@ -224,78 +267,52 @@ export function WhyChooseSection() {
     {
       title: 'Time-saving solutions',
       body: "Don't believe that resume building can take minutes? Let us prove it and handle the details while you focus on your job hunt.",
-      icon: (
-        <span className="inline-flex size-10 items-center justify-center rounded-full bg-gray-200 text-lg">
-          ⏱️
-        </span>
-      ),
+      icon: <IconChip tone="neutral">⏱️</IconChip>,
     },
     {
       title: 'HR-approved templates',
       body: 'Make a resume using templates designed with input from hiring professionals who know what works.',
-      icon: (
-        <span className="inline-flex size-10 items-center justify-center rounded-full bg-gray-200 text-lg">
-          🧑‍💼
-        </span>
-      ),
+      icon: <IconChip tone="neutral">🧑‍💼</IconChip>,
     },
     {
       title: 'ATS-friendly',
       body: 'Beat the ATS — the system that screens resumes. Get noticed by employers and stand out where it counts!',
-      icon: (
-        <span className="inline-flex size-10 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 text-lg">
-          ✅
-        </span>
-      ),
+      icon: <IconChip tone="emerald">✅</IconChip>,
     },
     {
       title: 'Designs for every level',
       body: 'Explore templates that match your path — for your first job, a career change, or a move into leadership role.',
-      icon: (
-        <span className="inline-flex size-10 items-center justify-center rounded-xl bg-orange-100 text-orange-700 text-lg">
-          📄
-        </span>
-      ),
+      icon: <IconChip tone="orange">📄</IconChip>,
     },
     {
       title: 'AI-powered tool',
       body: 'Write faster and better with smart keyword guidance and targeted content suggestions.',
-      icon: (
-        <span className="inline-flex size-10 items-center justify-center rounded-xl bg-purple-100 text-purple-700 text-lg">
-          ✨
-        </span>
-      ),
+      icon: <IconChip tone="purple">✨</IconChip>,
     },
     {
       title: 'Security first',
       body: 'Keep your personal data protected with our trusted, industry-standard security measures.',
-      icon: (
-        <span className="inline-flex size-10 items-center justify-center rounded-xl bg-amber-100 text-amber-800 text-lg">
-          🔒
-        </span>
-      ),
+      icon: <IconChip tone="amber">🔒</IconChip>,
     },
   ];
 
   return (
     <section className="bg-site py-12 dark:bg-slate-950 sm:py-16">
       <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
-        <h2 className="text-center text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white">
+        <h2 className="text-center text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
           Why choose our AI-powered resume builder
         </h2>
-        <div className="mx-auto mt-8 sm:mt-10 grid max-w-5xl gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
+
+        <div className="mx-auto mt-8 grid max-w-5xl gap-4 sm:mt-10 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
           {items.map((it) => (
-            <div
-              key={it.title}
-              className="rounded-2xl bg-[#eeeeef] px-5 sm:px-6 py-5 sm:py-6 shadow-sm dark:bg-white/10"
-            >
+            <div key={it.title} className={`${softCardClass} px-5 py-5 sm:px-6 sm:py-6`}>
               <div className="flex items-start gap-4">
                 {it.icon}
                 <div>
-                  <div className="text-base font-bold text-gray-900 dark:text-white">
+                  <div className="text-base font-bold text-slate-900 dark:text-white">
                     {it.title}
                   </div>
-                  <p className="mt-2 text-sm leading-6 text-gray-700 dark:text-slate-300">
+                  <p className="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-300">
                     {it.body}
                   </p>
                 </div>
@@ -339,39 +356,40 @@ export function StepsSection({ onCta }: { onCta: () => void }) {
   return (
     <section className="bg-site pb-14 pt-8 dark:bg-slate-950 sm:pb-16 sm:pt-10">
       <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
-        <h2 className="text-center text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white">
+        <h2 className="text-center text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
           4 easy steps to create a resume
         </h2>
-        <div className="mt-8 sm:mt-10 grid gap-5 sm:gap-6 md:grid-cols-2 lg:grid-cols-4">
+
+        <div className="mt-8 grid gap-5 sm:mt-10 sm:gap-6 md:grid-cols-2 lg:grid-cols-4">
           {steps.map((s) => (
             <div
               key={s.n}
-              className="relative overflow-hidden rounded-2xl bg-white p-5 sm:p-6 shadow-sm ring-1 ring-gray-200 dark:bg-white/10 dark:ring-white/10"
+              className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white/92 p-5 shadow-[0_10px_28px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-[#0B1220]/80 dark:shadow-[0_12px_34px_rgba(0,0,0,0.28)] sm:p-6"
               style={{ transform: 'skewX(-6deg)' }}
             >
               <div style={{ transform: 'skewX(6deg)' }}>
                 <div className="flex items-start justify-between">
-                  <div className="flex size-12 items-center justify-center rounded-xl bg-blue-600 text-white">
+                  <div className="flex size-12 items-center justify-center rounded-xl bg-blue-600 text-white dark:bg-blue-500">
                     <span className="text-xl">{s.icon}</span>
                   </div>
-                  <div className="text-5xl font-extrabold tracking-tight text-gray-200 dark:text-white/20">
+                  <div className="text-5xl font-extrabold tracking-tight text-slate-200 dark:text-white/15">
                     {s.n}
                   </div>
                 </div>
-                <div className="mt-5 text-sm font-semibold text-gray-900 dark:text-white">
+
+                <div className="mt-5 text-sm font-semibold text-slate-900 dark:text-white">
                   {s.title}
                 </div>
-                <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-slate-300">{s.body}</p>
+                <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                  {s.body}
+                </p>
               </div>
             </div>
           ))}
         </div>
 
         <div className="mt-10 flex justify-center">
-          <button
-            onClick={onCta}
-            className="rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
-          >
+          <button onClick={onCta} className={primaryButtonClass}>
             Create my resume
           </button>
         </div>
@@ -407,31 +425,32 @@ export function FAQSection({ onCta }: { onCta: () => void }) {
   return (
     <section className="bg-site pb-16 pt-8 dark:bg-slate-950 sm:pb-20 sm:pt-10">
       <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
-        <h2 className="text-center text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white">
+        <h2 className="text-center text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
           Frequently asked questions
         </h2>
-        <div className="mx-auto mt-8 sm:mt-10 max-w-3xl rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-white/10 dark:ring-white/10">
+
+        <div className={`mx-auto mt-8 max-w-3xl p-5 sm:mt-10 ${sectionCardClass}`}>
           {faqs.map((f) => (
             <details
               key={f.q}
-              className="group border-b border-gray-100 py-3 last:border-b-0 dark:border-white/10"
+              className="group border-b border-slate-200/80 py-3 last:border-b-0 dark:border-white/10"
             >
-              <summary className="cursor-pointer list-none text-sm font-semibold text-gray-900 dark:text-white">
+              <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900 dark:text-white">
                 <div className="flex items-center justify-between gap-3">
                   <span>{f.q}</span>
-                  <span className="text-gray-400 transition group-open:rotate-45 dark:text-slate-400">
+                  <span className="text-slate-400 transition group-open:rotate-45 dark:text-slate-400">
                     +
                   </span>
                 </div>
               </summary>
-              <div className="mt-2 text-sm leading-6 text-gray-600 dark:text-slate-300">{f.a}</div>
+              <div className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                {f.a}
+              </div>
             </details>
           ))}
+
           <div className="mt-8 flex justify-center">
-            <button
-              onClick={onCta}
-              className="rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
-            >
+            <button onClick={onCta} className={primaryButtonClass}>
               Create my resume
             </button>
           </div>
@@ -443,17 +462,18 @@ export function FAQSection({ onCta }: { onCta: () => void }) {
 
 export function SiteFooter() {
   return (
-    <footer className="border-t border-gray-200 bg-[#0b1a3a] py-10 text-white">
-      <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
+    <footer className="border-t border-slate-200/80 bg-slate-50 text-slate-900 dark:border-white/10 dark:bg-[#081120] dark:text-white">
+      <div className="mx-auto w-full max-w-screen-2xl px-4 py-10 lg:px-8">
         <div className="flex flex-col justify-between gap-8 lg:flex-row">
           <div>
             <div className="flex items-center gap-2 text-sm font-semibold">
-              <span className="flex size-7 items-center justify-center rounded-lg bg-white/10 text-white">
+              <span className="flex size-7 items-center justify-center rounded-lg bg-slate-900 text-white dark:bg-white/10 dark:text-white">
                 R
               </span>
               <span>CVPro</span>
             </div>
-            <p className="mt-3 max-w-md text-sm leading-6 text-white/70">
+
+            <p className="mt-3 max-w-md text-sm leading-6 text-slate-600 dark:text-white/70">
               Build a clean, ATS-friendly resume with modern templates and a fast editing workflow.
             </p>
           </div>
@@ -461,38 +481,40 @@ export function SiteFooter() {
           <div className="grid grid-cols-2 gap-10 sm:grid-cols-3">
             <div className="flex flex-col gap-2">
               <div className="text-sm font-semibold">Contact Us</div>
-              <Link href="/contact" className="text-sm text-white/70 hover:text-white">
+              <Link href="/contact" className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white">
                 Support
               </Link>
-              <Link href="/pricing" className="text-sm text-white/70 hover:text-white">
+              <Link href="/pricing" className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white">
                 Pricing
               </Link>
-              <Link href="/help" className="text-sm text-white/70 hover:text-white">
+              <Link href="/help" className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white">
                 FAQ
               </Link>
             </div>
 
             <div className="flex flex-col gap-2">
               <div className="text-sm font-semibold">Legal</div>
-              <Link href="/privacy" className="text-sm text-white/70 hover:text-white">
+              <Link href="/privacy" className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white">
                 Privacy Policy
               </Link>
-              <Link href="/terms" className="text-sm text-white/70 hover:text-white">
+              <Link href="/terms" className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white">
                 Terms &amp; Conditions
               </Link>
-              <Link href="/cookie-policy" className="text-sm text-white/70 hover:text-white">
+              <Link href="/cookie-policy" className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white">
                 Cookies Policy
               </Link>
             </div>
 
             <div className="flex flex-col gap-2">
               <div className="text-sm font-semibold">Language</div>
-              <span className="text-sm text-white/70">English</span>
+              <span className="text-sm text-slate-600 dark:text-white/70">English</span>
             </div>
           </div>
         </div>
 
-        <div className="mt-8 text-xs text-white/60">© {new Date().getFullYear()} CVPro.</div>
+        <div className="mt-8 text-xs text-slate-500 dark:text-white/60">
+          © {new Date().getFullYear()} CVPro.
+        </div>
       </div>
     </footer>
   );
