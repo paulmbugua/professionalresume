@@ -1062,12 +1062,6 @@ const improveAllExperience = async () => {
 
   const onUploadPhoto = async (file?: File | null) => {
     if (!file) return;
-    const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
-    if (!allowedTypes.has(String(file.type || '').toLowerCase())) {
-      setPhotoUploadState('error');
-      setPhotoUploadError('Unsupported image type. Please use JPG, PNG, or WEBP.');
-      return;
-    }
     if (!backendUrl || !token) {
       setPhotoUploadState('error');
       setPhotoUploadError('Sign in again to upload your image.');
