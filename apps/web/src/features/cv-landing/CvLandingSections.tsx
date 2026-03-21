@@ -38,7 +38,7 @@ export function DotsBg() {
   return (
     <div
       aria-hidden
-      className="pointer-events-none absolute inset-0 opacity-[0.55]"
+      className="pointer-events-none absolute inset-0 opacity-[0.55] dark:opacity-[0.25]"
       style={{
         backgroundImage: 'radial-gradient(rgba(17,24,39,0.10) 1px, transparent 1px)',
         backgroundSize: '18px 18px',
@@ -68,11 +68,11 @@ export function LogoMarquee({
             <img
               src={it.src}
               alt={it.label}
-              className="h-8 sm:h-10 md:h-11 w-auto select-none object-contain opacity-95 transition hover:opacity-100"
+              className="h-8 sm:h-10 md:h-11 w-auto select-none object-contain opacity-95 transition hover:opacity-100 dark:brightness-125"
               draggable={false}
             />
           ) : (
-            <span className="select-none text-sm sm:text-base font-semibold text-gray-400">
+            <span className="select-none text-sm sm:text-base font-semibold text-gray-400 dark:text-slate-400">
               {it.label}
             </span>
           )}
@@ -90,8 +90,8 @@ export function LogoMarquee({
         <Row />
         <Row dup />
       </div>
-      <div className="pointer-events-none absolute inset-y-0 left-0 w-10 sm:w-14 bg-gradient-to-r from-site via-site/70 to-transparent" />
-      <div className="pointer-events-none absolute inset-y-0 right-0 w-10 sm:w-14 bg-gradient-to-l from-site via-site/70 to-transparent" />
+      <div className="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-site via-site/70 to-transparent dark:from-slate-950 dark:via-slate-950/70 sm:w-14" />
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-site via-site/70 to-transparent dark:from-slate-950 dark:via-slate-950/70 sm:w-14" />
     </div>
   );
 }
@@ -153,7 +153,7 @@ export function TemplatesCarousel({
         aria-label="Previous"
         onClick={() => setPage((p) => Math.max(0, p - 1))}
         disabled={page <= 0}
-        className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-md bg-gray-200/80 px-2 py-2 text-gray-700 shadow-sm transition hover:bg-gray-200 disabled:opacity-40"
+        className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-md bg-gray-200/80 px-2 py-2 text-gray-700 shadow-sm transition hover:bg-gray-200 disabled:opacity-40 dark:bg-white/15 dark:text-slate-100 dark:hover:bg-white/20"
       >
         ‹
       </button>
@@ -162,7 +162,7 @@ export function TemplatesCarousel({
         aria-label="Next"
         onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
         disabled={page >= pageCount - 1}
-        className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-md bg-gray-200/80 px-2 py-2 text-gray-700 shadow-sm transition hover:bg-gray-200 disabled:opacity-40"
+        className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-md bg-gray-200/80 px-2 py-2 text-gray-700 shadow-sm transition hover:bg-gray-200 disabled:opacity-40 dark:bg-white/15 dark:text-slate-100 dark:hover:bg-white/20"
       >
         ›
       </button>
@@ -176,7 +176,7 @@ export function TemplatesCarousel({
               key={template.id}
               type="button"
               onClick={() => onChoose(template)}
-              className="group relative overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 transition hover:-translate-y-1 hover:shadow-md"
+              className="group relative overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 transition hover:-translate-y-1 hover:shadow-md dark:bg-white/10 dark:ring-white/10"
             >
               <div className="relative">
                 <TemplateThumbnail html={html ?? undefined} label={template.name} />
@@ -188,7 +188,9 @@ export function TemplatesCarousel({
                 </div>
               </div>
               <div className="px-4 py-3 text-left">
-                <div className="text-sm font-semibold text-gray-900">{template.name}</div>
+                <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                  {template.name}
+                </div>
               </div>
             </button>
           );
@@ -204,7 +206,9 @@ export function TemplatesCarousel({
             aria-label={`Go to page ${i + 1}`}
             className={[
               'size-2.5 rounded-full border transition',
-              i === page ? 'border-blue-600 bg-blue-600' : 'border-gray-300 bg-white',
+              i === page
+                ? 'border-blue-600 bg-blue-600'
+                : 'border-gray-300 bg-white dark:border-white/20 dark:bg-white/10',
             ].join(' ')}
           />
         ))}
@@ -272,22 +276,26 @@ export function WhyChooseSection() {
   ];
 
   return (
-    <section className="bg-site py-12 sm:py-16">
+    <section className="bg-site py-12 dark:bg-slate-950 sm:py-16">
       <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
-        <h2 className="text-center text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900">
+        <h2 className="text-center text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white">
           Why choose our AI-powered resume builder
         </h2>
         <div className="mx-auto mt-8 sm:mt-10 grid max-w-5xl gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
           {items.map((it) => (
             <div
               key={it.title}
-              className="rounded-2xl bg-[#eeeeef] px-5 sm:px-6 py-5 sm:py-6 shadow-sm"
+              className="rounded-2xl bg-[#eeeeef] px-5 sm:px-6 py-5 sm:py-6 shadow-sm dark:bg-white/10"
             >
               <div className="flex items-start gap-4">
                 {it.icon}
                 <div>
-                  <div className="text-base font-bold text-gray-900">{it.title}</div>
-                  <p className="mt-2 text-sm leading-6 text-gray-700">{it.body}</p>
+                  <div className="text-base font-bold text-gray-900 dark:text-white">
+                    {it.title}
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-gray-700 dark:text-slate-300">
+                    {it.body}
+                  </p>
                 </div>
               </div>
             </div>
@@ -327,16 +335,16 @@ export function StepsSection({ onCta }: { onCta: () => void }) {
   ];
 
   return (
-    <section className="bg-site pb-14 sm:pb-16 pt-8 sm:pt-10">
+    <section className="bg-site pb-14 pt-8 dark:bg-slate-950 sm:pb-16 sm:pt-10">
       <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
-        <h2 className="text-center text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900">
+        <h2 className="text-center text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white">
           4 easy steps to create a resume
         </h2>
         <div className="mt-8 sm:mt-10 grid gap-5 sm:gap-6 md:grid-cols-2 lg:grid-cols-4">
           {steps.map((s) => (
             <div
               key={s.n}
-              className="relative overflow-hidden rounded-2xl bg-white p-5 sm:p-6 shadow-sm ring-1 ring-gray-200"
+              className="relative overflow-hidden rounded-2xl bg-white p-5 sm:p-6 shadow-sm ring-1 ring-gray-200 dark:bg-white/10 dark:ring-white/10"
               style={{ transform: 'skewX(-6deg)' }}
             >
               <div style={{ transform: 'skewX(6deg)' }}>
@@ -344,10 +352,14 @@ export function StepsSection({ onCta }: { onCta: () => void }) {
                   <div className="flex size-12 items-center justify-center rounded-xl bg-blue-600 text-white">
                     <span className="text-xl">{s.icon}</span>
                   </div>
-                  <div className="text-5xl font-extrabold tracking-tight text-gray-200">{s.n}</div>
+                  <div className="text-5xl font-extrabold tracking-tight text-gray-200 dark:text-white/20">
+                    {s.n}
+                  </div>
                 </div>
-                <div className="mt-5 text-sm font-semibold text-gray-900">{s.title}</div>
-                <p className="mt-2 text-sm leading-6 text-gray-600">{s.body}</p>
+                <div className="mt-5 text-sm font-semibold text-gray-900 dark:text-white">
+                  {s.title}
+                </div>
+                <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-slate-300">{s.body}</p>
               </div>
             </div>
           ))}
@@ -391,21 +403,26 @@ export function FAQSection({ onCta }: { onCta: () => void }) {
   ];
 
   return (
-    <section className="bg-site pb-16 sm:pb-20 pt-8 sm:pt-10">
+    <section className="bg-site pb-16 pt-8 dark:bg-slate-950 sm:pb-20 sm:pt-10">
       <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
-        <h2 className="text-center text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900">
+        <h2 className="text-center text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white">
           Frequently asked questions
         </h2>
-        <div className="mx-auto mt-8 sm:mt-10 max-w-3xl rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+        <div className="mx-auto mt-8 sm:mt-10 max-w-3xl rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-white/10 dark:ring-white/10">
           {faqs.map((f) => (
-            <details key={f.q} className="group border-b border-gray-100 py-3 last:border-b-0">
-              <summary className="cursor-pointer list-none text-sm font-semibold text-gray-900">
+            <details
+              key={f.q}
+              className="group border-b border-gray-100 py-3 last:border-b-0 dark:border-white/10"
+            >
+              <summary className="cursor-pointer list-none text-sm font-semibold text-gray-900 dark:text-white">
                 <div className="flex items-center justify-between gap-3">
                   <span>{f.q}</span>
-                  <span className="text-gray-400 transition group-open:rotate-45">+</span>
+                  <span className="text-gray-400 transition group-open:rotate-45 dark:text-slate-400">
+                    +
+                  </span>
                 </div>
               </summary>
-              <div className="mt-2 text-sm leading-6 text-gray-600">{f.a}</div>
+              <div className="mt-2 text-sm leading-6 text-gray-600 dark:text-slate-300">{f.a}</div>
             </details>
           ))}
           <div className="mt-8 flex justify-center">
