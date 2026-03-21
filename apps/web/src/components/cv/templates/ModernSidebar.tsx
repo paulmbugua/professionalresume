@@ -104,17 +104,17 @@ export function renderModernSidebarHtml(draft: CvDraft): string {
   main{padding:14mm 11mm;display:grid;gap:11px;align-content:start}
   h1{margin:0;font-size:calc(var(--h1Size) + 2px);line-height:1.04}
   .headline{margin-top:5px;font-size:14px;color:#cbd5e1}
-  .contact{margin-top:11px;display:grid;gap:5px;font-size:11.4px;color:#d7e1ef;line-height:1.4}
+  .contact{margin-top:11px;display:grid;gap:5px;font-size:var(--bodySize);color:#d7e1ef;line-height:1.4}
   section{margin-top:11px}
   h2{margin:0 0 7px;font-size:calc(var(--h3Size) + .9px);text-transform:uppercase;letter-spacing:.11em;color:inherit;opacity:.95}
   aside p, aside li{color:#e2e8f0}
   .chips{display:flex;flex-wrap:wrap;gap:6px}
-  .chips span{font-size:11.3px;padding:4px 9px;border-radius:999px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22)}
+  .chips span{font-size:var(--bodySize);padding:4px 9px;border-radius:999px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22)}
   .stack{display:grid;gap:9px}
   h3{margin:0;font-size:calc(var(--h2Size) + .6px)}
-  .meta{font-size:11.2px;color:#64748b;margin-top:3px}
-  p{margin:3px 0 0;font-size:12px;color:var(--textColor);line-height:1.5}
-  ul{margin:6px 0 0;padding-left:18px;font-size:11.9px;color:#475569;line-height:1.48}
+  .meta{font-size:14px;color:#64748b;margin-top:3px}
+  p{margin:3px 0 0;font-size:var(--bodySize);color:var(--textColor);line-height:1.5}
+  ul{margin:6px 0 0;padding-left:18px;font-size:var(--bodySize);color:#475569;line-height:1.48}
   li{margin:3px 0}
   @page{size:A4;margin:8mm}
 </style>
@@ -164,7 +164,7 @@ const ModernSidebar: React.FC<Props> = ({ draft }) => {
         <h3 className="cv-section-title text-gray-800">Skills</h3>
         <div className="flex flex-wrap gap-1">
           {draft.skills.map((skill) => (
-            <span key={skill} className="rounded-full bg-white/70 px-2 py-1 text-[11px]">
+            <span key={skill} className="rounded-full bg-white/70 px-2 py-1 text-[14px]">
               {skill}
             </span>
           ))}
@@ -180,10 +180,10 @@ const ModernSidebar: React.FC<Props> = ({ draft }) => {
               <div className="text-sm font-semibold">
                 {exp.role || 'Role'} · {exp.company || 'Company'}
               </div>
-              <div className="text-[11px] text-gray-500">
+              <div className="text-[14px] text-gray-500">
                 {exp.start} - {exp.end} {exp.location ? `• ${exp.location}` : ''}
               </div>
-              <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] text-gray-700">
+              <ul className="mt-1 list-disc space-y-1 pl-4 text-[14px] text-gray-700">
                 {exp.bullets?.map((bullet, bulletIdx) => (
                   <li key={`${exp.company}-${bulletIdx}`}>{bullet}</li>
                 ))}
@@ -200,10 +200,10 @@ const ModernSidebar: React.FC<Props> = ({ draft }) => {
           {draft.education.map((edu, idx) => (
             <div key={`${edu.school}-${idx}`}>
               <div className="text-sm font-semibold">{edu.program || 'Program'}</div>
-              <div className="text-[11px] text-gray-500">
+              <div className="text-[14px] text-gray-500">
                 {edu.school || 'School'} · {edu.start} - {edu.end}
               </div>
-              {edu.details && <p className="text-[11px] text-gray-600">{edu.details}</p>}
+              {edu.details && <p className="text-[14px] text-gray-600">{edu.details}</p>}
             </div>
           ))}
         </div>
@@ -217,9 +217,9 @@ const ModernSidebar: React.FC<Props> = ({ draft }) => {
             <div key={`${project.name}-${idx}`}>
               <div className="text-sm font-semibold">{project.name || 'Project'}</div>
               {project.description && (
-                <p className="text-[11px] text-gray-600">{project.description}</p>
+                <p className="text-[14px] text-gray-600">{project.description}</p>
               )}
-              <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] text-gray-700">
+              <ul className="mt-1 list-disc space-y-1 pl-4 text-[14px] text-gray-700">
                 {project.bullets?.map((bullet, bulletIdx) => (
                   <li key={`${project.name}-${bulletIdx}`}>{bullet}</li>
                 ))}
@@ -232,7 +232,7 @@ const ModernSidebar: React.FC<Props> = ({ draft }) => {
     certifications: draft.certifications?.length ? (
       <section>
         <h3 className="cv-section-title text-gray-800">Certifications</h3>
-        <div className="space-y-1 text-[11px] text-gray-700">
+        <div className="space-y-1 text-[14px] text-gray-700">
           {draft.certifications.map((cert, idx) => (
             <div key={`${cert.name}-${idx}`}>
               <span className="font-semibold">{cert.name}</span>
@@ -245,7 +245,7 @@ const ModernSidebar: React.FC<Props> = ({ draft }) => {
     extras: draft.extras ? (
       <section>
         <h3 className="cv-section-title text-gray-800">Extras</h3>
-        <div className="space-y-1 text-[11px] text-gray-700">
+        <div className="space-y-1 text-[14px] text-gray-700">
           {draft.extras.languages?.length ? (
             <p>Languages: {draft.extras.languages.join(', ')}</p>
           ) : null}
@@ -270,10 +270,10 @@ const ModernSidebar: React.FC<Props> = ({ draft }) => {
         }}
       >
         <h1 className="text-xl font-semibold">{draft.basics.name || 'Your Name'}</h1>
-        <p className="text-[11px] text-slate-300">
+        <p className="text-[14px] text-slate-300">
           {draft.basics.headline || 'Professional Headline'}
         </p>
-        <div className="mt-3 space-y-1 text-[11px] text-slate-200">
+        <div className="mt-3 space-y-1 text-[14px] text-slate-200">
           <p>{draft.basics.email}</p>
           <p>{draft.basics.phone}</p>
           <p>{draft.basics.location}</p>
