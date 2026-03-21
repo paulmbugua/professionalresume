@@ -144,7 +144,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
   const copy = getLandingCopy(variant);
 
   return (
-    <div className="min-h-screen bg-site text-slate-900 dark:bg-slate-950 dark:text-white">
+    <div className="min-h-screen bg-site text-slate-900 dark:text-white">
       <LandingKeyframes />
 
       <section className="relative">
