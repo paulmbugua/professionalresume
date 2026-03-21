@@ -9,8 +9,22 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const themeInitScript = `
+    (function () {
+      try {
+        var stored = localStorage.getItem('cvpro-theme');
+        var systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var theme = stored === 'light' || stored === 'dark' ? stored : (systemDark ? 'dark' : 'light');
+        document.documentElement.classList.toggle('dark', theme === 'dark');
+      } catch (e) {}
+    })();
+  `;
+
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body className="app-body">
         <Providers>
           <div className="app-shell">
