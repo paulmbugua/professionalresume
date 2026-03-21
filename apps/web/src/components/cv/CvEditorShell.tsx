@@ -160,7 +160,9 @@ const CvEditorShell: React.FC<Props> = ({
           type="button"
           onClick={() => setActiveTab('edit')}
           className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${
-            activeTab === 'edit' ? 'bg-primary text-white' : 'bg-white text-gray-700'
+            activeTab === 'edit'
+              ? 'bg-primary text-white'
+              : 'bg-white text-gray-700 dark:bg-white/10 dark:text-white/80'
           }`}
         >
           Edit
@@ -169,7 +171,9 @@ const CvEditorShell: React.FC<Props> = ({
           type="button"
           onClick={() => setActiveTab('preview')}
           className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${
-            activeTab === 'preview' ? 'bg-primary text-white' : 'bg-white text-gray-700'
+            activeTab === 'preview'
+              ? 'bg-primary text-white'
+              : 'bg-white text-gray-700 dark:bg-white/10 dark:text-white/80'
           }`}
         >
           Preview
