@@ -231,18 +231,21 @@ const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4 py-10 text-white">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_#3b82f655,_transparent_40%),radial-gradient(circle_at_bottom_right,_#9333ea44,_transparent_35%)]" />
-      <div className="absolute -left-10 top-8 h-56 w-56 rounded-full bg-primary/20 blur-3xl" />
-      <div className="absolute -right-10 bottom-8 h-64 w-64 rounded-full bg-fuchsia-500/20 blur-3xl" />
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#f3f6ff] px-4 py-10 text-slate-900 dark:bg-slate-950 dark:text-white">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(37,99,235,0.16),_transparent_45%),radial-gradient(circle_at_bottom_right,_rgba(147,51,234,0.14),_transparent_40%)] dark:bg-[radial-gradient(circle_at_top,_#3b82f655,_transparent_40%),radial-gradient(circle_at_bottom_right,_#9333ea44,_transparent_35%)]" />
+      <div className="absolute -left-10 top-8 h-56 w-56 rounded-full bg-primary/15 blur-3xl dark:bg-primary/20" />
+      <div className="absolute -right-10 bottom-8 h-64 w-64 rounded-full bg-fuchsia-400/15 blur-3xl dark:bg-fuchsia-500/20" />
 
-      <div className="relative z-10 grid w-full max-w-5xl gap-8 rounded-3xl border border-white/10 bg-white/10 p-4 shadow-2xl backdrop-blur-xl md:grid-cols-2 md:p-8 dark:bg-black/30">
-        <section className="hidden flex-col justify-between rounded-2xl bg-black/20 p-8 md:flex">
+      <div className="relative z-10 grid w-full max-w-5xl gap-8 rounded-3xl border border-white/60 bg-white/70 p-4 shadow-2xl backdrop-blur-xl md:grid-cols-2 md:p-8 dark:border-white/10 dark:bg-black/30">
+        <section className="hidden flex-col justify-between rounded-2xl bg-slate-900/85 p-8 text-white md:flex dark:bg-black/20">
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-white/60">CVPro</p>
-            <h1 className="mt-3 text-3xl font-semibold leading-tight">Build an ATS-friendly CV in minutes.</h1>
+            <h1 className="mt-3 text-3xl font-semibold leading-tight">
+              Build an ATS-friendly CV in minutes.
+            </h1>
             <p className="mt-4 text-sm text-white/75">
-              Log in to access your drafts, premium templates, AI writing help, and one-click PDF export.
+              Log in to access your drafts, premium templates, AI writing help, and one-click PDF
+              export.
             </p>
           </div>
           <ul className="space-y-3 text-sm text-white/80">
@@ -259,7 +262,9 @@ const LoginPage: React.FC = () => {
         </section>
 
         <section className="rounded-2xl bg-white p-6 text-gray-900 shadow-xl dark:bg-slate-900 dark:text-white">
-          <p className="text-xs uppercase tracking-[0.26em] text-gray-500 dark:text-white/50">Welcome back</p>
+          <p className="text-xs uppercase tracking-[0.26em] text-gray-500 dark:text-white/50">
+            Welcome back
+          </p>
           <h2 className="mt-2 text-2xl font-semibold">{emailFormTitle}</h2>
           <p className="mt-2 text-sm text-gray-500 dark:text-white/60">
             Continue building resumes with live preview, drafts, and PDF export.
@@ -448,7 +453,13 @@ const LoginPage: React.FC = () => {
                 disabled={busy}
                 className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {busy ? (authMode === 'Login' ? 'Signing in...' : 'Creating account...') : authMode === 'Login' ? 'Sign in' : 'Sign up'}
+                {busy
+                  ? authMode === 'Login'
+                    ? 'Signing in...'
+                    : 'Creating account...'
+                  : authMode === 'Login'
+                    ? 'Sign in'
+                    : 'Sign up'}
               </button>
 
               <div className="flex items-center justify-between text-xs">

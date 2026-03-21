@@ -12,8 +12,7 @@ type AsyncStorageLike = {
 };
 
 const Providers = ({ children }: { children: React.ReactNode }) => {
-  const backendUrl =
-    process.env.NEXT_PUBLIC_BACKEND_URL?.trim() || 'http://localhost:4001';
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.trim() || 'http://localhost:4001';
 
   // Create storage only once; guard window/localStorage just in case.
   const storage: AsyncStorageLike = useMemo(
@@ -29,7 +28,7 @@ const Providers = ({ children }: { children: React.ReactNode }) => {
         if (typeof window !== 'undefined') window.localStorage.removeItem(k);
       },
     }),
-    [],
+    []
   );
 
   // ✅ Create QueryClient once per app lifetime (prevents remount issues)
@@ -43,13 +42,15 @@ const Providers = ({ children }: { children: React.ReactNode }) => {
             refetchOnWindowFocus: false,
           },
         },
-      }),
+      })
   );
 
   return (
     <QueryClientProvider client={queryClient}>
       <ShopContextProvider backendUrl={backendUrl} storage={storage}>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider applyToDocument storageKey="cvpro-theme">
+          {children}
+        </ThemeProvider>
       </ShopContextProvider>
     </QueryClientProvider>
   );

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 
 import { useShopContext } from '@cvpro/shared/context';
 import { useCvTemplates } from '@cvpro/shared/hooks';
+import useTheme from '@cvpro/shared/hooks/useTheme';
 
 import TemplateSpotlightModal from '../../components/cv/TemplateSpotlightModal';
 import TemplateThumbnail from '../../components/cv/templates/TemplateThumbnail';
@@ -75,6 +76,8 @@ const testimonials = [
 
 const CvLandingPage: React.FC<Props> = ({ variant }) => {
   const { backendUrl, token } = useShopContext() as { backendUrl?: string; token?: string | null };
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const processEnv = typeof process !== 'undefined' ? process.env : undefined;
   const envBackendUrl = processEnv?.NEXT_PUBLIC_BACKEND_URL?.trim() || '';
   const resolvedBackendUrl = envBackendUrl || backendUrl?.trim() || 'http://localhost:4001';
@@ -141,32 +144,32 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
   const copy = getLandingCopy(variant);
 
   return (
-    <div className="min-h-screen bg-site text-gray-900">
+    <div className="min-h-screen bg-site text-slate-900 dark:bg-slate-950 dark:text-white">
       <LandingKeyframes />
 
       <section className="relative">
-        <DotsBg />
+        <DotsBg isDark={isDark} />
 
         <div className="mx-auto w-full max-w-screen-2xl px-4 pb-8 pt-8 sm:pt-10 lg:px-8">
           {error && (
-            <div className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800">
+            <div className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800 dark:border-rose-800/60 dark:bg-rose-950/35 dark:text-rose-200">
               {error.message} Showing fallback templates so you can continue.
             </div>
           )}
 
           <div className="grid items-start gap-8 lg:gap-10 lg:grid-cols-2">
             <div className="pt-2 sm:pt-4">
-              <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold leading-tight tracking-tight">
+              <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold leading-tight tracking-tight text-slate-900 dark:text-white">
                 {copy.title}
               </h1>
-              <p className="mt-4 max-w-xl text-sm sm:text-base leading-6 text-gray-600">
+              <p className="mt-4 max-w-xl text-sm sm:text-base leading-6 text-slate-600 dark:text-slate-300">
                 {copy.subtitle}
               </p>
 
               <div className="mt-6 flex flex-wrap items-center gap-3">
                 <button
                   onClick={improveResume}
-                  className="rounded-xl border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-50"
+                  className="rounded-xl border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-50 dark:border-blue-400/30 dark:bg-white/10 dark:text-blue-100 dark:hover:bg-white/15"
                 >
                   Improve my resume
                 </button>
@@ -181,17 +184,19 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
               <div className="mt-7 grid grid-cols-3 gap-5 sm:flex sm:gap-10">
                 <div>
                   <div className="text-base sm:text-lg font-semibold">1,311</div>
-                  <div className="text-[11px] sm:text-xs text-gray-500">resumes created today</div>
+                  <div className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
+                    resumes created today
+                  </div>
                 </div>
                 <div>
                   <div className="text-base sm:text-lg font-semibold">×2.2</div>
-                  <div className="text-[11px] sm:text-xs text-gray-500">
+                  <div className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
                     more interview invitations
                   </div>
                 </div>
                 <div>
                   <div className="text-base sm:text-lg font-semibold">+43%</div>
-                  <div className="text-[11px] sm:text-xs text-gray-500">
+                  <div className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
                     higher chance of getting a job
                   </div>
                 </div>
@@ -201,7 +206,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
             <div className="relative">
               <div className="grid gap-4 sm:gap-5 hidden sm:block lg:hidden">
                 <div
-                  className="rounded-2xl bg-white p-3 shadow-[0_18px_45px_rgba(15,23,42,0.10)] ring-1 ring-gray-200"
+                  className="rounded-2xl bg-white p-3 shadow-[0_18px_45px_rgba(15,23,42,0.10)] ring-1 ring-slate-200 dark:bg-white/10 dark:ring-white/10"
                   style={{ animation: 'cvpro-float 4.8s ease-in-out infinite' }}
                 >
                   <div className="overflow-hidden rounded-xl">
@@ -213,7 +218,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div
-                    className="rounded-2xl bg-white p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)] ring-1 ring-gray-200"
+                    className="rounded-2xl bg-white p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)] ring-1 ring-slate-200 dark:bg-white/10 dark:ring-white/10"
                     style={{
                       animation: 'cvpro-float 4.8s ease-in-out infinite',
                       animationDelay: '0.05s',
@@ -227,7 +232,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
                     </div>
                   </div>
                   <div
-                    className="rounded-2xl bg-white p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)] ring-1 ring-gray-200"
+                    className="rounded-2xl bg-white p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)] ring-1 ring-slate-200 dark:bg-white/10 dark:ring-white/10"
                     style={{
                       animation: 'cvpro-float 4.8s ease-in-out infinite',
                       animationDelay: '0.1s',
@@ -245,7 +250,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
 
               <div className="hidden lg:block">
                 <div
-                  className="relative w-[380px] max-w-full rounded-2xl bg-white p-3 shadow-[0_18px_45px_rgba(15,23,42,0.10)] ring-1 ring-gray-200"
+                  className="relative w-[380px] max-w-full rounded-2xl bg-white p-3 shadow-[0_18px_45px_rgba(15,23,42,0.10)] ring-1 ring-slate-200 dark:bg-white/10 dark:ring-white/10"
                   style={{ animation: 'cvpro-float 4.8s ease-in-out infinite' }}
                 >
                   <div className="overflow-hidden rounded-xl">
@@ -256,7 +261,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
                   </div>
                 </div>
                 <div
-                  className="absolute right-0 top-0 w-[270px] rounded-2xl bg-white p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)] ring-1 ring-gray-200"
+                  className="absolute right-0 top-0 w-[270px] rounded-2xl bg-white p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)] ring-1 ring-slate-200 dark:bg-white/10 dark:ring-white/10"
                   style={{
                     animation: 'cvpro-float 4.8s ease-in-out infinite',
                     animationDelay: '0.05s',
@@ -270,7 +275,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
                   </div>
                 </div>
                 <div
-                  className="absolute bottom-0 right-10 w-[270px] rounded-2xl bg-white p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)] ring-1 ring-gray-200"
+                  className="absolute bottom-0 right-10 w-[270px] rounded-2xl bg-white p-3 shadow-[0_12px_30px_rgba(15,23,42,0.10)] ring-1 ring-slate-200 dark:bg-white/10 dark:ring-white/10"
                   style={{
                     animation: 'cvpro-float 4.8s ease-in-out infinite',
                     animationDelay: '0.1s',
@@ -288,12 +293,12 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
           </div>
         </div>
 
-        <div className="w-full bg-site pb-10">
+        <div className="w-full bg-site pb-10 dark:bg-slate-950">
           <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
-            <div className="text-center text-xs font-semibold text-gray-500">
+            <div className="text-center text-xs font-semibold text-slate-500 dark:text-slate-300">
               Our customers have been hired at<sup>1</sup>
             </div>
-            <div className="mt-2 text-center text-[11px] text-gray-400">
+            <div className="mt-2 text-center text-[11px] text-slate-400 dark:text-slate-500">
               <sup>1</sup> Company names and logos are used for illustrative purposes only.
             </div>
           </div>
@@ -303,18 +308,20 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
         </div>
       </section>
 
-      <section className="w-full bg-site pb-12 pt-2">
+      <section className="w-full bg-site pb-12 pt-2 dark:bg-slate-950">
         <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
           <div className="text-center">
-            <h2 className="text-xl sm:text-2xl font-extrabold">CVPro, as told by our users</h2>
+            <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white">
+              CVPro, as told by our users
+            </h2>
           </div>
         </div>
 
         <div className="mx-auto mt-8 w-full max-w-screen-2xl px-4 lg:px-8">
-          <div className="rounded-3xl bg-white p-5 sm:p-6 shadow-sm ring-1 ring-gray-200">
+          <div className="rounded-3xl bg-white p-5 sm:p-6 shadow-sm ring-1 ring-slate-200 dark:bg-white/10 dark:ring-white/10">
             <div className="grid gap-4 lg:grid-cols-3">
               {testimonials.map((t) => (
-                <div key={t.name} className="rounded-2xl bg-gray-50 p-5">
+                <div key={t.name} className="rounded-2xl bg-slate-50 p-5 dark:bg-white/10">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="flex items-center gap-1">
@@ -327,11 +334,15 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
                           </span>
                         ))}
                       </div>
-                      <div className="mt-2 text-sm font-semibold text-gray-900">{t.name}</div>
+                      <div className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
+                        {t.name}
+                      </div>
                     </div>
-                    <div className="text-[11px] text-gray-400">{t.time}</div>
+                    <div className="text-[11px] text-slate-400 dark:text-slate-500">{t.time}</div>
                   </div>
-                  <p className="mt-3 text-sm leading-6 text-gray-700">{t.body}</p>
+                  <p className="mt-3 text-sm leading-6 text-slate-700 dark:text-slate-200">
+                    {t.body}
+                  </p>
                 </div>
               ))}
             </div>
@@ -348,26 +359,26 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
         </div>
       </section>
 
-      <section className="bg-site pb-12 pt-8">
+      <section className="bg-site pb-12 pt-8 dark:bg-slate-950">
         <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
           <div className="text-center">
-            <h2 className="text-xl sm:text-2xl font-extrabold">
+            <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white">
               Resume templates that get you noticed — and hired
             </h2>
           </div>
 
-          <div className="mt-8 rounded-3xl bg-white p-5 sm:p-6 shadow-sm ring-1 ring-gray-200">
+          <div className="mt-8 rounded-3xl bg-white p-5 sm:p-6 shadow-sm ring-1 ring-slate-200 dark:bg-white/10 dark:ring-white/10">
             {isLoading ? (
-              <p className="text-sm text-gray-500">Loading templates…</p>
+              <p className="text-sm text-slate-500 dark:text-slate-300">Loading templates…</p>
             ) : carouselTemplates.length > 0 ? (
               <TemplatesCarousel templates={carouselTemplates} onChoose={openSpotlight} />
             ) : (
-              <p className="text-sm text-gray-500">Templates unavailable.</p>
+              <p className="text-sm text-slate-500 dark:text-slate-300">Templates unavailable.</p>
             )}
             <div className="mt-6 flex items-center justify-end">
               <Link
                 href="/templates/all"
-                className="text-sm font-semibold text-blue-600 hover:text-blue-700"
+                className="text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200"
               >
                 View all templates →
               </Link>
