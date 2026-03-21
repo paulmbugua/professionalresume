@@ -45,7 +45,6 @@ const CvEditorShell: React.FC<Props> = ({
     [liveDraft, draft]
   );
 
-  const liveTitle = previewDraft.title || '';
   const liveTemplateId = previewDraft.templateId || draft.templateId;
 
   const templateMeta: any =
@@ -59,7 +58,7 @@ const CvEditorShell: React.FC<Props> = ({
     (templateMeta?.displayName as string) ||
     liveTemplateId;
 
-  const headerTitle = liveTitle.trim() ? liveTitle.trim() : templateDisplayName;
+  const templateHeaderTitle = templateDisplayName;
 
   useEffect(() => {
     if (!isDesignOpen) return;
@@ -71,7 +70,8 @@ const CvEditorShell: React.FC<Props> = ({
   }, [isDesignOpen]);
 
   useEffect(() => {
-    if (liveTitle.trim()) return;
+    const draftTitle = (previewDraft.title || '').trim();
+    if (draftTitle) return;
     if (!templateDisplayName) return;
 
     setValue('title', templateDisplayName, {
@@ -79,7 +79,7 @@ const CvEditorShell: React.FC<Props> = ({
       shouldTouch: false,
       shouldValidate: false,
     });
-  }, [liveTitle, templateDisplayName, setValue]);
+  }, [previewDraft.title, templateDisplayName, setValue]);
 
   const handleSectionChange = (next: {
     sectionOrder: CvSectionKey[];
@@ -102,7 +102,9 @@ const CvEditorShell: React.FC<Props> = ({
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4 print:hidden">
         <div>
           <p className="text-xs uppercase tracking-[0.24em] text-gray-400">CV Builder</p>
-          <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">{headerTitle}</h2>
+          <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">
+            {templateHeaderTitle}
+          </h2>
           <p className="text-xs text-gray-500 dark:text-white/60">
             {lastSavedAt ? `Last saved ${lastSavedAt}` : 'Autosaving enabled'}
           </p>
