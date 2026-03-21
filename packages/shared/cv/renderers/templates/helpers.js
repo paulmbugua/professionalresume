@@ -3,11 +3,11 @@ export const defaultSectionVisibility = defaultSectionOrder.reduce((a,k)=>(a[k]=
 export const templateThemeDefaults={ 'modern-sidebar':{primary:'#0f172a',sidebarBg:'#0f172a',sidebarText:'#f8fafc',accent:'#38bdf8'}, 'bold-header':{primary:'#0f172a',headerBg:'#0f172a',headerText:'#ffffff',accent:'#38bdf8'}, 'modern-teal':{primary:'#0f766e',accent:'#0d9488',sectionBg:'#f0fdfa'}, 'modern-sidebar-blue':{primary:'#1d4ed8',sidebarBg:'#1d4ed8',sidebarText:'#eff6ff',accent:'#93c5fd'} };
 
 const DEFAULT_TYPOGRAPHY = {
-  baseFontSize: 12,
+  baseFontSize: 14,
   h1Size: 28,
   h2Size: 13,
   h3Size: 11,
-  bodySize: 12,
+  bodySize: 14,
   lineHeight: 1.48,
   fontFamily: 'Inter, system-ui, Arial',
 };
@@ -36,6 +36,8 @@ export function resolveTemplateTypography(draft={}) {
   const templateId = String(draft.templateId || '').trim();
   const defaults = templateTypographyDefaults[templateId] || templateTypographyDefaults['ats-minimal'];
   const user = { ...DEFAULT_TYPOGRAPHY, ...(draft.typography || {}) };
+  const hasUserBodyOverride =
+    draft?.typography && (draft.typography.bodySize != null || draft.typography.baseFontSize != null);
 
   const bodyDelta = (Number(user.bodySize) || DEFAULT_TYPOGRAPHY.bodySize) - DEFAULT_TYPOGRAPHY.bodySize;
   const baseDelta = (Number(user.baseFontSize) || DEFAULT_TYPOGRAPHY.baseFontSize) - DEFAULT_TYPOGRAPHY.baseFontSize;
@@ -43,10 +45,13 @@ export function resolveTemplateTypography(draft={}) {
 
   const effectiveBodyDelta = (bodyDelta * 0.7) + (baseDelta * 0.8);
 
-  const body = clamp(defaults.body + effectiveBodyDelta, 10.2, 14.8);
-  const meta = clamp(defaults.meta + effectiveBodyDelta * 0.85, 9.8, 13.4);
-  const h3 = clamp(defaults.h3 + effectiveBodyDelta * 0.55 + headingDelta * 0.08, 10.8, 16.2);
-  const sectionTitle = clamp(defaults.sectionTitle + effectiveBodyDelta * 0.35 + headingDelta * 0.16, 10.6, 16.5);
+  const body = clamp(defaults.body + effectiveBodyDelta, hasUserBodyOverride ? 10.2 : 14, 16.5);
+  const computedMeta = clamp(defaults.meta + effectiveBodyDelta * 0.85, 9.8, 15.2);
+  const meta = hasUserBodyOverride ? computedMeta : body;
+  const h3Base = defaults.h3 + effectiveBodyDelta * 0.55 + headingDelta * 0.08;
+  const h3 = clamp(Math.max(h3Base, body + 1.1), 11.2, 18);
+  const sectionTitleBase = defaults.sectionTitle + effectiveBodyDelta * 0.35 + headingDelta * 0.16;
+  const sectionTitle = clamp(Math.max(sectionTitleBase, body + 0.6), 11, 18.2);
   const name = clamp(defaults.name + effectiveBodyDelta * 0.6 + headingDelta * 0.58, 23, 41);
   const headline = clamp(defaults.headline + effectiveBodyDelta * 0.42 + headingDelta * 0.2, 11.2, 19);
   const lineHeight = clamp(Number(user.lineHeight) || defaults.lineHeight || DEFAULT_TYPOGRAPHY.lineHeight, 1.28, 1.65);
@@ -61,8 +66,12 @@ export function resolveTemplateTypography(draft={}) {
     headline,
     lineHeight,
     denseLineHeight,
-    sidebarBody: clamp((defaults.sidebarBody || body) + effectiveBodyDelta * 0.3, 10.1, 14.3),
-    sidebarMeta: clamp((defaults.sidebarMeta || meta) + effectiveBodyDelta * 0.3, 9.7, 13.1),
+    sidebarBody: hasUserBodyOverride
+      ? clamp((defaults.sidebarBody || body) + effectiveBodyDelta * 0.3, 10.1, 15.2)
+      : body,
+    sidebarMeta: hasUserBodyOverride
+      ? clamp((defaults.sidebarMeta || meta) + effectiveBodyDelta * 0.3, 9.7, 15)
+      : body,
     sectionGap: clamp(8 + effectiveBodyDelta * 1.3, 6, 14),
     itemGap: clamp(4.5 + effectiveBodyDelta, 3, 9),
   };

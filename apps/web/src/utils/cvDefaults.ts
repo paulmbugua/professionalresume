@@ -71,11 +71,11 @@ export function normalizeDraft(draft: CvDraft): CvDraft {
       ...draft.extras,
     },
     typography: {
-      baseFontSize: 12,
+      baseFontSize: 14,
       h1Size: 28,
       h2Size: 13,
       h3Size: 11,
-      bodySize: 12,
+      bodySize: 14,
       lineHeight: 1.48,
       fontFamily: 'Inter, system-ui, Arial',
       ...(draft.typography || {}),

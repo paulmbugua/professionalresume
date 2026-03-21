@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useFieldArray, useFormContext, Controller, useWatch } from 'react-hook-form';
 import type { CvDraft, CvSectionKey } from '@cvpro/shared/types';
 import { useShopContext } from '@cvpro/shared/context';
+import { uploadAsset } from '@cvpro/shared/api/uploadAsset';
 import { demoResume, hasAnyUserData } from '../../templates/demoResume';
 import { stripHtml } from '../../utils/cvRichText';
 import { parseUploadedCv } from '../../utils/cvParseApi';
@@ -292,11 +293,15 @@ const CvForm: React.FC = () => {
   const [improvingExperienceIndex, setImprovingExperienceIndex] = useState<number | null>(null);
 const [improvingAllExperience, setImprovingAllExperience] = useState(false);
 const [experienceAiError, setExperienceAiError] = useState<string | null>(null);
+  const [photoUploadState, setPhotoUploadState] = useState<'idle' | 'uploading' | 'error'>('idle');
+  const [photoUploadError, setPhotoUploadError] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   const didAutoPreloadRef = useRef(false);
   const lastExperienceSyncSigRef = useRef('');
 
   const basics = useWatch({ control, name: 'basics' });
+  const templateId = useWatch({ control, name: 'templateId' });
   const summary = useWatch({ control, name: 'summary' });
   const skills = useWatch({ control, name: 'skills' }) || [];
   const experience = useWatch({ control, name: 'experience' }) || [];
@@ -306,6 +311,8 @@ const [experienceAiError, setExperienceAiError] = useState<string | null>(null);
   const extras = useWatch({ control, name: 'extras' });
   const sectionVisibility =
     useWatch({ control, name: 'sectionVisibility' }) || demoResume.sectionVisibility;
+  const isModernBlueSidebar = templateId === 'modern-sidebar-blue';
+  const basicsPhotoUrl = basics?.photoUrl?.trim() || '';
 
   const linksField = useFieldArray({ control, name: 'basics.links' });
   const experienceField = useFieldArray({ control, name: 'experience' });
@@ -322,6 +329,7 @@ const [experienceAiError, setExperienceAiError] = useState<string | null>(null);
     projects: true,
     certifications: true,
     extras: true,
+    photo: true,
   });
   const toggle = (k: string) => setOpen((p) => ({ ...p, [k]: !p[k] }));
 
@@ -1048,6 +1056,51 @@ const improveAllExperience = async () => {
   }
 };
 
+  const onPickPhoto = () => {
+    photoInputRef.current?.click();
+  };
+
+  const onUploadPhoto = async (file?: File | null) => {
+    if (!file) return;
+    const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+    if (!allowedTypes.has(String(file.type || '').toLowerCase())) {
+      setPhotoUploadState('error');
+      setPhotoUploadError('Unsupported image type. Please use JPG, PNG, or WEBP.');
+      return;
+    }
+    if (!backendUrl || !token) {
+      setPhotoUploadState('error');
+      setPhotoUploadError('Sign in again to upload your image.');
+      return;
+    }
+
+    setPhotoUploadState('uploading');
+    setPhotoUploadError(null);
+
+    try {
+      const uploadedUrl = await uploadAsset(backendUrl, token, file, 'image');
+      setValue('basics.photoUrl', uploadedUrl, {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: false,
+      });
+      setPhotoUploadState('idle');
+    } catch (err: any) {
+      setPhotoUploadState('error');
+      setPhotoUploadError(err?.message || 'Image upload failed. Please try again.');
+    }
+  };
+
+  const removePhoto = () => {
+    setValue('basics.photoUrl', '', {
+      shouldDirty: true,
+      shouldTouch: true,
+      shouldValidate: false,
+    });
+    setPhotoUploadError(null);
+    setPhotoUploadState('idle');
+  };
+
   return (
     <div className="space-y-6">
       {topActions}
@@ -1195,6 +1248,67 @@ const improveAllExperience = async () => {
           </div>
         </div>
       </SectionCard>
+
+      {isModernBlueSidebar ? (
+        <SectionCard
+          title="Profile Photo"
+          subtitle="Shown only in Modern Blue Sidebar."
+          isOpen={open.photo ?? true}
+          onToggle={() => toggle('photo')}
+        >
+          <div className="space-y-3">
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                void onUploadPhoto(e.target.files?.[0] || null);
+                e.currentTarget.value = '';
+              }}
+            />
+
+            <div className="flex items-center gap-4 rounded-xl border border-gray-200 p-3 dark:border-white/10">
+              <img
+                src={basicsPhotoUrl || '/assets/profile_photo.png'}
+                alt="Profile preview"
+                className="h-24 w-20 rounded-md border border-gray-200 object-cover dark:border-white/15"
+              />
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500 dark:text-white/60">
+                  Upload a passport-style photo. PNG, JPG, JPEG, WEBP supported.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={onPickPhoto}
+                    disabled={photoUploadState === 'uploading'}
+                    className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                  >
+                    {photoUploadState === 'uploading'
+                      ? 'Uploading...'
+                      : basicsPhotoUrl
+                      ? 'Replace photo'
+                      : 'Upload photo'}
+                  </button>
+                  {basicsPhotoUrl ? (
+                    <button
+                      type="button"
+                      onClick={removePhoto}
+                      className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+                {photoUploadError ? (
+                  <p className="text-xs text-rose-600 dark:text-rose-400">{photoUploadError}</p>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </SectionCard>
+      ) : null}
 
       <SectionCard
         title="Summary"

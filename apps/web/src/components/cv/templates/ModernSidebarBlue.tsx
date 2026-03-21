@@ -15,18 +15,13 @@ const esc = (v: any) =>
 
 const safeKey = (s?: string | null) => (s ?? '').toString().trim().toLowerCase();
 
-function initials(name?: string) {
-  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return 'YN';
-  return `${parts[0][0] || ''}${parts.length > 1 ? parts[parts.length - 1][0] || '' : ''}`.toUpperCase();
-}
-
 export function renderModernSidebarBlueHtml(draft: CvDraft) {
   const order = draft.sectionOrder?.length ? draft.sectionOrder : defaultSectionOrder;
   const visibility = draft.sectionVisibility || {};
   const isVisible = (k: CvSectionKey) => visibility[k] !== false;
 
   const b = draft.basics || {};
+  const resolvedPhotoUrl = b.photoUrl?.trim() || '/assets/profile_photo.png';
   const { cssVarBlock } = resolveDraftStyles(draft);
 
   const contact = [
@@ -130,7 +125,7 @@ ${cssVarBlock}
 body{margin:0;background:#e2e8f0;font-family:Poppins,system-ui,Segoe UI,Arial;color:var(--ink)}
 .page{width:210mm;min-height:297mm;margin:18px auto;background:var(--paper);display:grid;grid-template-columns:72mm 1fr;box-shadow:0 12px 35px rgba(2,6,23,.12)}
 aside{background:linear-gradient(180deg,var(--sidebarBg),var(--primary));color:var(--sidebarText);padding:11.5mm}
-.avatar{width:82px;height:82px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,.2);display:grid;place-items:center;font-size:29px;font-weight:700;margin-bottom:12px}
+.avatar{width:86px;height:108px;border-radius:10px;overflow:hidden;background:rgba(255,255,255,.2);display:grid;place-items:center;font-size:29px;font-weight:700;margin-bottom:14px;border:2px solid rgba(255,255,255,.55);box-shadow:0 4px 16px rgba(15,23,42,.15)}
 .avatar-img{width:100%;height:100%;object-fit:cover;display:block}
 .side-name{font-size:24px;line-height:1.12;font-weight:700;margin:0 0 4px}.side-headline{margin:0 0 13px;color:var(--sideText);font-size:12px}
 .s-title{margin:0 0 8px;font-size:11.1px;letter-spacing:.12em;text-transform:uppercase;color:color-mix(in srgb, var(--sidebarText) 78%, white 22%);font-weight:700}
@@ -148,7 +143,7 @@ main{padding:11mm 12mm}.name{margin:0;font-size:33px;line-height:1.04;letter-spa
 <body>
 <main class="page">
   <aside>
-    <div class="avatar">${b.photoUrl ? `<img class="avatar-img" src="${esc(b.photoUrl)}" alt="Profile photo" />` : esc(initials(b.name))}</div>
+    <div class="avatar"><img class="avatar-img" src="${esc(resolvedPhotoUrl)}" alt="Profile photo" /></div>
     <p class="side-name">${esc(b.name || 'Your Name')}</p>
     <p class="side-headline">${esc(b.headline || 'Professional Headline')}</p>
     <section class="s-block"><p class="s-title">Contact</p>${contact || '<div>Add contact details</div>'}</section>
