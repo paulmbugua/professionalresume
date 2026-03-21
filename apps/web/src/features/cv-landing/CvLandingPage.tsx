@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 
 import { useShopContext } from '@cvpro/shared/context';
 import { useCvTemplates } from '@cvpro/shared/hooks';
+import useTheme from '@cvpro/shared/hooks/useTheme';
 
 import TemplateSpotlightModal from '../../components/cv/TemplateSpotlightModal';
 import TemplateThumbnail from '../../components/cv/templates/TemplateThumbnail';
@@ -75,6 +76,8 @@ const testimonials = [
 
 const CvLandingPage: React.FC<Props> = ({ variant }) => {
   const { backendUrl, token } = useShopContext() as { backendUrl?: string; token?: string | null };
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const processEnv = typeof process !== 'undefined' ? process.env : undefined;
   const envBackendUrl = processEnv?.NEXT_PUBLIC_BACKEND_URL?.trim() || '';
   const resolvedBackendUrl = envBackendUrl || backendUrl?.trim() || 'http://localhost:4001';
@@ -145,7 +148,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
       <LandingKeyframes />
 
       <section className="relative">
-        <DotsBg />
+        <DotsBg isDark={isDark} />
 
         <div className="mx-auto w-full max-w-screen-2xl px-4 pb-8 pt-8 sm:pt-10 lg:px-8">
           {error && (
@@ -156,7 +159,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
 
           <div className="grid items-start gap-8 lg:gap-10 lg:grid-cols-2">
             <div className="pt-2 sm:pt-4">
-              <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold leading-tight tracking-tight">
+              <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold leading-tight tracking-tight text-slate-900 dark:text-white">
                 {copy.title}
               </h1>
               <p className="mt-4 max-w-xl text-sm sm:text-base leading-6 text-slate-600 dark:text-slate-300">
@@ -308,7 +311,9 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
       <section className="w-full bg-site pb-12 pt-2 dark:bg-slate-950">
         <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
           <div className="text-center">
-            <h2 className="text-xl sm:text-2xl font-extrabold">CVPro, as told by our users</h2>
+            <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white">
+              CVPro, as told by our users
+            </h2>
           </div>
         </div>
 
@@ -357,7 +362,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
       <section className="bg-site pb-12 pt-8 dark:bg-slate-950">
         <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
           <div className="text-center">
-            <h2 className="text-xl sm:text-2xl font-extrabold">
+            <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white">
               Resume templates that get you noticed — and hired
             </h2>
           </div>

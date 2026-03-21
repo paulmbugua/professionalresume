@@ -34,13 +34,15 @@ export function LandingKeyframes() {
   );
 }
 
-export function DotsBg() {
+export function DotsBg({ isDark = false }: { isDark?: boolean }) {
   return (
     <div
       aria-hidden
       className="pointer-events-none absolute inset-0 opacity-[0.55] dark:opacity-[0.25]"
       style={{
-        backgroundImage: 'radial-gradient(rgba(17,24,39,0.10) 1px, transparent 1px)',
+        backgroundImage: isDark
+          ? 'radial-gradient(rgba(148,163,184,0.22) 1px, transparent 1px)'
+          : 'radial-gradient(rgba(17,24,39,0.10) 1px, transparent 1px)',
         backgroundSize: '18px 18px',
         backgroundPosition: '0 0',
         maskImage: 'linear-gradient(to bottom, black, transparent 72%)',
