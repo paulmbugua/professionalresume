@@ -189,17 +189,17 @@ body{margin:0;background:#f1f5f9;font-family:var(--fontFamily);font-size:var(--b
 .accent-bar{height:6px;background:var(--accent);margin:12px 0 0}
 .grid{display:grid;grid-template-columns:70mm 1fr;gap:10.5mm;margin-top:10mm}
 .card{border:1px solid var(--hair);border-radius:10px;padding:11px 12px;background:#f8fafc}
-.c-title,.sec-title{font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:800;color:var(--accent2);margin:0 0 8px}
-.c-line{font-size:11.9px;margin:5px 0;line-height:1.45}.c-label{display:inline-block;min-width:62px;color:var(--muted);font-weight:600}
+.c-title,.sec-title{font-size:14px;letter-spacing:.12em;text-transform:uppercase;font-weight:800;color:var(--accent2);margin:0 0 8px}
+.c-line{font-size:var(--bodySize);margin:5px 0;line-height:1.45}.c-label{display:inline-block;min-width:62px;color:var(--muted);font-weight:600}
 .sec{margin:0 0 12px}.sec-title{padding-bottom:6px;border-bottom:2px solid rgba(14,165,165,.35)}
-.p{margin:0;font-size:12px;line-height:1.56}.stack{display:flex;flex-direction:column;gap:9px}
+.p{margin:0;font-size:var(--bodySize);line-height:1.56}.stack{display:flex;flex-direction:column;gap:9px}
 .row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:baseline}
-.strong{font-weight:800;font-size:12.3px}.muted{color:var(--muted);font-size:11.2px;white-space:nowrap;text-align:right}
-.small{color:var(--muted);font-size:11.8px;line-height:1.5;margin-top:4px}
-.bullets{margin:7px 0 0;padding-left:19px;font-size:11.8px;line-height:1.48}.bullets li{margin:3px 0}
+.strong{font-weight:800;font-size:14px}.muted{color:var(--muted);font-size:var(--bodySize);white-space:nowrap;text-align:right}
+.small{color:var(--muted);font-size:var(--bodySize);line-height:1.5;margin-top:4px}
+.bullets{margin:7px 0 0;padding-left:19px;font-size:var(--bodySize);line-height:1.48}.bullets li{margin:3px 0}
 .pill-list{list-style:none;padding:0;margin:0;display:flex;flex-wrap:wrap;gap:6px}
-.pill{border:1px solid rgba(14,165,165,.35);background:#fff;border-radius:999px;padding:5px 10px;font-size:11.3px;font-weight:600}
-.list{margin:0;padding-left:19px;font-size:11.9px;line-height:1.48}
+.pill{border:1px solid rgba(14,165,165,.35);background:#fff;border-radius:999px;padding:5px 10px;font-size:var(--bodySize);font-weight:600}
+.list{margin:0;padding-left:19px;font-size:var(--bodySize);line-height:1.48}
 @page{size:A4;margin:12mm}
 @media print{body{background:#fff}.page{margin:0;padding:0;width:auto;min-height:auto;box-shadow:none}}
 </style>

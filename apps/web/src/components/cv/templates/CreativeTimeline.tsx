@@ -87,19 +87,19 @@ export function renderCreativeTimelineHtml(draft: CvDraft): string {
   header{padding:15px 17px;border-radius:16px;background:linear-gradient(90deg,#4f46e5,#7c3aed);color:#fff}
   h1{margin:0;font-size:32px;line-height:1.04}
   .headline{margin-top:5px;font-size:14px;color:#ddd6fe}
-  .contact{margin-top:9px;display:flex;flex-wrap:wrap;gap:7px 10px;font-size:11.4px;color:#e9d5ff}
+  .contact{margin-top:9px;display:flex;flex-wrap:wrap;gap:7px 10px;font-size:14px;color:#e9d5ff}
   main{margin-top:12px;display:grid;gap:11px}
-  h2{margin:0 0 7px;font-size:12.1px;letter-spacing:.08em;text-transform:uppercase}
+  h2{margin:0 0 7px;font-size:14px;letter-spacing:.08em;text-transform:uppercase}
   .timeline{position:relative;padding-left:19px;display:grid;gap:9px}
   .timeline:before{content:'';position:absolute;left:4px;top:2px;bottom:4px;width:2px;background:#c7d2fe}
   .timeline article{position:relative}
   .timeline article:before{content:'';position:absolute;left:-18px;top:4px;width:10px;height:10px;border-radius:999px;background:#4f46e5;border:2px solid #fff}
   h3{margin:0;font-size:13px}
-  .meta{font-size:11.2px;color:#64748b;margin-top:2px}
-  p{margin:3px 0 0;font-size:11.9px;color:#475569;line-height:1.5}
+  .meta{font-size:14px;color:#64748b;margin-top:2px}
+  p{margin:3px 0 0;font-size:14px;color:#475569;line-height:1.5}
   .chips{display:flex;flex-wrap:wrap;gap:6px}
-  .chips span{padding:4px 8px;border:1px solid #dbeafe;border-radius:999px;font-size:11.4px;background:#f8fafc}
-  ul{margin:5px 0 0;padding-left:18px;font-size:11.8px;line-height:1.48;color:#475569}
+  .chips span{padding:4px 8px;border:1px solid #dbeafe;border-radius:999px;font-size:14px;background:#f8fafc}
+  ul{margin:5px 0 0;padding-left:18px;font-size:14px;line-height:1.48;color:#475569}
   .stack{display:grid;gap:8px}
   @page{size:A4;margin:10mm}
 </style>
@@ -142,7 +142,7 @@ const CreativeTimeline: React.FC<Props> = ({ draft }) => {
         <h3 className="cv-section-title">Skills</h3>
         <div className="flex flex-wrap gap-2">
           {draft.skills.map((skill) => (
-            <span key={skill} className="rounded-full border border-gray-200 px-3 py-1 text-[11px]">
+            <span key={skill} className="rounded-full border border-gray-200 px-3 py-1 text-[14px]">
               {skill}
             </span>
           ))}
@@ -159,10 +159,10 @@ const CreativeTimeline: React.FC<Props> = ({ draft }) => {
               <div className="text-sm font-semibold">
                 {exp.role || 'Role'} · {exp.company || 'Company'}
               </div>
-              <div className="text-[11px] text-gray-500">
+              <div className="text-[14px] text-gray-500">
                 {exp.start} - {exp.end} {exp.location ? `• ${exp.location}` : ''}
               </div>
-              <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] text-gray-600">
+              <ul className="mt-1 list-disc space-y-1 pl-4 text-[14px] text-gray-600">
                 {exp.bullets?.map((bullet, bulletIdx) => (
                   <li key={`${exp.company}-${bulletIdx}`}>{bullet}</li>
                 ))}
@@ -179,7 +179,7 @@ const CreativeTimeline: React.FC<Props> = ({ draft }) => {
           {draft.education.map((edu, idx) => (
             <div key={`${edu.school}-${idx}`}>
               <div className="text-sm font-semibold">{edu.program || 'Program'}</div>
-              <div className="text-[11px] text-gray-500">
+              <div className="text-[14px] text-gray-500">
                 {edu.school || 'School'} · {edu.start} - {edu.end}
               </div>
             </div>
@@ -194,7 +194,7 @@ const CreativeTimeline: React.FC<Props> = ({ draft }) => {
           {draft.projects.map((project, idx) => (
             <div key={`${project.name}-${idx}`}>
               <div className="text-sm font-semibold">{project.name || 'Project'}</div>
-              <p className="text-[11px] text-gray-600">{project.description}</p>
+              <p className="text-[14px] text-gray-600">{project.description}</p>
             </div>
           ))}
         </div>
@@ -203,7 +203,7 @@ const CreativeTimeline: React.FC<Props> = ({ draft }) => {
     certifications: draft.certifications?.length ? (
       <section>
         <h3 className="cv-section-title">Certifications</h3>
-        <div className="space-y-1 text-[11px] text-gray-600">
+        <div className="space-y-1 text-[14px] text-gray-600">
           {draft.certifications.map((cert, idx) => (
             <div key={`${cert.name}-${idx}`}>
               {cert.name} {cert.issuer ? `· ${cert.issuer}` : ''}{' '}
@@ -216,7 +216,7 @@ const CreativeTimeline: React.FC<Props> = ({ draft }) => {
     extras: draft.extras ? (
       <section>
         <h3 className="cv-section-title">Extras</h3>
-        <div className="space-y-1 text-[11px] text-gray-600">
+        <div className="space-y-1 text-[14px] text-gray-600">
           {draft.extras.languages?.length ? (
             <p>Languages: {draft.extras.languages.join(', ')}</p>
           ) : null}
@@ -229,11 +229,11 @@ const CreativeTimeline: React.FC<Props> = ({ draft }) => {
   };
 
   return (
-    <div className="p-8 text-[12px]">
+    <div className="p-8 text-[14px]">
       <header className="rounded-2xl bg-gradient-to-r from-primary to-secondary p-6 text-white">
         <h1 className="text-2xl font-semibold">{draft.basics.name || 'Your Name'}</h1>
         <p className="text-sm text-white/80">{draft.basics.headline || 'Professional Headline'}</p>
-        <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-white/70">
+        <div className="mt-2 flex flex-wrap gap-3 text-[14px] text-white/70">
           <span>{draft.basics.email}</span>
           <span>{draft.basics.phone}</span>
           <span>{draft.basics.location}</span>

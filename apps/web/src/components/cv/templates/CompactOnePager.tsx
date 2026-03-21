@@ -97,14 +97,14 @@ export function renderCompactOnePagerHtml(draft: CvDraft): string {
   header{text-align:center;border-bottom:1px solid #e2e8f0;padding-bottom:9px}
   h1{margin:0;font-size:26px;line-height:1.08}
   .headline{margin-top:5px;color:#475569;font-size:13.8px}
-  .meta{margin-top:8px;display:flex;flex-wrap:wrap;justify-content:center;gap:6px 11px;font-size:11.6px;color:#64748b}
+  .meta{margin-top:8px;display:flex;flex-wrap:wrap;justify-content:center;gap:6px 11px;font-size:14px;color:#64748b}
   main{display:grid;gap:8px;margin-top:9px}
-  h2{margin:0 0 4px;font-size:12.1px;letter-spacing:.09em;text-transform:uppercase}
-  p{margin:0;font-size:11.8px;line-height:1.48;color:#475569}
+  h2{margin:0 0 4px;font-size:14px;letter-spacing:.09em;text-transform:uppercase}
+  p{margin:0;font-size:14px;line-height:1.48;color:#475569}
   .stack{display:grid;gap:6px}
-  .row{display:flex;justify-content:space-between;gap:8px;align-items:baseline;font-size:11.6px}
-  strong{font-size:11.9px;color:#0f172a}
-  ul{margin:4px 0 0;padding-left:17px;font-size:11.7px;line-height:1.45;color:#475569}
+  .row{display:flex;justify-content:space-between;gap:8px;align-items:baseline;font-size:14px}
+  strong{font-size:14px;color:#0f172a}
+  ul{margin:4px 0 0;padding-left:17px;font-size:14px;line-height:1.45;color:#475569}
   li{margin:2px 0}
   @page{size:A4;margin:10mm}
 </style>
@@ -130,13 +130,13 @@ const CompactOnePager: React.FC<Props> = ({ draft }) => {
     summary: draft.summary ? (
       <section>
         <h3 className="cv-section-title">Summary</h3>
-        <p className="cv-body text-[11px]">{draft.summary}</p>
+        <p className="cv-body text-[14px]">{draft.summary}</p>
       </section>
     ) : null,
     skills: draft.skills?.length ? (
       <section>
         <h3 className="cv-section-title">Skills</h3>
-        <p className="text-[11px] text-gray-600">{draft.skills.join(' • ')}</p>
+        <p className="text-[14px] text-gray-600">{draft.skills.join(' • ')}</p>
       </section>
     ) : null,
     experience: draft.experience?.length ? (
@@ -145,13 +145,13 @@ const CompactOnePager: React.FC<Props> = ({ draft }) => {
         <div className="space-y-2">
           {draft.experience.map((exp, idx) => (
             <div key={`${exp.company}-${idx}`}>
-              <div className="text-[11px] font-semibold">
+              <div className="text-[14px] font-semibold">
                 {exp.role || 'Role'} · {exp.company || 'Company'}
               </div>
-              <div className="text-[11px] text-gray-500">
+              <div className="text-[14px] text-gray-500">
                 {exp.start} - {exp.end}
               </div>
-              <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] text-gray-600">
+              <ul className="mt-1 list-disc space-y-1 pl-4 text-[14px] text-gray-600">
                 {exp.bullets?.map((bullet, bulletIdx) => (
                   <li key={`${exp.company}-${bulletIdx}`}>{bullet}</li>
                 ))}
@@ -164,7 +164,7 @@ const CompactOnePager: React.FC<Props> = ({ draft }) => {
     education: draft.education?.length ? (
       <section>
         <h3 className="cv-section-title">Education</h3>
-        <div className="space-y-2 text-[11px] text-gray-600">
+        <div className="space-y-2 text-[14px] text-gray-600">
           {draft.education.map((edu, idx) => (
             <div key={`${edu.school}-${idx}`}>
               <span className="font-semibold">{edu.program || 'Program'}</span>
@@ -181,7 +181,7 @@ const CompactOnePager: React.FC<Props> = ({ draft }) => {
     projects: draft.projects?.length ? (
       <section>
         <h3 className="cv-section-title">Projects</h3>
-        <div className="space-y-2 text-[11px] text-gray-600">
+        <div className="space-y-2 text-[14px] text-gray-600">
           {draft.projects.map((project, idx) => (
             <div key={`${project.name}-${idx}`}>
               <span className="font-semibold">{project.name || 'Project'}</span>
@@ -194,7 +194,7 @@ const CompactOnePager: React.FC<Props> = ({ draft }) => {
     certifications: draft.certifications?.length ? (
       <section>
         <h3 className="cv-section-title">Certifications</h3>
-        <div className="space-y-1 text-[11px] text-gray-600">
+        <div className="space-y-1 text-[14px] text-gray-600">
           {draft.certifications.map((cert, idx) => (
             <div key={`${cert.name}-${idx}`}>
               {cert.name} {cert.year ? `(${cert.year})` : ''}
@@ -206,7 +206,7 @@ const CompactOnePager: React.FC<Props> = ({ draft }) => {
     extras: draft.extras ? (
       <section>
         <h3 className="cv-section-title">Extras</h3>
-        <div className="space-y-1 text-[11px] text-gray-600">
+        <div className="space-y-1 text-[14px] text-gray-600">
           {draft.extras.languages?.length ? (
             <p>Languages: {draft.extras.languages.join(', ')}</p>
           ) : null}
@@ -219,13 +219,13 @@ const CompactOnePager: React.FC<Props> = ({ draft }) => {
   };
 
   return (
-    <div className="grid gap-4 p-6 text-[11px]">
+    <div className="grid gap-4 p-6 text-[14px]">
       <header className="text-center">
         <h1 className="text-2xl font-semibold">{draft.basics.name || 'Your Name'}</h1>
-        <p className="text-[11px] text-gray-600">
+        <p className="text-[14px] text-gray-600">
           {draft.basics.headline || 'Professional Headline'}
         </p>
-        <div className="mt-1 flex flex-wrap justify-center gap-3 text-[11px] text-gray-500">
+        <div className="mt-1 flex flex-wrap justify-center gap-3 text-[14px] text-gray-500">
           <span>{draft.basics.email}</span>
           <span>{draft.basics.phone}</span>
           <span>{draft.basics.location}</span>

@@ -245,22 +245,22 @@ export function renderBoldHeaderHtml(draft: CvDraft) {
   .hero{ border-radius:18px; padding:19px 20px 15px; background:var(--headerBg); color:var(--headerText); }
   .hero h1{ margin:0; font-size:33px; line-height:1.05; letter-spacing:-0.02em; }
   .hero .sub{ margin:7px 0 0; font-size:14.2px; color:#d5dced; }
-  .meta{ margin-top:10px; display:flex; flex-wrap:wrap; gap:8px 13px; font-size:11.8px; color:#b0bdd3; }
+  .meta{ margin-top:10px; display:flex; flex-wrap:wrap; gap:8px 13px; font-size:var(--bodySize); color:#b0bdd3; }
   .meta span{ white-space:nowrap; }
   .grid{ margin-top:15px; display:grid; gap:11px; }
   .card{ border:1px solid var(--border); border-radius:14px; padding:12px; background:#fff; }
   .card.muted{ background:var(--soft); }
-  .title{ margin:0 0 8px; font-size:12.2px; letter-spacing:.07em; text-transform:uppercase; }
-  .body{ margin:0; font-size:12.2px; line-height:1.52; color:var(--muted); }
+  .title{ margin:0 0 8px; font-size:14px; letter-spacing:.07em; text-transform:uppercase; }
+  .body{ margin:0; font-size:var(--bodySize); line-height:1.52; color:var(--muted); }
   .chips{ display:flex; flex-wrap:wrap; gap:6px; }
-  .chip{ background:#fff; border:1px solid var(--border); border-radius:999px; padding:5px 9px; font-size:11.4px; font-weight:600; color:#334155; }
+  .chip{ background:#fff; border:1px solid var(--border); border-radius:999px; padding:5px 9px; font-size:var(--bodySize); font-weight:600; color:#334155; }
   .stack{ display:flex; flex-direction:column; gap:9px; }
   .item{ }
   .row{ display:flex; justify-content:space-between; gap:10px; align-items:baseline; }
-  .strong{ font-weight:700; font-size:12.2px; }
-  .dates{ font-size:11.3px; color:var(--muted); white-space:nowrap; text-align:right; }
-  .mutedText{ font-size:11.8px; color:var(--muted); line-height:1.46; }
-  .list{ margin:7px 0 0; padding-left:18px; font-size:11.8px; color:var(--muted); line-height:1.48; }
+  .strong{ font-weight:700; font-size:14px; }
+  .dates{ font-size:14px; color:var(--muted); white-space:nowrap; text-align:right; }
+  .mutedText{ font-size:var(--bodySize); color:var(--muted); line-height:1.46; }
+  .list{ margin:7px 0 0; padding-left:18px; font-size:var(--bodySize); color:var(--muted); line-height:1.48; }
   .list li{ margin:3px 0; }
 </style>
 </head>
@@ -307,7 +307,7 @@ const BoldHeader: React.FC<Props> = ({ draft }) => {
           {draft.skills.map((skill) => (
             <span
               key={skill}
-              className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-gray-700"
+              className="rounded-full bg-white px-3 py-1 text-[14px] font-semibold text-gray-700"
             >
               {skill}
             </span>
@@ -326,14 +326,14 @@ const BoldHeader: React.FC<Props> = ({ draft }) => {
                 <span>
                   {exp.role || 'Role'} · {exp.company || 'Company'}
                 </span>
-                <span className="text-[11px] text-gray-500">
+                <span className="text-[14px] text-gray-500">
                   {exp.start} - {exp.end}
                 </span>
               </div>
               {exp.location ? (
-                <div className="text-[11px] text-gray-500">{exp.location}</div>
+                <div className="text-[14px] text-gray-500">{exp.location}</div>
               ) : null}
-              <ul className="list-disc space-y-1 pl-4 text-[11px] text-gray-600">
+              <ul className="list-disc space-y-1 pl-4 text-[14px] text-gray-600">
                 {exp.bullets?.filter(Boolean).map((bullet, bulletIdx) => (
                   <li key={`${exp.company}-${bulletIdx}`}>{bullet}</li>
                 ))}
@@ -354,11 +354,11 @@ const BoldHeader: React.FC<Props> = ({ draft }) => {
                 <span>
                   {edu.program || 'Program'} · {edu.school || 'School'}
                 </span>
-                <span className="text-[11px] text-gray-500">
+                <span className="text-[14px] text-gray-500">
                   {edu.start} - {edu.end}
                 </span>
               </div>
-              {edu.details && <p className="text-[11px] text-gray-600">{edu.details}</p>}
+              {edu.details && <p className="text-[14px] text-gray-600">{edu.details}</p>}
             </div>
           ))}
         </div>
@@ -373,9 +373,9 @@ const BoldHeader: React.FC<Props> = ({ draft }) => {
             <div key={`${project.name}-${idx}`}>
               <div className="text-sm font-semibold">{project.name || 'Project'}</div>
               {project.description ? (
-                <p className="text-[11px] text-gray-600">{project.description}</p>
+                <p className="text-[14px] text-gray-600">{project.description}</p>
               ) : null}
-              <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] text-gray-600">
+              <ul className="mt-1 list-disc space-y-1 pl-4 text-[14px] text-gray-600">
                 {project.bullets?.filter(Boolean).map((bullet, bulletIdx) => (
                   <li key={`${project.name}-${bulletIdx}`}>{bullet}</li>
                 ))}
@@ -389,7 +389,7 @@ const BoldHeader: React.FC<Props> = ({ draft }) => {
     certifications: draft.certifications?.length ? (
       <section className="rounded-xl border border-gray-100 bg-gray-50 p-4">
         <h3 className="cv-section-title">Certifications</h3>
-        <div className="space-y-1 text-[11px] text-gray-600">
+        <div className="space-y-1 text-[14px] text-gray-600">
           {draft.certifications.map((cert, idx) => (
             <div key={`${cert.name}-${idx}`} className="flex items-center justify-between gap-3">
               <span className="font-semibold">{cert.name}</span>
@@ -405,7 +405,7 @@ const BoldHeader: React.FC<Props> = ({ draft }) => {
     extras: draft.extras ? (
       <section className="rounded-xl border border-gray-100 bg-gray-50 p-4">
         <h3 className="cv-section-title">Extras</h3>
-        <div className="space-y-1 text-[11px] text-gray-600">
+        <div className="space-y-1 text-[14px] text-gray-600">
           {draft.extras.languages?.length ? (
             <p>Languages: {draft.extras.languages.join(', ')}</p>
           ) : null}
@@ -429,7 +429,7 @@ const BoldHeader: React.FC<Props> = ({ draft }) => {
         <p className="text-sm text-slate-200">
           {draft.basics?.headline || 'Professional Headline'}
         </p>
-        <div className="mt-3 flex flex-wrap gap-4 text-[11px] text-slate-300">
+        <div className="mt-3 flex flex-wrap gap-4 text-[14px] text-slate-300">
           {draft.basics?.email ? <span>{draft.basics.email}</span> : null}
           {draft.basics?.phone ? <span>{draft.basics.phone}</span> : null}
           {draft.basics?.location ? <span>{draft.basics.location}</span> : null}

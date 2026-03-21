@@ -87,15 +87,15 @@ export function renderElegantSerifHtml(draft: CvDraft): string {
   header{text-align:center;border-bottom:1px solid #d1d5db;padding-bottom:11px}
   h1{margin:0;font-size:36px;font-weight:600;line-height:1.02}
   .headline{margin-top:5px;font-size:14.8px;color:#4b5563}
-  .meta{margin-top:9px;display:flex;flex-wrap:wrap;justify-content:center;gap:8px 12px;font-size:11.7px;color:#6b7280}
+  .meta{margin-top:9px;display:flex;flex-wrap:wrap;justify-content:center;gap:8px 12px;font-size:14px;color:#6b7280}
   main{margin-top:12px;display:grid;gap:11px}
   h2{margin:0 0 7px;font-size:13px;letter-spacing:.11em;text-transform:uppercase;border-bottom:1px solid #e5e7eb;padding-bottom:4px}
-  p{margin:2px 0 0;font-size:12px;line-height:1.54;color:#374151}
+  p{margin:2px 0 0;font-size:14px;line-height:1.54;color:#374151}
   .stack{display:grid;gap:9px}
   .row{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
-  strong{font-size:12.7px;font-weight:600}
-  span{font-size:11.4px;color:#6b7280}
-  ul{margin:6px 0 0;padding-left:19px;color:#374151;font-size:11.9px;line-height:1.5}
+  strong{font-size:14px;font-weight:600}
+  span{font-size:14px;color:#6b7280}
+  ul{margin:6px 0 0;padding-left:19px;color:#374151;font-size:14px;line-height:1.5}
   li{margin:3px 0}
   @page{size:A4;margin:12mm}
 </style>
@@ -149,11 +149,11 @@ const ElegantSerif: React.FC<Props> = ({ draft }) => {
                 <span>
                   {exp.role || 'Role'} · {exp.company || 'Company'}
                 </span>
-                <span className="text-[11px] text-gray-500">
+                <span className="text-[14px] text-gray-500">
                   {exp.start} - {exp.end}
                 </span>
               </div>
-              <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] text-gray-700">
+              <ul className="mt-1 list-disc space-y-1 pl-4 text-[14px] text-gray-700">
                 {exp.bullets?.map((bullet, bulletIdx) => (
                   <li key={`${exp.company}-${bulletIdx}`}>{bullet}</li>
                 ))}
@@ -173,11 +173,11 @@ const ElegantSerif: React.FC<Props> = ({ draft }) => {
                 <span>
                   {edu.program || 'Program'} · {edu.school || 'School'}
                 </span>
-                <span className="text-[11px] text-gray-500">
+                <span className="text-[14px] text-gray-500">
                   {edu.start} - {edu.end}
                 </span>
               </div>
-              {edu.details && <p className="text-[11px] text-gray-600">{edu.details}</p>}
+              {edu.details && <p className="text-[14px] text-gray-600">{edu.details}</p>}
             </div>
           ))}
         </div>
@@ -190,7 +190,7 @@ const ElegantSerif: React.FC<Props> = ({ draft }) => {
           {draft.projects.map((project, idx) => (
             <div key={`${project.name}-${idx}`}>
               <div className="text-sm font-semibold">{project.name || 'Project'}</div>
-              <p className="text-[11px] text-gray-600">{project.description}</p>
+              <p className="text-[14px] text-gray-600">{project.description}</p>
             </div>
           ))}
         </div>
@@ -199,7 +199,7 @@ const ElegantSerif: React.FC<Props> = ({ draft }) => {
     certifications: draft.certifications?.length ? (
       <section>
         <h3 className="cv-section-title font-serif">Certifications</h3>
-        <div className="space-y-1 text-[11px] text-gray-600">
+        <div className="space-y-1 text-[14px] text-gray-600">
           {draft.certifications.map((cert, idx) => (
             <div key={`${cert.name}-${idx}`}>
               {cert.name} {cert.issuer ? `· ${cert.issuer}` : ''}{' '}
@@ -212,7 +212,7 @@ const ElegantSerif: React.FC<Props> = ({ draft }) => {
     extras: draft.extras ? (
       <section>
         <h3 className="cv-section-title font-serif">Extras</h3>
-        <div className="space-y-1 text-[11px] text-gray-600">
+        <div className="space-y-1 text-[14px] text-gray-600">
           {draft.extras.languages?.length ? (
             <p>Languages: {draft.extras.languages.join(', ')}</p>
           ) : null}
@@ -225,11 +225,11 @@ const ElegantSerif: React.FC<Props> = ({ draft }) => {
   };
 
   return (
-    <div className="p-10 font-serif text-[12px]">
+    <div className="p-10 font-serif text-[14px]">
       <header className="border-b border-gray-300 pb-4 text-center">
         <h1 className="text-3xl font-semibold">{draft.basics.name || 'Your Name'}</h1>
         <p className="text-sm text-gray-600">{draft.basics.headline || 'Professional Headline'}</p>
-        <div className="mt-2 flex flex-wrap justify-center gap-3 text-[11px] text-gray-500">
+        <div className="mt-2 flex flex-wrap justify-center gap-3 text-[14px] text-gray-500">
           <span>{draft.basics.email}</span>
           <span>{draft.basics.phone}</span>
           <span>{draft.basics.location}</span>
