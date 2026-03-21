@@ -1,14 +1,30 @@
 export type UploadAssetKind = 'image' | 'video' | 'doc';
 
+const allowedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
+const inferImageExt = (mimeType: string, filename = '') => {
+  const normalizedType = String(mimeType || '').toLowerCase();
+  if (normalizedType === 'image/png') return 'png';
+  if (normalizedType === 'image/webp') return 'webp';
+  if (normalizedType === 'image/jpeg') return 'jpg';
+
+  const lowerName = String(filename || '').toLowerCase();
+  if (lowerName.endsWith('.png')) return 'png';
+  if (lowerName.endsWith('.webp')) return 'webp';
+  return 'jpg';
+};
+
 export async function uploadAsset(
   backendUrl: string,
   token: string,
   uriOrFile: string | File,
   type: UploadAssetKind
 ): Promise<string> {
-  const endpoint = `${backendUrl}/api/profile/upload/${type}`;
+  const base = backendUrl.replace(/\/$/, '');
 
-  const formData = new FormData();
+  if (type !== 'image') {
+    throw new Error('Only image uploads are supported for CV profile photos.');
+  }
 
   const blobOrFile =
     uriOrFile instanceof File
@@ -17,42 +33,75 @@ export async function uploadAsset(
           if (!r.ok) throw new Error(`Failed to read asset (${r.status})`);
           return r.blob();
         });
-
-  const filename =
-    uriOrFile instanceof File
-      ? uriOrFile.name
-      : type === 'video'
-      ? 'upload.mp4'
-      : type === 'doc'
-      ? 'upload.pdf'
-      : 'upload.jpg';
-
-  formData.append('file', blobOrFile as Blob, filename);
+  const mimeType = String((blobOrFile as Blob).type || '').toLowerCase();
+  const filename = uriOrFile instanceof File ? uriOrFile.name : 'upload.jpg';
+  if (!allowedImageTypes.has(mimeType)) {
+    throw new Error('Unsupported image type. Use JPG, PNG, or WEBP.');
+  }
+  const ext = inferImageExt(mimeType, filename);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120_000);
 
-  let res: Response;
+  let presignRes: Response;
   try {
-    res = await fetch(endpoint, {
+    presignRes = await fetch(`${base}/api/uploads/presign`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        purpose: 'cv-photo',
+        contentType: mimeType,
+        ext,
+        sizeBytes: (blobOrFile as Blob).size || undefined,
+      }),
       signal: controller.signal,
     });
   } finally {
     clearTimeout(timeout);
   }
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`Upload failed (${res.status}) ${text}`);
+  if (!presignRes.ok) {
+    const text = await presignRes.text().catch(() => '');
+    throw new Error(`Upload failed (${presignRes.status}) ${text}`);
   }
 
-  const json = await res.json().catch(() => ({}));
-  if (!json?.url || typeof json.url !== 'string') {
-    throw new Error('Upload response missing url.');
+  const presignJson = await presignRes.json().catch(() => ({}));
+  const uploadUrl: string | undefined = presignJson?.uploadUrl;
+  const publicUrl: string | undefined = presignJson?.publicUrl;
+  const key: string | undefined = presignJson?.key;
+  if (!uploadUrl || !publicUrl || !key) {
+    throw new Error('Upload response missing signed upload data.');
   }
 
-  return json.url;
+  const directUploadRes = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': mimeType },
+    body: blobOrFile as Blob,
+  });
+  if (!directUploadRes.ok) {
+    throw new Error(`Upload transfer failed (${directUploadRes.status}).`);
+  }
+
+  const confirmRes = await fetch(`${base}/api/uploads/confirm`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ key, publicUrl }),
+  });
+  if (!confirmRes.ok) {
+    const text = await confirmRes.text().catch(() => '');
+    throw new Error(`Upload confirmation failed (${confirmRes.status}) ${text}`);
+  }
+
+  const confirmJson = await confirmRes.json().catch(() => ({}));
+  return (
+    confirmJson?.publicUrl ||
+    confirmJson?.url ||
+    publicUrl
+  );
 }
