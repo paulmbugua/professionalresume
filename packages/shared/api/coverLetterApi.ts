@@ -27,7 +27,7 @@ const toMessage = (err: any) =>
   'Request failed';
 
 export const listCoverLetterTemplates = async (
-  backendUrl: string,
+  backendUrl: string
 ): Promise<CoverLetterTemplateResponse> => {
   try {
     const api = client(backendUrl);
@@ -51,7 +51,7 @@ export const listCoverLetterTemplates = async (
 
 export const listMyCoverLetterDrafts = async (
   backendUrl: string,
-  token: string,
+  token: string
 ): Promise<CoverLetterDraft[]> => {
   try {
     const api = client(backendUrl, token);
@@ -65,7 +65,7 @@ export const listMyCoverLetterDrafts = async (
 export const getCoverLetterDraft = async (
   backendUrl: string,
   token: string,
-  id: string,
+  id: string
 ): Promise<CoverLetterDraft> => {
   try {
     const api = client(backendUrl, token);
@@ -93,7 +93,7 @@ export const createCoverLetterDraft = async (
       letterBody?: string;
       closingLine?: string;
     };
-  },
+  }
 ): Promise<CoverLetterDraft> => {
   try {
     const api = client(backendUrl, token);
@@ -119,11 +119,16 @@ export const createCoverLetterDraft = async (
     if (typeof payload.title === 'string') safePayload.title = payload.title;
     if (payload.data && typeof payload.data === 'object') {
       safePayload.data = {
-        applicantName: typeof payload.data.applicantName === 'string' ? payload.data.applicantName : '',
-        applicantEmail: typeof payload.data.applicantEmail === 'string' ? payload.data.applicantEmail : '',
-        applicantPhone: typeof payload.data.applicantPhone === 'string' ? payload.data.applicantPhone : '',
-        applicantLocation: typeof payload.data.applicantLocation === 'string' ? payload.data.applicantLocation : '',
-        recipientName: typeof payload.data.recipientName === 'string' ? payload.data.recipientName : '',
+        applicantName:
+          typeof payload.data.applicantName === 'string' ? payload.data.applicantName : '',
+        applicantEmail:
+          typeof payload.data.applicantEmail === 'string' ? payload.data.applicantEmail : '',
+        applicantPhone:
+          typeof payload.data.applicantPhone === 'string' ? payload.data.applicantPhone : '',
+        applicantLocation:
+          typeof payload.data.applicantLocation === 'string' ? payload.data.applicantLocation : '',
+        recipientName:
+          typeof payload.data.recipientName === 'string' ? payload.data.recipientName : '',
         companyName: typeof payload.data.companyName === 'string' ? payload.data.companyName : '',
         roleTitle: typeof payload.data.roleTitle === 'string' ? payload.data.roleTitle : '',
         letterBody: typeof payload.data.letterBody === 'string' ? payload.data.letterBody : '',
@@ -155,7 +160,7 @@ export const updateCoverLetterDraft = async (
       letterBody?: string;
       closingLine?: string;
     };
-  },
+  }
 ): Promise<CoverLetterDraft> => {
   try {
     const api = client(backendUrl, token);
@@ -203,19 +208,29 @@ export const updateCoverLetterDraft = async (
           };
 
     const sanitizedData = {
-      applicantName: typeof dataCandidate.applicantName === 'string' ? dataCandidate.applicantName : undefined,
-      applicantEmail: typeof dataCandidate.applicantEmail === 'string' ? dataCandidate.applicantEmail : undefined,
-      applicantPhone: typeof dataCandidate.applicantPhone === 'string' ? dataCandidate.applicantPhone : undefined,
+      applicantName:
+        typeof dataCandidate.applicantName === 'string' ? dataCandidate.applicantName : undefined,
+      applicantEmail:
+        typeof dataCandidate.applicantEmail === 'string' ? dataCandidate.applicantEmail : undefined,
+      applicantPhone:
+        typeof dataCandidate.applicantPhone === 'string' ? dataCandidate.applicantPhone : undefined,
       applicantLocation:
-        typeof dataCandidate.applicantLocation === 'string' ? dataCandidate.applicantLocation : undefined,
-      recipientName: typeof dataCandidate.recipientName === 'string' ? dataCandidate.recipientName : undefined,
-      companyName: typeof dataCandidate.companyName === 'string' ? dataCandidate.companyName : undefined,
+        typeof dataCandidate.applicantLocation === 'string'
+          ? dataCandidate.applicantLocation
+          : undefined,
+      recipientName:
+        typeof dataCandidate.recipientName === 'string' ? dataCandidate.recipientName : undefined,
+      companyName:
+        typeof dataCandidate.companyName === 'string' ? dataCandidate.companyName : undefined,
       roleTitle: typeof dataCandidate.roleTitle === 'string' ? dataCandidate.roleTitle : undefined,
-      letterBody: typeof dataCandidate.letterBody === 'string' ? dataCandidate.letterBody : undefined,
-      closingLine: typeof dataCandidate.closingLine === 'string' ? dataCandidate.closingLine : undefined,
+      letterBody:
+        typeof dataCandidate.letterBody === 'string' ? dataCandidate.letterBody : undefined,
+      closingLine:
+        typeof dataCandidate.closingLine === 'string' ? dataCandidate.closingLine : undefined,
     };
 
-    if (Object.values(sanitizedData).some((value) => value !== undefined)) safe.data = sanitizedData;
+    if (Object.values(sanitizedData).some((value) => value !== undefined))
+      safe.data = sanitizedData;
 
     if (Object.keys(safe).length === 0) {
       const res = await api.get<CoverLetterDraft>(`/api/cover-letters/drafts/${id}`);
@@ -232,7 +247,7 @@ export const updateCoverLetterDraft = async (
 export const deleteCoverLetterDraft = async (
   backendUrl: string,
   token: string,
-  id: string,
+  id: string
 ): Promise<void> => {
   try {
     const api = client(backendUrl, token);
@@ -245,7 +260,7 @@ export const deleteCoverLetterDraft = async (
 export const getCoverLetterPrintHtml = async (
   backendUrl: string,
   token: string,
-  payload: { coverLetterJson: Partial<CoverLetterDraft> | CoverLetterDraft },
+  payload: { coverLetterJson: Partial<CoverLetterDraft> | CoverLetterDraft }
 ): Promise<{ html: string }> => {
   try {
     const api = client(backendUrl, token);
@@ -259,13 +274,27 @@ export const getCoverLetterPrintHtml = async (
 export const exportCoverLetterPdf = async (
   backendUrl: string,
   token: string,
-  payload: { draftId?: string; coverLetterJson?: Partial<CoverLetterDraft> },
+  payload: { draftId?: string; coverLetterJson?: Partial<CoverLetterDraft> }
 ): Promise<CoverLetterExportResponse> => {
+  const api = client(backendUrl, token);
+
   try {
-    const api = client(backendUrl, token);
     const res = await api.post<CoverLetterExportResponse>('/api/cover-letters/export', payload);
     return res.data;
   } catch (err: any) {
+    const status = err?.response?.status;
+    if (status === 404) {
+      try {
+        const res = await api.post<CoverLetterExportResponse>(
+          '/api/cv/cover-letter/export',
+          payload
+        );
+        return res.data;
+      } catch (fallbackErr: any) {
+        throw new Error(toMessage(fallbackErr));
+      }
+    }
+
     throw new Error(toMessage(err));
   }
 };
@@ -273,7 +302,7 @@ export const exportCoverLetterPdf = async (
 export const signCoverLetterFile = async (
   backendUrl: string,
   token: string,
-  fileKey: string,
+  fileKey: string
 ): Promise<{ key: string; url: string; signedUrl: string }> => {
   try {
     const api = client(backendUrl, token);
@@ -281,7 +310,7 @@ export const signCoverLetterFile = async (
       '/api/cover-letters/files/sign',
       {
         params: { key: fileKey },
-      },
+      }
     );
     return res.data;
   } catch (err: any) {
@@ -292,7 +321,7 @@ export const signCoverLetterFile = async (
 export const aiGenerateCoverLetter = async (
   backendUrl: string,
   token: string,
-  payload: CoverLetterGeneratePayload,
+  payload: CoverLetterGeneratePayload
 ): Promise<{ suggestion: string }> => {
   try {
     const api = client(backendUrl, token);
@@ -306,7 +335,7 @@ export const aiGenerateCoverLetter = async (
 export const aiRewriteCoverLetter = async (
   backendUrl: string,
   token: string,
-  payload: CoverLetterRewritePayload,
+  payload: CoverLetterRewritePayload
 ): Promise<{ suggestion: string }> => {
   try {
     const api = client(backendUrl, token);
