@@ -58,7 +58,7 @@ const visibilityKeys = ['header', 'opening', 'body', 'closing', 'signature'];
 
 export const createCoverLetterSchema = Joi.object({
   title: Joi.string().max(140).allow('').optional(),
-  templateId: Joi.string().default('classic-cover-letter'),
+  templateId: Joi.string().default('classic-letter'),
   data: Joi.object({
     basics: basicsSchema,
     content: contentSchema,

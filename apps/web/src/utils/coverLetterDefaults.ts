@@ -1,4 +1,5 @@
 import type { CoverLetterDraft } from '@cvpro/shared/types';
+import { normalizeCoverLetterTemplateId } from '@cvpro/shared/cover-letter/renderers/index.js';
 
 export const EMPTY_COVER_LETTER_DRAFT: CoverLetterDraft = {
   id: '',
@@ -44,7 +45,7 @@ export const normalizeCoverLetterDraft = (
 ): CoverLetterDraft => ({
   ...EMPTY_COVER_LETTER_DRAFT,
   ...(raw || {}),
-  templateId: ((raw?.templateId as any) || 'classic-letter') as CoverLetterDraft['templateId'],
+  templateId: normalizeCoverLetterTemplateId((raw?.templateId as any) || 'classic-letter') as CoverLetterDraft['templateId'],
   sender: {
     ...EMPTY_COVER_LETTER_DRAFT.sender,
     ...(raw?.sender || {}),

@@ -1,4 +1,10 @@
+const LEGACY_TEMPLATE_ALIASES = {
+  'classic-cover-letter': 'classic-letter',
+  'modern-accent': 'clean-modern-header',
+};
+
 const LETTER_IDS = [
+  'classic-letter',
   'professional-blue-letterhead',
   'clean-modern-header',
   'dark-header-corporate',
@@ -15,33 +21,58 @@ const esc = (value) =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 
+export function normalizeCoverLetterTemplateId(templateId) {
+  const candidate = String(templateId || '').trim();
+  const mapped = LEGACY_TEMPLATE_ALIASES[candidate] || candidate;
+  return LETTER_IDS.includes(mapped) ? mapped : 'classic-letter';
+}
+
+function normalizeParagraphs(raw) {
+  if (Array.isArray(raw)) {
+    return raw.map((line) => String(line || '').trim()).filter(Boolean);
+  }
+
+  return String(raw || '')
+    .split(/\n{2,}/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
 function normalizeCoverLetterDraft(draft = {}) {
+  const sender = draft.sender || {};
+  const recipient = draft.recipient || {};
+  const letter = draft.letter || {};
+  const body = draft.body || {};
+  const basics = draft.basics || {};
+  const content = draft.content || {};
+
+  const senderName = String(
+    sender.fullName || draft.senderName || draft.signatureName || basics.fullName || basics.name || ''
+  ).trim();
+
   return {
-    templateId: LETTER_IDS.includes(String(draft.templateId || '').trim())
-      ? String(draft.templateId || '').trim()
-      : 'professional-blue-letterhead',
-    senderName: String(draft.senderName || draft.basics?.name || '').trim(),
-    senderTitle: String(draft.senderTitle || draft.basics?.headline || '').trim(),
-    senderEmail: String(draft.senderEmail || draft.basics?.email || '').trim(),
-    senderPhone: String(draft.senderPhone || draft.basics?.phone || '').trim(),
-    senderLocation: String(draft.senderLocation || draft.basics?.location || '').trim(),
-    date: String(draft.date || '').trim(),
-    recipientName: String(draft.recipientName || '').trim(),
-    recipientTitle: String(draft.recipientTitle || '').trim(),
-    companyName: String(draft.companyName || '').trim(),
-    companyAddress: String(draft.companyAddress || '').trim(),
-    greeting: String(draft.greeting || '').trim() || 'Dear Hiring Manager,',
-    subject: String(draft.subject || '').trim(),
-    body: Array.isArray(draft.body)
-      ? draft.body.map((line) => String(line || '').trim()).filter(Boolean)
-      : String(draft.body || '')
-          .split(/\n{2,}/)
-          .map((line) => line.trim())
-          .filter(Boolean),
-    closing: String(draft.closing || '').trim() || 'Sincerely,',
-    signatureName:
-      String(draft.signatureName || draft.senderName || draft.basics?.name || '').trim() ||
-      'Your Name',
+    templateId: normalizeCoverLetterTemplateId(draft.templateId),
+    senderName,
+    senderTitle: String(sender.headline || draft.senderTitle || letter.role || basics.headline || '').trim(),
+    senderEmail: String(sender.email || draft.senderEmail || basics.email || '').trim(),
+    senderPhone: String(sender.phone || draft.senderPhone || basics.phone || '').trim(),
+    senderLocation: String(sender.location || draft.senderLocation || basics.location || '').trim(),
+    date: String(letter.date || basics.date || draft.date || '').trim(),
+    recipientName: String(recipient.name || basics.hiringManager || draft.recipientName || '').trim(),
+    recipientTitle: String(recipient.title || draft.recipientTitle || '').trim(),
+    companyName: String(recipient.company || basics.companyName || draft.companyName || '').trim(),
+    companyAddress: String(
+      recipient.address || recipient.addressLine1 || draft.companyAddress || ''
+    ).trim(),
+    greeting: String(letter.greeting || content.greeting || draft.greeting || '').trim() || 'Dear Hiring Manager,',
+    subject: String(letter.subject || content.subject || draft.subject || basics.jobTitle || '').trim(),
+    body: normalizeParagraphs(
+      body.middleParagraphs || content.paragraphs || content.body || draft.body
+    ),
+    opening: String(body.opening || content.opening || '').trim(),
+    closingParagraph: String(body.closing || content.closing || '').trim(),
+    closing: String(letter.signoff || content.signature || draft.closing || '').trim() || 'Sincerely,',
+    signatureName: senderName || 'Your Name',
   };
 }
 
@@ -58,10 +89,14 @@ function recipientBlock(d) {
 }
 
 function bodyBlock(d) {
-  const paragraphs = d.body.length
-    ? d.body.map((line) => `<p>${esc(line)}</p>`).join('')
-    : '<p class="cl-placeholder">Write 2–4 concise paragraphs that connect your results to the role.</p>';
-  return `<div class="cl-body">${paragraphs}</div>`;
+  const paragraphs = [d.opening, ...d.body, d.closingParagraph].filter(Boolean);
+  if (!paragraphs.length) {
+    return '<div class="cl-body"><p class="cl-placeholder">Write 2–4 concise paragraphs that connect your results to the role.</p></div>';
+  }
+
+  return `<div class="cl-body">${paragraphs
+    .map((line) => `<p>${esc(line)}</p>`)
+    .join('')}</div>`;
 }
 
 function doc(d, body, css, markerClass) {
@@ -100,6 +135,16 @@ function renderCommon(d, extras = '') {
     ${bodyBlock(d)}
     <section class="cl-closing"><p>${esc(d.closing)}</p><p class="cl-signature">${esc(d.signatureName)}</p></section>
   </div>`;
+}
+
+export function renderClassicLetterHtml(draft = {}) {
+  const d = normalizeCoverLetterDraft({ ...draft, templateId: 'classic-letter' });
+  return doc(
+    d,
+    renderCommon(d),
+    '.classicLetter{background:#f8fafc}.classicLetter .cl-page,.classicLetter{font-family:Cambria,"Times New Roman",Georgia,serif}.classicLetter .cl-header-name{font-size:28px}.classicLetter .cl-header-title{font-size:13px;letter-spacing:.02em;text-transform:uppercase}',
+    'classicLetter'
+  );
 }
 
 export function renderProfessionalBlueLetterheadHtml(draft = {}) {
@@ -173,6 +218,7 @@ export function renderPremiumElegantBusinessHtml(draft = {}) {
 }
 
 export const templateMarkersById = {
+  'classic-letter': ['data-template-id="classic-letter"', 'classicLetter'],
   'professional-blue-letterhead': [
     'data-template-id="professional-blue-letterhead"',
     'professionalBlueLetterhead',

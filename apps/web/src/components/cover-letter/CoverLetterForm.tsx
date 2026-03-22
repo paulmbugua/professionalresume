@@ -1,6 +1,7 @@
 import React from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import type { CoverLetterDraft } from '@cvpro/shared/types';
+import { coverLetterTemplateRegistry } from '../../templates/coverLetterRegistry';
 
 const section = 'space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm';
 const label = 'mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500';
@@ -150,8 +151,11 @@ const CoverLetterForm: React.FC = () => {
           <div>
             <label className={label}>Template</label>
             <select className={input} {...register('templateId')}>
-              <option value="classic-letter">Classic Letter</option>
-              <option value="modern-accent">Modern Accent</option>
+              {coverLetterTemplateRegistry.map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.name}
+                </option>
+              ))}
             </select>
           </div>
           <div>

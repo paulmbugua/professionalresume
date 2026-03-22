@@ -162,7 +162,17 @@ export type CvExportResponse = {
   mimeType?: string;
 };
 
-export type CoverLetterTemplateId = 'classic-letter' | 'modern-accent';
+export type CoverLetterTemplateId =
+  | 'classic-letter'
+  | 'professional-blue-letterhead'
+  | 'clean-modern-header'
+  | 'dark-header-corporate'
+  | 'minimal-wide-name-header'
+  | 'plain-re-subject'
+  | 'premium-elegant-business'
+  | 'simple-everyday-formal'
+  | 'modern-accent'
+  | 'classic-cover-letter';
 
 export type CoverLetterDraft = {
   id: string;
