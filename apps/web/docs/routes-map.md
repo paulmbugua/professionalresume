@@ -8,6 +8,9 @@
 | `/builder` | `src/app/builder/page.tsx` | `src/pages/CvDrafts.web.tsx` |
 | `/builder/new` | `src/app/builder/new/page.tsx` | `src/pages/CvBuilderNew.web.tsx` |
 | `/builder/[id]` | `src/app/builder/[id]/page.tsx` | `src/pages/CvBuilderPage.web.tsx` |
+| `/cover-letters` | `src/app/cover-letters/page.tsx` | `src/pages/CoverLetters.web.tsx` |
+| `/cover-letters/new` | `src/app/cover-letters/new/page.tsx` | `src/pages/CoverLetterNew.web.tsx` |
+| `/cover-letters/[id]` | `src/app/cover-letters/[id]/page.tsx` | `src/pages/CoverLetterPage.web.tsx` |
 | `/help` | `src/app/help/page.tsx` | `src/pages/HelpPage.web.tsx` |
 | `/find-tutor` | `src/app/find-tutor/page.tsx` | `src/pages/FindTutor.web.tsx` |
 | `/messages` | `src/app/messages/page.tsx` | `src/pages/Messages.web.tsx` |
@@ -38,4 +41,6 @@
 - [ ] unauthenticated `/templates` redirects to `/login?returnTo=%2Ftemplates`
 - [ ] login redirects to sanitized `returnTo`
 - [ ] `/builder` and `/builder/new` resolve without 404
+- [ ] `/cover-letters`, `/cover-letters/new`, and `/cover-letters/[id]` resolve without 404
+- [ ] unauthenticated `/cover-letters` redirects to `/login?returnTo=%2Fcover-letters`
 - [ ] `/__routes` lists all wrapper mappings

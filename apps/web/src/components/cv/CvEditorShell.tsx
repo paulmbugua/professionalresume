@@ -27,6 +27,7 @@ type Props = {
   isSaving: boolean;
   isExporting?: boolean;
   lastSavedAt?: string;
+  autoFocusAi?: boolean;
 };
 
 const CvEditorShell: React.FC<Props> = ({
@@ -39,6 +40,7 @@ const CvEditorShell: React.FC<Props> = ({
   isSaving,
   isExporting,
   lastSavedAt,
+  autoFocusAi,
 }) => {
   const { setValue, control } = useFormContext<CvDraft>();
   const [activeTab, setActiveTab] = useState<'edit' | 'preview'>('edit');
@@ -85,6 +87,19 @@ const CvEditorShell: React.FC<Props> = ({
       shouldValidate: false,
     });
   }, [previewDraft.title, templateDisplayName, setValue]);
+
+
+  useEffect(() => {
+    if (!autoFocusAi) return;
+    setActiveTab('edit');
+
+    const timer = window.setTimeout(() => {
+      const el = document.getElementById('ai-panel');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 200);
+
+    return () => window.clearTimeout(timer);
+  }, [autoFocusAi]);
 
   const handleSectionChange = (next: {
     sectionOrder: CvSectionKey[];

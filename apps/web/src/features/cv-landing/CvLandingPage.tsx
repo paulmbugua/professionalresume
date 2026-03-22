@@ -15,6 +15,7 @@ import { templateRegistryList } from '../../templates/registry';
 import type { AnyTemplate, LandingVariant } from './types';
 import { getLandingCopy, pickTemplatesById, useThumbHtml } from './utils';
 import {
+  CoverLettersPromoSection,
   DotsBg,
   FAQSection,
   LandingKeyframes,
@@ -137,6 +138,14 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
 
   const improveResume = React.useCallback(() => {
     routeWithAuth('/builder', '/builder');
+  }, [routeWithAuth]);
+
+  const createCoverLetter = React.useCallback(() => {
+    routeWithAuth('/cover-letters/new', '/cover-letters/new');
+  }, [routeWithAuth]);
+
+  const exploreCoverLetterDesigns = React.useCallback(() => {
+    routeWithAuth('/cover-letters', '/cover-letters');
   }, [routeWithAuth]);
 
   const openSpotlight = React.useCallback((template: AnyTemplate) => {
@@ -402,6 +411,10 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
         </div>
       </section>
 
+      <CoverLettersPromoSection
+        onCreateCoverLetter={createCoverLetter}
+        onExploreDesigns={exploreCoverLetterDesigns}
+      />
       <WhyChooseSection />
       <StepsSection onCta={createNewResume} />
       <FAQSection onCta={createNewResume} />
