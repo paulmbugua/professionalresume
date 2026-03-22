@@ -18,6 +18,46 @@ export const defaultSectionVisibility = defaultSectionOrder.reduce(
   {} as Record<CvSectionKey, boolean>
 );
 
+const sectionKeySet = new Set<CvSectionKey>(defaultSectionOrder);
+
+export const normalizeSectionOrder = (
+  order?: CvSectionKey[] | null,
+  fallbackOrder: CvSectionKey[] = defaultSectionOrder
+): CvSectionKey[] => {
+  const source = Array.isArray(order) ? order : [];
+  const normalized: CvSectionKey[] = [];
+  const seen = new Set<CvSectionKey>();
+
+  source.forEach((key) => {
+    if (!sectionKeySet.has(key) || seen.has(key)) return;
+    seen.add(key);
+    normalized.push(key);
+  });
+
+  fallbackOrder.forEach((key) => {
+    if (seen.has(key)) return;
+    seen.add(key);
+    normalized.push(key);
+  });
+
+  return normalized;
+};
+
+export const normalizeSectionVisibility = (
+  visibility?: Partial<Record<CvSectionKey, boolean>> | null
+): Record<CvSectionKey, boolean> => {
+  const normalized = { ...defaultSectionVisibility };
+  if (!visibility) return normalized;
+
+  defaultSectionOrder.forEach((key) => {
+    if (typeof visibility[key] === 'boolean') {
+      normalized[key] = visibility[key] as boolean;
+    }
+  });
+
+  return normalized;
+};
+
 const templateThemeDefaults: Record<string, Record<string, string>> = {
   'modern-sidebar': {
     primary: '#0f172a',
@@ -45,11 +85,8 @@ export function normalizeDraft(draft: CvDraft): CvDraft {
 
   return {
     ...draft,
-    sectionOrder: draft.sectionOrder?.length ? draft.sectionOrder : defaultSectionOrder,
-    sectionVisibility: {
-      ...defaultSectionVisibility,
-      ...(draft.sectionVisibility || {}),
-    },
+    sectionOrder: normalizeSectionOrder(draft.sectionOrder),
+    sectionVisibility: normalizeSectionVisibility(draft.sectionVisibility),
     basics: {
       ...(draft.basics || ({} as any)),
       name: draft.basics?.name || '',

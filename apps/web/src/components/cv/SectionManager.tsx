@@ -1,5 +1,6 @@
 import React from 'react';
 import type { CvSectionKey } from '@cvpro/shared/types';
+import { normalizeSectionOrder, normalizeSectionVisibility } from '../../utils/cvDefaults';
 
 const sectionLabels: Record<CvSectionKey, string> = {
   summary: 'Summary',
@@ -20,27 +21,29 @@ type Props = {
   }) => void;
 };
 
-const SectionManager: React.FC<Props> = ({
-  sectionOrder,
-  sectionVisibility,
-  onChange,
-}) => {
+const SectionManager: React.FC<Props> = ({ sectionOrder, sectionVisibility, onChange }) => {
+  const normalizedOrder = normalizeSectionOrder(sectionOrder);
+  const normalizedVisibility = normalizeSectionVisibility(sectionVisibility);
+
   const moveSection = (index: number, direction: -1 | 1) => {
     const target = index + direction;
-    if (target < 0 || target >= sectionOrder.length) return;
-    const next = [...sectionOrder];
+    if (target < 0 || target >= normalizedOrder.length) return;
+    const next = [...normalizedOrder];
     const [item] = next.splice(index, 1);
     next.splice(target, 0, item);
-    onChange({ sectionOrder: next, sectionVisibility });
+    onChange({
+      sectionOrder: normalizeSectionOrder(next),
+      sectionVisibility: normalizedVisibility,
+    });
   };
 
   const toggleVisibility = (key: CvSectionKey) => {
     onChange({
-      sectionOrder,
-      sectionVisibility: {
-        ...sectionVisibility,
-        [key]: !sectionVisibility[key],
-      },
+      sectionOrder: normalizedOrder,
+      sectionVisibility: normalizeSectionVisibility({
+        ...normalizedVisibility,
+        [key]: !normalizedVisibility[key],
+      }),
     });
   };
 
@@ -51,7 +54,7 @@ const SectionManager: React.FC<Props> = ({
         <span className="text-xs text-gray-400 dark:text-white/60">Reorder & toggle</span>
       </div>
       <ul className="space-y-2">
-        {sectionOrder.map((key, index) => (
+        {normalizedOrder.map((key, index) => (
           <li
             key={key}
             className="flex items-center justify-between gap-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm dark:border-white/10 dark:bg-white/10"
@@ -61,7 +64,7 @@ const SectionManager: React.FC<Props> = ({
                 type="button"
                 onClick={() => toggleVisibility(key)}
                 className={`h-4 w-4 rounded border ${
-                  sectionVisibility[key]
+                  normalizedVisibility[key]
                     ? 'border-primary bg-primary'
                     : 'border-gray-300 bg-white'
                 }`}

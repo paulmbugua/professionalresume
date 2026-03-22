@@ -7,6 +7,7 @@ import { demoResume, hasAnyUserData } from '../../templates/demoResume';
 import { stripHtml } from '../../utils/cvRichText';
 import { parseUploadedCv } from '../../utils/cvParseApi';
 import { improveExperienceEntry } from '../../utils/cvImproveApi';
+import { normalizeSectionOrder, normalizeSectionVisibility } from '../../utils/cvDefaults';
 
 const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
   ({ className, ...props }, ref) => (
@@ -255,23 +256,25 @@ const SectionCard: React.FC<SectionCardProps> = ({
 
   return (
     <div
-      className={`rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-colors dark:border-white/10 dark:bg-white/5 ${className ?? ''}`}
+      className={`overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-colors dark:border-white/10 dark:bg-white/5 ${className ?? ''}`}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3 md:flex-nowrap">
         {collapsible ? (
           <button
             type="button"
             onClick={onToggle}
-            className="group flex-1 text-left"
+            className="group min-w-0 flex-1 text-left"
             aria-expanded={isOpen}
             aria-controls={contentId}
           >
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h3>
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <h3 className="break-words text-sm font-semibold text-gray-900 dark:text-white">
+                {title}
+              </h3>
               {status ? <StatusPill status={status} title={statusTitle} /> : null}
               <span
                 aria-hidden
-                className={`ml-auto text-sm text-gray-400 transition-transform dark:text-white/40 ${
+                className={`ml-auto shrink-0 text-sm text-gray-400 transition-transform dark:text-white/40 ${
                   isOpen ? 'rotate-180' : 'rotate-0'
                 }`}
               >
@@ -279,27 +282,36 @@ const SectionCard: React.FC<SectionCardProps> = ({
               </span>
             </div>
             {subtitle ? (
-              <p className="mt-1 text-xs text-gray-500 dark:text-white/60">{subtitle}</p>
+              <p className="mt-1 break-words text-xs leading-5 text-gray-500 dark:text-white/60">
+                {subtitle}
+              </p>
             ) : null}
             {!isOpen && collapsedPreview ? (
-              <p className="mt-2 truncate text-xs text-gray-700 dark:text-white/70">
+              <p className="mt-2 break-words text-xs leading-5 text-gray-700 dark:text-white/70">
                 {collapsedPreview}
               </p>
             ) : null}
           </button>
         ) : (
-          <div className="flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h3>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <h3 className="break-words text-sm font-semibold text-gray-900 dark:text-white">
+                {title}
+              </h3>
             </div>
             {subtitle ? (
-              <p className="mt-1 text-xs text-gray-500 dark:text-white/60">{subtitle}</p>
+              <p className="mt-1 break-words text-xs leading-5 text-gray-500 dark:text-white/60">
+                {subtitle}
+              </p>
             ) : null}
           </div>
         )}
 
         {right ? (
-          <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="flex w-full flex-wrap items-center justify-start gap-2 md:w-auto md:max-w-[52%] md:justify-end"
+            onClick={(e) => e.stopPropagation()}
+          >
             {right}
           </div>
         ) : null}
@@ -360,8 +372,9 @@ const CvForm: React.FC = () => {
   const projects = useWatch({ control, name: 'projects' }) || [];
   const certifications = useWatch({ control, name: 'certifications' }) || [];
   const extras = useWatch({ control, name: 'extras' });
-  const sectionVisibility =
-    useWatch({ control, name: 'sectionVisibility' }) || demoResume.sectionVisibility;
+  const sectionVisibility = normalizeSectionVisibility(
+    useWatch({ control, name: 'sectionVisibility' }) || demoResume.sectionVisibility
+  );
   const isModernBlueSidebar = templateId === 'modern-sidebar-blue';
   const basicsPhotoUrl = basics?.photoUrl?.trim() || '';
 
@@ -629,13 +642,19 @@ const CvForm: React.FC = () => {
 
     setValue(
       'sectionOrder',
-      current.sectionOrder?.length ? current.sectionOrder : (demoResume.sectionOrder as any),
+      normalizeSectionOrder(
+        current.sectionOrder?.length ? current.sectionOrder : (demoResume.sectionOrder as any)
+      ) as any,
       { shouldDirty: markDirty, shouldTouch: false, shouldValidate: false }
     );
 
     setValue(
       'sectionVisibility',
-      current.sectionVisibility ? current.sectionVisibility : (demoResume.sectionVisibility as any),
+      normalizeSectionVisibility(
+        current.sectionVisibility
+          ? current.sectionVisibility
+          : (demoResume.sectionVisibility as any)
+      ) as any,
       { shouldDirty: markDirty, shouldTouch: false, shouldValidate: false }
     );
 
@@ -703,7 +722,9 @@ const CvForm: React.FC = () => {
       certifications: false,
       extras: false,
     };
-    setValue('sectionVisibility', nextVis as any, { shouldDirty: true });
+    setValue('sectionVisibility', normalizeSectionVisibility(nextVis) as any, {
+      shouldDirty: true,
+    });
   };
 
   const clearSection = (key: CvSectionKey | 'basics') => {
@@ -874,9 +895,7 @@ const CvForm: React.FC = () => {
       extracted.extras?.interests || []
     );
 
-    const nextVisibility = {
-      ...(current.sectionVisibility || {}),
-    } as Record<CvSectionKey, boolean>;
+    const nextVisibility = normalizeSectionVisibility(current.sectionVisibility);
 
     const extractedHas = {
       summary: Boolean((extracted.summary || '').trim()),
@@ -916,7 +935,8 @@ const CvForm: React.FC = () => {
         ...(current.richText || {}),
         summary: nextSummary || '',
       },
-      sectionVisibility: nextVisibility,
+      sectionOrder: normalizeSectionOrder(current.sectionOrder),
+      sectionVisibility: normalizeSectionVisibility(nextVisibility),
       meta: {
         ...(current.meta || {}),
         isDemoSeeded: false,
@@ -1325,10 +1345,12 @@ const CvForm: React.FC = () => {
         onToggle={() => toggle('basics')}
         status={statuses.basics}
         statusTitle={statusTitle('basics')}
-        right={<div className="flex items-center gap-2">{clearPill('basics')}</div>}
+        right={
+          <div className="flex flex-wrap items-center justify-end gap-2">{clearPill('basics')}</div>
+        }
       >
+        <input type="hidden" {...register('title')} />
         <div className="grid gap-3 md:grid-cols-2">
-          <Input placeholder="CV Title" {...register('title')} />
           <Input placeholder="Full name" {...register('basics.name')} />
           <Input placeholder="Professional headline" {...register('basics.headline')} />
           <Input placeholder="Email" type="email" {...register('basics.email')} />
@@ -1445,7 +1467,7 @@ const CvForm: React.FC = () => {
         status={statuses.summary}
         statusTitle={statusTitle('summary')}
         right={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {includePill('summary')}
             {clearPill('summary')}
           </div>
@@ -1467,7 +1489,7 @@ const CvForm: React.FC = () => {
         status={statuses.skills}
         statusTitle={statusTitle('skills')}
         right={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {includePill('skills')}
             {clearPill('skills')}
           </div>
@@ -1515,7 +1537,7 @@ const CvForm: React.FC = () => {
         status={statuses.experience}
         statusTitle={statusTitle('experience')}
         right={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {includePill('experience')}
             {clearPill('experience')}
           </div>
@@ -1645,7 +1667,7 @@ const CvForm: React.FC = () => {
         status={statuses.education}
         statusTitle={statusTitle('education')}
         right={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {includePill('education')}
             {clearPill('education')}
           </div>
@@ -1712,7 +1734,7 @@ const CvForm: React.FC = () => {
         status={statuses.projects}
         statusTitle={statusTitle('projects')}
         right={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {includePill('projects')}
             {clearPill('projects')}
           </div>
@@ -1779,7 +1801,7 @@ const CvForm: React.FC = () => {
         status={statuses.certifications}
         statusTitle={statusTitle('certifications')}
         right={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {includePill('certifications')}
             {clearPill('certifications')}
           </div>
@@ -1837,7 +1859,7 @@ const CvForm: React.FC = () => {
         status={statuses.extras}
         statusTitle={statusTitle('extras')}
         right={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {includePill('extras')}
             {clearPill('extras')}
           </div>
