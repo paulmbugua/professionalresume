@@ -24,7 +24,7 @@ import {
   draftPatchSchema,
   cvExportSchema,
   templateUploadSchema,
-  coverLetterSchema,
+  coverLetterExportDataSchema,
   coverLetterExportSchema,
 } from '../validators/cvValidators.js';
 
@@ -312,7 +312,7 @@ export async function getCoverLetterEntitlementController(req, res) {
 
 export async function getCoverLetterPrintHtml(req, res) {
   try {
-    const { error, value } = coverLetterSchema.validate(req.body || {});
+    const { error, value } = coverLetterExportDataSchema.validate(req.body || {});
     if (error) {
       return res.status(400).json({ error: error.details?.[0]?.message || error.message });
     }

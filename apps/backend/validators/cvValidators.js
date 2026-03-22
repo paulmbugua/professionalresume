@@ -146,7 +146,7 @@ export const templateUploadSchema = Joi.object({
   previewUrl: Joi.string().uri().allow('').optional(),
 });
 
-export const coverLetterSchema = Joi.object({
+export const coverLetterExportDataSchema = Joi.object({
   applicantName: Joi.string().allow('').required(),
   applicantEmail: Joi.string().allow(''),
   applicantPhone: Joi.string().allow(''),
@@ -159,8 +159,9 @@ export const coverLetterSchema = Joi.object({
 });
 
 export const coverLetterExportSchema = Joi.object({
-  coverLetterJson: coverLetterSchema.required(),
+  coverLetterJson: coverLetterExportDataSchema.required(),
 });
+
 
 export const aiSummarySchema = Joi.object({
   draft: Joi.object().required(),
