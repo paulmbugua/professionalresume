@@ -219,3 +219,13 @@ export type CoverLetterExportResponse = {
   fileKey: string;
   signedUrl?: string;
 };
+
+
+export type CoverLetterEntitlement = {
+  eligible: boolean;
+  entitlementKey?: string;
+  reason?: string;
+  sourcePaymentId?: number;
+  grantedAt?: string;
+};
+

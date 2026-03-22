@@ -1,16 +1,11 @@
-import { getCoverLetterEntitlement } from '../services/cvService.js';
+import { getCvExportEntitlement } from '../services/cvPaymentService.js';
 
 export async function requireCoverLetterEntitlement(req, res, next) {
   try {
-    const entitlement = await getCoverLetterEntitlement(req.user.id);
-    console.info('[coverLetter.entitlement] result', {
-      userId: req.user?.id,
-      eligible: entitlement?.eligible,
-      reason: entitlement?.reason,
-    });
+    const entitlement = await getCvExportEntitlement(req.user.id);
     if (!entitlement.eligible) {
       return res.status(403).json({
-        error: 'Cover letter access requires a paid resume purchase.',
+        error: 'Cover letter export/print requires the one-time CV export unlock payment.',
         entitlement,
       });
     }

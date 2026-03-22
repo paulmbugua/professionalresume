@@ -5,10 +5,11 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { FormProvider, useForm, useWatch } from 'react-hook-form';
 import debounce from 'lodash.debounce';
 import { useShopContext } from '@cvpro/shared/context';
-import { useCvDraft, useSaveCvDraft, useExportCv } from '@cvpro/shared/hooks';
+import { useCvDraft, useSaveCvDraft, useExportCv, useCvPayment } from '@cvpro/shared/hooks';
 import type { CvDraft } from '@cvpro/shared/types';
 import { normalizeDraft } from '../utils/cvDefaults';
 import CvEditorShell from '../components/cv/CvEditorShell';
+import CvPaymentModal from '../components/cv/CvPaymentModal';
 import { getReturnToFromQuery } from '../lib/returnTo';
 
 const EMPTY_DRAFT: CvDraft = normalizeDraft({
@@ -55,10 +56,16 @@ const CvBuilderPageInner: React.FC<{
   token: string;
   forcedTemplateId?: string;
   autoFocusAi?: boolean;
-}> = ({ id, backendUrl, token, forcedTemplateId, autoFocusAi }) => {
+  actionFromQuery?: string;
+  paymentSuccessFromQuery?: boolean;
+  clearPaymentQuery: () => void;
+}> = ({ id, backendUrl, token, forcedTemplateId, autoFocusAi, actionFromQuery, paymentSuccessFromQuery, clearPaymentQuery }) => {
   const { data, isLoading, error } = useCvDraft({ backendUrl, token, id } as any);
   const updateDraft = useSaveCvDraft({ backendUrl, token });
   const exportCv = useExportCv({ backendUrl, token });
+
+  const cvPayment = useCvPayment({ backendUrl, token });
+  const [paymentMessage, setPaymentMessage] = useState<string>('');
 
   const [exportUrl, setExportUrl] = useState<string | undefined>();
   const [lastSavedAt, setLastSavedAt] = useState<string | undefined>();
@@ -138,9 +145,21 @@ const CvBuilderPageInner: React.FC<{
     setLastSavedAt(updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined);
   };
 
-  const handleExport = async () => {
+  const doExport = async () => {
     const exported = await exportCv.mutateAsync({ draftId: id, cvJson: getValues() });
     setExportUrl(exported.signedUrl || exported.url || undefined);
+  };
+
+  const doPrint = async () => {
+    window.open(`/print/${id}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleExport = async () => {
+    await cvPayment.ensurePaidBeforeResumeExport(doExport);
+  };
+
+  const handlePrint = async () => {
+    await cvPayment.ensurePaidBeforeResumePrint(doPrint);
   };
 
   const copyExportLink = async () => {
@@ -152,6 +171,17 @@ const CvBuilderPageInner: React.FC<{
     const base = ((formValues as CvDraft) || data || EMPTY_DRAFT) as CvDraft;
     return normalizeDraft(base);
   }, [formValues, data]);
+
+
+  useEffect(() => {
+    if (!paymentSuccessFromQuery || !actionFromQuery) return;
+    const run = async () => {
+      if (actionFromQuery === 'resume_export') await doExport();
+      if (actionFromQuery === 'resume_print') await doPrint();
+      clearPaymentQuery();
+    };
+    void run();
+  }, [paymentSuccessFromQuery, actionFromQuery]);
 
   const validationErrors = validateDraft(draft);
 
@@ -170,6 +200,7 @@ const CvBuilderPageInner: React.FC<{
       onSave={handleManualSave}
       onExport={handleExport}
       onCopyExportLink={copyExportLink}
+      onPrint={handlePrint}
       exportUrl={exportUrl}
       isSaving={updateDraft.isPending}
       isExporting={exportCv.isPending}
@@ -178,7 +209,32 @@ const CvBuilderPageInner: React.FC<{
     />
   );
 
-  return <FormProvider {...methods}>{content}</FormProvider>;
+  return <FormProvider {...methods}>{content}
+    <CvPaymentModal
+      isOpen={cvPayment.modalOpen}
+      pendingAction={cvPayment.pendingAction}
+      onClose={cvPayment.cancelPayment}
+      onPayWithMpesa={async (phone) => {
+        const res = await cvPayment.initMpesaMutation.mutateAsync(phone);
+        setPaymentMessage(res.message || 'Waiting for M-Pesa confirmation');
+      }}
+      onConfirmMpesa={async (payload) => {
+        const res = await cvPayment.confirmMpesaMutation.mutateAsync(payload);
+        if (res.status === 'Pending') setPaymentMessage('Waiting for M-Pesa confirmation');
+        if (res.status === 'Completed') setPaymentMessage('Unlock successful. Export unlocked.');
+      }}
+      onPayWithPaystack={async () => {
+        const nextPath = `${window.location.pathname}?cv_action=${cvPayment.pendingAction}`;
+        const order = await cvPayment.startPaystackCheckout.mutateAsync(nextPath);
+        window.location.href = order.authorizationUrl;
+      }}
+      isLoadingMpesaInit={cvPayment.initMpesaMutation.isPending}
+      isLoadingMpesaConfirm={cvPayment.confirmMpesaMutation.isPending}
+      isLoadingPaystack={cvPayment.startPaystackCheckout.isPending}
+      message={paymentMessage}
+      error={cvPayment.initMpesaMutation.error?.message || cvPayment.confirmMpesaMutation.error?.message || cvPayment.startPaystackCheckout.error?.message || null}
+    />
+  </FormProvider>;
 };
 
 const CvBuilderPage: React.FC = () => {
@@ -189,6 +245,8 @@ const CvBuilderPage: React.FC = () => {
   const { backendUrl, token } = useShopContext() as any;
   const forcedTemplateId = searchParams?.get('templateId') ?? undefined;
   const autoFocusAi = searchParams?.get('aiStart') === '1';
+  const actionFromQuery = searchParams?.get('cv_action') || undefined;
+  const paymentSuccessFromQuery = searchParams?.get('cvpay') === 'success';
 
   // If route param missing → go to /builder (notFound-safe)
   useEffect(() => {
@@ -217,6 +275,9 @@ const CvBuilderPage: React.FC = () => {
       token={token}
       forcedTemplateId={forcedTemplateId}
       autoFocusAi={autoFocusAi}
+      actionFromQuery={actionFromQuery}
+      paymentSuccessFromQuery={paymentSuccessFromQuery}
+      clearPaymentQuery={() => router.replace(`/builder/${id}`)}
     />
   );
 };
