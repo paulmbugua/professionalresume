@@ -7,6 +7,7 @@ import type {
   CvFormattingDefaults,
   CvTemplateTheme,
 } from '@cvpro/shared/types';
+import { appendInlineRichTextTag, stripHtml } from '../../utils/cvRichText';
 
 const HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}){1,2}$/;
 
@@ -115,6 +116,22 @@ const DesignFormattingPanel: React.FC = () => {
     setValue('formatting', next, { shouldDirty: true, shouldTouch: true, shouldValidate: false });
   };
 
+  const applySummaryFormatting = (tag: 'strong' | 'em' | 'u') => {
+    const currentSummaryHtml = (getValues('richText.summary') as string | undefined) ?? '';
+    const nextSummaryHtml = appendInlineRichTextTag(currentSummaryHtml, tag);
+
+    setValue('richText.summary', nextSummaryHtml, {
+      shouldDirty: true,
+      shouldTouch: true,
+      shouldValidate: false,
+    });
+    setValue('summary', stripHtml(nextSummaryHtml), {
+      shouldDirty: true,
+      shouldTouch: true,
+      shouldValidate: false,
+    });
+  };
+
   const setTemplateTheme = (key: keyof CvTemplateTheme, value: string) => {
     const current =
       (getValues('templateTheme') as CvTemplateTheme | undefined) ??
@@ -130,7 +147,11 @@ const DesignFormattingPanel: React.FC = () => {
     // Ensure required field stays present
     if (!next.primary) next.primary = DEFAULT_THEME.primary;
 
-    setValue('templateTheme', next, { shouldDirty: true, shouldTouch: true, shouldValidate: false });
+    setValue('templateTheme', next, {
+      shouldDirty: true,
+      shouldTouch: true,
+      shouldValidate: false,
+    });
   };
 
   return (
@@ -175,6 +196,41 @@ const DesignFormattingPanel: React.FC = () => {
             className="mt-1 w-full"
           />
         </label>
+
+        <div className="rounded-xl border border-gray-200/80 bg-gray-50/70 p-3 dark:border-white/10 dark:bg-white/[0.03]">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-white/60">
+            Text formatting
+          </p>
+          <p className="mt-1 text-xs text-gray-500 dark:text-white/55">
+            Insert rich text tags into your summary content.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:border-gray-400 hover:bg-gray-100 dark:border-white/20 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
+              onClick={() => applySummaryFormatting('strong')}
+              aria-label="Apply bold formatting to summary"
+            >
+              Bold
+            </button>
+            <button
+              type="button"
+              className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:border-gray-400 hover:bg-gray-100 dark:border-white/20 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
+              onClick={() => applySummaryFormatting('em')}
+              aria-label="Apply italic formatting to summary"
+            >
+              Italic
+            </button>
+            <button
+              type="button"
+              className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:border-gray-400 hover:bg-gray-100 dark:border-white/20 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
+              onClick={() => applySummaryFormatting('u')}
+              aria-label="Apply underline formatting to summary"
+            >
+              Underline
+            </button>
+          </div>
+        </div>
 
         {/* Colors */}
         <ColorInput
