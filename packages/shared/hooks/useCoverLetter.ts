@@ -60,7 +60,21 @@ export function useCoverLetterDraft({ backendUrl, token, id }: BaseArgs & { id?:
 export function useCreateCoverLetterDraft({ backendUrl, token }: BaseArgs) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { templateId: string; title?: string; data?: Partial<CoverLetterDraft> }) => {
+    mutationFn: (payload: {
+      templateKey: string;
+      title?: string;
+      data?: {
+        applicantName?: string;
+        applicantEmail?: string;
+        applicantPhone?: string;
+        applicantLocation?: string;
+        recipientName?: string;
+        companyName?: string;
+        roleTitle?: string;
+        letterBody?: string;
+        closingLine?: string;
+      };
+    }) => {
       if (!token) throw new Error('Unauthorized');
       return createCoverLetterDraft(backendUrl, token, payload);
     },

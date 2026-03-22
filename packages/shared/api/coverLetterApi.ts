@@ -80,24 +80,56 @@ export const createCoverLetterDraft = async (
   backendUrl: string,
   token: string,
   payload: {
-    templateId: string;
+    templateKey: string;
     title?: string;
-    data?: Partial<CoverLetterDraft>;
+    data?: {
+      applicantName?: string;
+      applicantEmail?: string;
+      applicantPhone?: string;
+      applicantLocation?: string;
+      recipientName?: string;
+      companyName?: string;
+      roleTitle?: string;
+      letterBody?: string;
+      closingLine?: string;
+    };
   },
 ): Promise<CoverLetterDraft> => {
   try {
     const api = client(backendUrl, token);
 
     const safePayload: {
-      templateId: string;
+      templateKey: string;
       title?: string;
-      data?: Partial<CoverLetterDraft>;
+      data?: {
+        applicantName: string;
+        applicantEmail: string;
+        applicantPhone: string;
+        applicantLocation: string;
+        recipientName: string;
+        companyName: string;
+        roleTitle: string;
+        letterBody: string;
+        closingLine: string;
+      };
     } = {
-      templateId: payload.templateId,
+      templateKey: payload.templateKey,
     };
 
     if (typeof payload.title === 'string') safePayload.title = payload.title;
-    if (payload.data && typeof payload.data === 'object') safePayload.data = payload.data;
+    if (payload.data && typeof payload.data === 'object') {
+      safePayload.data = {
+        applicantName: typeof payload.data.applicantName === 'string' ? payload.data.applicantName : '',
+        applicantEmail: typeof payload.data.applicantEmail === 'string' ? payload.data.applicantEmail : '',
+        applicantPhone: typeof payload.data.applicantPhone === 'string' ? payload.data.applicantPhone : '',
+        applicantLocation: typeof payload.data.applicantLocation === 'string' ? payload.data.applicantLocation : '',
+        recipientName: typeof payload.data.recipientName === 'string' ? payload.data.recipientName : '',
+        companyName: typeof payload.data.companyName === 'string' ? payload.data.companyName : '',
+        roleTitle: typeof payload.data.roleTitle === 'string' ? payload.data.roleTitle : '',
+        letterBody: typeof payload.data.letterBody === 'string' ? payload.data.letterBody : '',
+        closingLine: typeof payload.data.closingLine === 'string' ? payload.data.closingLine : '',
+      };
+    }
 
     const res = await api.post<CoverLetterDraft>('/api/cover-letters/drafts', safePayload);
     return res.data;
