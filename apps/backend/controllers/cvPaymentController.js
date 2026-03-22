@@ -2,6 +2,7 @@ import {
   createCvPaystackOrder,
   initCvMpesaPayment,
   confirmCvMpesaPayment,
+  handleCvMpesaCallback,
   verifyCvPaystackPayment,
   getCvExportEntitlement,
   ensureCvExportEntitlement,
@@ -88,4 +89,18 @@ export async function ensureEntitlement(req, res) {
   } catch (error) {
     return resolveError(res, error);
   }
+}
+
+export async function mpesaCallback(req, res) {
+  try {
+    await handleCvMpesaCallback(req.body);
+  } catch (error) {
+    console.error('[cv/mpesa/callback] processing error', {
+      message: error?.message,
+      code: error?.code,
+    });
+  }
+
+  // Daraja expects 200 even when processing fails; retries can otherwise duplicate callbacks.
+  return res.status(200).json({ ok: true });
 }

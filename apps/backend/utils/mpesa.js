@@ -14,7 +14,8 @@ const consumerSecret    = process.env.MPESA_CONSUMER_SECRET;
 const passkey           = process.env.MPESA_PASSKEY;
 const shortcode         = process.env.MPESA_SHORTCODE;
 const b2cShortcode      = process.env.MPESA_B2C_SHORTCODE;
-const callbackURL       = process.env.CALLBACK_URL;              // student STK callback
+const callbackURL       = process.env.CALLBACK_URL;              // legacy student STK callback
+const globalStkCallback = process.env.MPESA_CALLBACK_URL || callbackURL;
 const timeoutURL        = process.env.TIMEOUT_URL;               // B2C timeout
 const resultURL         = process.env.RESULT_URL;                // B2C result
 const initiatorName     = process.env.MPESA_INITIATOR_NAME;
@@ -27,7 +28,16 @@ const MPESA_BASE = MPESA_ENV === 'sandbox'
   ? 'https://sandbox.safaricom.co.ke'
   : 'https://api.safaricom.co.ke';
 
-const CVPRO_CALLBACK_URL = process.env.CVPRO_MPESA_CALLBACK_URL;
+// Callback precedence for CVPro:
+// 1) MPESA_CVPRO_CALLBACK_URL (dedicated CVPro callback)
+// 2) CVPRO_MPESA_CALLBACK_URL (legacy CVPro-specific variable)
+// 3) MPESA_CALLBACK_URL (generic fallback when intentionally shared)
+// 4) CALLBACK_URL (legacy generic fallback)
+const CVPRO_CALLBACK_URL =
+  process.env.MPESA_CVPRO_CALLBACK_URL ||
+  process.env.CVPRO_MPESA_CALLBACK_URL ||
+  process.env.MPESA_CALLBACK_URL ||
+  callbackURL;
 
 /* ─────────────────────────────────────────────────────────
  * Validate presence (warn — don’t crash boot)
@@ -38,7 +48,9 @@ const CVPRO_CALLBACK_URL = process.env.CVPRO_MPESA_CALLBACK_URL;
   ['MPESA_PASSKEY', passkey],
   ['MPESA_SHORTCODE', shortcode],
   ['CALLBACK_URL', callbackURL],
-  ['CVPRO_MPESA_CALLBACK_URL', CVPRO_CALLBACK_URL],
+  ['MPESA_CALLBACK_URL', process.env.MPESA_CALLBACK_URL],
+  ['MPESA_CVPRO_CALLBACK_URL', process.env.MPESA_CVPRO_CALLBACK_URL],
+  ['CVPRO_MPESA_CALLBACK_URL', process.env.CVPRO_MPESA_CALLBACK_URL],
   ['TIMEOUT_URL', timeoutURL],
   ['RESULT_URL', resultURL],
   ['MPESA_INITIATOR_NAME', initiatorName],
@@ -50,8 +62,8 @@ const CVPRO_CALLBACK_URL = process.env.CVPRO_MPESA_CALLBACK_URL;
 });
 
 export function resolveStkCallbackUrl({ product = 'default' } = {}) {
-  if (product === 'cvpro') return CVPRO_CALLBACK_URL || callbackURL || null;
-  return callbackURL || null;
+  if (product === 'cvpro') return CVPRO_CALLBACK_URL || null;
+  return globalStkCallback || null;
 }
 
 export function getMpesaConfigHealth() {
