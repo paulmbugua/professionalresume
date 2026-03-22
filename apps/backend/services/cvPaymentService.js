@@ -38,6 +38,10 @@ function baseMeta() {
   };
 }
 
+function readCallbackItem(items, name) {
+  return items.find((item) => item?.Name === name)?.Value ?? null;
+}
+
 export async function getCvExportEntitlement(userId) {
   const { rows } = await pool.query(
     `SELECT id, user_id, entitlement_key, source_payment_id, granted_at, metadata
@@ -335,6 +339,133 @@ export async function confirmCvMpesaPayment({ userId, transactionId, checkoutReq
     const err = new Error('Unable to verify M-Pesa payment right now.');
     err.statusCode = 502;
     throw err;
+  }
+}
+
+export async function handleCvMpesaCallback(callbackPayload = {}) {
+  const stkCallback = callbackPayload?.Body?.stkCallback;
+  if (!stkCallback) {
+    console.warn('[cv/mpesa/callback] invalid payload: missing Body.stkCallback');
+    return { processed: false, reason: 'missing_stk_callback' };
+  }
+
+  const checkoutRequestId = stkCallback.CheckoutRequestID || null;
+  const resultCode = Number(stkCallback.ResultCode ?? -1);
+  const resultDesc = stkCallback.ResultDesc || null;
+  const callbackItems = Array.isArray(stkCallback.CallbackMetadata?.Item)
+    ? stkCallback.CallbackMetadata.Item
+    : [];
+  const mpesaReceipt = readCallbackItem(callbackItems, 'MpesaReceiptNumber');
+  const amount = Number(readCallbackItem(callbackItems, 'Amount') || 0);
+
+  if (!checkoutRequestId) {
+    console.warn('[cv/mpesa/callback] missing CheckoutRequestID');
+    return { processed: false, reason: 'missing_checkout_request_id' };
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { rows } = await client.query(
+      `SELECT *
+       FROM cv_payments
+       WHERE provider='MPESA' AND checkout_request_id=$1
+       ORDER BY created_at DESC
+       LIMIT 1
+       FOR UPDATE`,
+      [checkoutRequestId],
+    );
+    const payment = rows[0];
+
+    if (!payment) {
+      console.warn('[cv/mpesa/callback] payment not found', { checkoutRequestId });
+      await client.query('COMMIT');
+      return { processed: false, reason: 'payment_not_found' };
+    }
+
+    const callbackMeta = {
+      stkCallbackRaw: stkCallback,
+      checkoutRequestId,
+      resultCode,
+      resultDesc,
+      mpesaReceipt,
+      amount,
+      callbackMetadata: stkCallback.CallbackMetadata || null,
+      callbackProcessedAt: new Date().toISOString(),
+    };
+
+    // Idempotency: if already completed/failed, keep status and only merge callback metadata.
+    if (payment.status === 'Completed' || payment.status === 'Failed') {
+      await client.query(
+        `UPDATE cv_payments
+         SET mpesa_receipt = COALESCE(mpesa_receipt, $2),
+             metadata = metadata || $3::jsonb,
+             updated_at = NOW()
+         WHERE id=$1`,
+        [payment.id, mpesaReceipt, JSON.stringify({ lastCallback: callbackMeta })],
+      );
+      if (payment.status === 'Completed') {
+        await grantCvExportEntitlement({ userId: payment.user_id, paymentId: payment.id, client });
+      }
+      await client.query('COMMIT');
+      return { processed: true, paymentId: payment.id, status: payment.status, idempotent: true };
+    }
+
+    if (resultCode === 0) {
+      await client.query(
+        `UPDATE cv_payments
+         SET status='Completed',
+             mpesa_receipt=COALESCE($2, mpesa_receipt),
+             amount=CASE WHEN $3 > 0 THEN $3 ELSE amount END,
+             completed_at=COALESCE(completed_at, NOW()),
+             metadata = metadata || $4::jsonb,
+             updated_at=NOW()
+         WHERE id=$1`,
+        [
+          payment.id,
+          mpesaReceipt,
+          amount,
+          JSON.stringify({
+            lastCallback: callbackMeta,
+            callbackResultCode: resultCode,
+            callbackResultDesc: resultDesc,
+          }),
+        ],
+      );
+      await grantCvExportEntitlement({ userId: payment.user_id, paymentId: payment.id, client });
+      await client.query('COMMIT');
+      return { processed: true, paymentId: payment.id, status: 'Completed' };
+    }
+
+    await client.query(
+      `UPDATE cv_payments
+       SET status='Failed',
+           metadata = metadata || $2::jsonb,
+           updated_at=NOW()
+       WHERE id=$1`,
+      [
+        payment.id,
+        JSON.stringify({
+          lastCallback: callbackMeta,
+          callbackResultCode: resultCode,
+          callbackResultDesc: resultDesc,
+          failureReason: resultDesc || 'M-Pesa callback failure',
+        }),
+      ],
+    );
+    await client.query('COMMIT');
+    return { processed: true, paymentId: payment.id, status: 'Failed' };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('[cv/mpesa/callback] failed', {
+      message: error?.message,
+      checkoutRequestId,
+      resultCode,
+    });
+    throw error;
+  } finally {
+    client.release();
   }
 }
 
