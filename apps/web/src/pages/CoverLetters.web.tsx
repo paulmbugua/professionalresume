@@ -25,9 +25,19 @@ const CoverLettersPage: React.FC = () => {
 
   const duplicateDraft = async (draft: any) => {
     const duplicated = await createDraft.mutateAsync({
-      templateId: draft.templateId || 'classic-letter',
+      templateKey: draft.templateId || 'classic-letter',
       title: `${draft.title || 'Untitled Cover Letter'} (Copy)`,
-      data: draft,
+      data: {
+        applicantName: draft?.applicantName || draft?.sender?.fullName || '',
+        applicantEmail: draft?.applicantEmail || draft?.sender?.email || '',
+        applicantPhone: draft?.applicantPhone || draft?.sender?.phone || '',
+        applicantLocation: draft?.applicantLocation || draft?.sender?.location || '',
+        recipientName: draft?.recipientName || draft?.recipient?.name || '',
+        companyName: draft?.companyName || draft?.recipient?.company || '',
+        roleTitle: draft?.roleTitle || draft?.letter?.role || '',
+        letterBody: draft?.letterBody || draft?.body?.opening || '',
+        closingLine: draft?.closingLine || draft?.letter?.signoff || '',
+      },
     });
 
     router.push(`/cover-letters/editor/${duplicated.id}`);
