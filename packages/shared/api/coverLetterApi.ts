@@ -276,25 +276,21 @@ export const exportCoverLetterPdf = async (
   token: string,
   payload: { draftId?: string; coverLetterJson?: Partial<CoverLetterDraft> }
 ): Promise<CoverLetterExportResponse> => {
-  const api = client(backendUrl, token);
-
   try {
+    const api = client(backendUrl, token);
     const res = await api.post<CoverLetterExportResponse>('/api/cover-letters/export', payload);
     return res.data;
   } catch (err: any) {
     const status = err?.response?.status;
-    if (status === 404) {
-      try {
-        const res = await api.post<CoverLetterExportResponse>(
-          '/api/cv/cover-letter/export',
-          payload
-        );
-        return res.data;
-      } catch (fallbackErr: any) {
-        throw new Error(toMessage(fallbackErr));
-      }
+    if (status === 403) {
+      throw new Error(
+        err?.response?.data?.error ||
+          'Cover-letter export is available after your paid resume/CV purchase.'
+      );
     }
-
+    if (status === 404) {
+      throw new Error(err?.response?.data?.error || 'Cover-letter draft not found');
+    }
     throw new Error(toMessage(err));
   }
 };

@@ -4,14 +4,12 @@ import { requireCoverLetterEntitlement } from '../middleware/coverLetterEntitlem
 import {
   createCoverLetter,
   deleteCoverLetter,
+  exportCoverLetter,
   getCoverLetter,
+  getCoverLetterPrintHtml,
   listCoverLetters,
   updateCoverLetter,
 } from '../controllers/coverLetterController.js';
-import {
-  exportCoverLetter,
-  getCoverLetterPrintHtml,
-} from '../controllers/cvController.js';
 
 const r = express.Router();
 

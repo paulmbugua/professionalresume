@@ -5,8 +5,13 @@ import {
   listCoverLettersForUser,
   updateCoverLetterForUser,
 } from '../services/coverLetterService.js';
+import { buildCvHtml, htmlToPdfBuffer } from '../services/cvRenderService.js';
+import { putDocObject, signDocGetUrl } from '../services/r2.js';
+import { createCoverLetterExportRecord } from '../services/cvService.js';
+import { normalizeCoverLetterTemplateId } from '../../../packages/shared/cover-letter/renderers/index.js';
 import {
   createCoverLetterSchema,
+  coverLetterExportSchema,
   patchCoverLetterSchema,
 } from '../validators/coverLetterValidators.js';
 
@@ -14,6 +19,80 @@ function validationErrorResponse(res, error) {
   return res
     .status(400)
     .json({ error: error.details?.[0]?.message || error.message });
+}
+
+function sanitizeObjectKey(input = '') {
+  return input
+    .replace(/\.\./g, '')
+    .replace(/^\/+/, '')
+    .replace(/[^\w./-]/g, '_');
+}
+
+function normalizeCoverLetterExportDraft(source = {}) {
+  const sender = source.sender || {};
+  const recipient = source.recipient || {};
+  const letter = source.letter || {};
+  const body = source.body || {};
+  const basics = source.basics || {};
+  const content = source.content || {};
+
+  const normalized = {
+    ...source,
+    templateId: normalizeCoverLetterTemplateId(
+      source.templateId || source.templateKey || 'classic-letter',
+    ),
+    sender: {
+      fullName:
+        sender.fullName || basics.fullName || source.applicantName || '',
+      email: sender.email || basics.email || source.applicantEmail || '',
+      phone: sender.phone || basics.phone || source.applicantPhone || '',
+      location: sender.location || basics.location || source.applicantLocation || '',
+    },
+    recipient: {
+      name: recipient.name || basics.hiringManager || source.recipientName || '',
+      title: recipient.title || '',
+      company: recipient.company || basics.companyName || source.companyName || '',
+      address:
+        recipient.address ||
+        recipient.addressLine1 ||
+        source.companyAddress ||
+        '',
+    },
+    letter: {
+      role: letter.role || basics.jobTitle || source.roleTitle || '',
+      date: letter.date || basics.date || source.date || '',
+      subject: letter.subject || content.subject || source.subject || '',
+      greeting: letter.greeting || content.greeting || source.greeting || '',
+      signoff:
+        letter.signoff ||
+        content.signature ||
+        source.closingLine ||
+        source.closing ||
+        'Sincerely,',
+    },
+    body: {
+      opening: body.opening || content.opening || '',
+      middleParagraphs: Array.isArray(body.middleParagraphs)
+        ? body.middleParagraphs
+        : Array.isArray(content.paragraphs)
+          ? content.paragraphs
+          : [],
+      closing: body.closing || content.closing || '',
+    },
+  };
+
+  if (
+    normalized.body.middleParagraphs.length === 0 &&
+    typeof source.letterBody === 'string' &&
+    source.letterBody.trim()
+  ) {
+    normalized.body.middleParagraphs = source.letterBody
+      .split(/\n{2,}/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+  }
+
+  return normalized;
 }
 
 export async function listCoverLetters(req, res) {
@@ -72,5 +151,96 @@ export async function deleteCoverLetter(req, res) {
   } catch (err) {
     console.error('deleteCoverLetter error', err);
     return res.status(500).json({ error: 'Failed to delete cover letter' });
+  }
+}
+
+export async function getCoverLetterPrintHtml(req, res) {
+  try {
+    const { error, value } = coverLetterExportSchema.validate(req.body || {});
+    if (error) return validationErrorResponse(res, error);
+
+    console.info('[coverLetter.printHtml] route-hit', {
+      userId: req.user?.id,
+      hasDraftId: Boolean(value.draftId),
+    });
+
+    let exportDraft = value.coverLetterJson || {};
+    if (value.draftId) {
+      const draft = await getCoverLetterForUser(req.user.id, value.draftId);
+      if (!draft) return res.status(404).json({ error: 'Cover letter draft not found' });
+      exportDraft = draft;
+    }
+
+    const normalizedDraft = normalizeCoverLetterExportDraft(exportDraft);
+    console.info('[coverLetter.printHtml] template', { templateId: normalizedDraft.templateId });
+    const html = buildCvHtml({ draft: normalizedDraft });
+    return res.json({ html });
+  } catch (err) {
+    console.error('getCoverLetterPrintHtml error', err);
+    return res.status(500).json({ error: 'Failed to build cover letter html' });
+  }
+}
+
+export async function exportCoverLetter(req, res) {
+  try {
+    const { error, value } = coverLetterExportSchema.validate(req.body || {});
+    if (error) return validationErrorResponse(res, error);
+
+    console.info('[coverLetter.export] route-hit', {
+      userId: req.user?.id,
+      draftId: value.draftId || null,
+      entitlement: req.coverLetterEntitlement || null,
+    });
+
+    let sourceDraftId = null;
+    let exportDraft = value.coverLetterJson || {};
+
+    if (value.draftId) {
+      const draft = await getCoverLetterForUser(req.user.id, value.draftId);
+      if (!draft) return res.status(404).json({ error: 'Cover letter draft not found' });
+      sourceDraftId = draft.id;
+      exportDraft = {
+        ...draft,
+        ...(value.coverLetterJson || {}),
+      };
+    }
+
+    const normalizedDraft = normalizeCoverLetterExportDraft(exportDraft);
+    console.info('[coverLetter.export] renderer-selection', {
+      templateId: normalizedDraft.templateId,
+    });
+    const html = buildCvHtml({ draft: normalizedDraft });
+    const buffer = await htmlToPdfBuffer(html);
+    console.info('[coverLetter.export] pdf-generated', { bytes: buffer.length });
+
+    const objectKey = sanitizeObjectKey(
+      `cvpro/${req.user.id}/cover-letters/export-${Date.now()}.pdf`,
+    );
+    const uploaded = await putDocObject({
+      key: objectKey,
+      body: buffer,
+      contentType: 'application/pdf',
+    });
+
+    const exportRecord = await createCoverLetterExportRecord({
+      userId: req.user.id,
+      sourceDraftId,
+      fileKey: uploaded.key,
+      publicUrl: uploaded.url,
+      mimeType: uploaded.contentType,
+      bytes: uploaded.bytes,
+    });
+    console.info('[coverLetter.export] record-created', { exportId: exportRecord?.id || null });
+
+    return res.status(201).json({
+      url: uploaded.url,
+      fileKey: uploaded.key,
+      signedUrl: await signDocGetUrl(uploaded.key),
+      bytes: uploaded.bytes,
+      mimeType: uploaded.contentType,
+    });
+  } catch (err) {
+    console.error('exportCoverLetter error', err);
+    return res.status(500).json({ error: err.message || 'Failed to export cover letter' });
   }
 }
