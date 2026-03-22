@@ -33,7 +33,7 @@ export const listCoverLetterTemplates = async (
     const api = client(backendUrl);
     const res = await api.get<
       CoverLetterTemplate[] | CoverLetterTemplateResponse | { templates?: CoverLetterTemplate[] }
-    >('/api/cover-letter/templates');
+    >('/api/cover-letters/templates');
 
     if (Array.isArray(res.data)) return { templates: res.data, source: 'db', fallback: false };
     if (Array.isArray(res.data?.templates)) {
@@ -55,7 +55,7 @@ export const listMyCoverLetterDrafts = async (
 ): Promise<CoverLetterDraft[]> => {
   try {
     const api = client(backendUrl, token);
-    const res = await api.get<CoverLetterDraft[]>('/api/cover-letter/drafts');
+    const res = await api.get<CoverLetterDraft[]>('/api/cover-letters/drafts');
     return res.data;
   } catch (err: any) {
     throw new Error(toMessage(err));
@@ -69,7 +69,7 @@ export const getCoverLetterDraft = async (
 ): Promise<CoverLetterDraft> => {
   try {
     const api = client(backendUrl, token);
-    const res = await api.get<CoverLetterDraft>(`/api/cover-letter/drafts/${id}`);
+    const res = await api.get<CoverLetterDraft>(`/api/cover-letters/drafts/${id}`);
     return res.data;
   } catch (err: any) {
     throw new Error(toMessage(err));
@@ -99,7 +99,7 @@ export const createCoverLetterDraft = async (
     if (typeof payload.title === 'string') safePayload.title = payload.title;
     if (payload.data && typeof payload.data === 'object') safePayload.data = payload.data;
 
-    const res = await api.post<CoverLetterDraft>('/api/cover-letter/drafts', safePayload);
+    const res = await api.post<CoverLetterDraft>('/api/cover-letters/drafts', safePayload);
     return res.data;
   } catch (err: any) {
     throw new Error(toMessage(err));
@@ -147,11 +147,11 @@ export const updateCoverLetterDraft = async (
       } as any;
     }
     if (Object.keys(safe).length === 0) {
-      const res = await api.get<CoverLetterDraft>(`/api/cover-letter/drafts/${id}`);
+      const res = await api.get<CoverLetterDraft>(`/api/cover-letters/drafts/${id}`);
       return res.data;
     }
 
-    const res = await api.patch<CoverLetterDraft>(`/api/cover-letter/drafts/${id}`, safe);
+    const res = await api.patch<CoverLetterDraft>(`/api/cover-letters/drafts/${id}`, safe);
     return res.data;
   } catch (err: any) {
     throw new Error(toMessage(err));
@@ -165,7 +165,7 @@ export const deleteCoverLetterDraft = async (
 ): Promise<void> => {
   try {
     const api = client(backendUrl, token);
-    await api.delete(`/api/cover-letter/drafts/${id}`);
+    await api.delete(`/api/cover-letters/drafts/${id}`);
   } catch (err: any) {
     throw new Error(toMessage(err));
   }
@@ -178,7 +178,7 @@ export const getCoverLetterPrintHtml = async (
 ): Promise<{ html: string }> => {
   try {
     const api = client(backendUrl, token);
-    const res = await api.get<{ html: string }>(`/api/cover-letter/drafts/${id}/print-html`);
+    const res = await api.get<{ html: string }>(`/api/cover-letters/drafts/${id}/print-html`);
     return res.data;
   } catch (err: any) {
     throw new Error(toMessage(err));
@@ -192,7 +192,7 @@ export const exportCoverLetterPdf = async (
 ): Promise<CoverLetterExportResponse> => {
   try {
     const api = client(backendUrl, token);
-    const res = await api.post<CoverLetterExportResponse>('/api/cover-letter/export', payload);
+    const res = await api.post<CoverLetterExportResponse>('/api/cover-letters/export', payload);
     return res.data;
   } catch (err: any) {
     throw new Error(toMessage(err));
@@ -207,7 +207,7 @@ export const signCoverLetterFile = async (
   try {
     const api = client(backendUrl, token);
     const res = await api.get<{ key: string; url: string; signedUrl: string }>(
-      '/api/cover-letter/files/sign',
+      '/api/cover-letters/files/sign',
       {
         params: { key: fileKey },
       },

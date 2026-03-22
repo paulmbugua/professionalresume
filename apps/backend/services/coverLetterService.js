@@ -1,3 +1,4 @@
+import { normalizeCoverLetterTemplateId } from '../../../packages/shared/cover-letter/renderers/index.js';
 import {
   createOwnedDraft,
   listOwnedDrafts,
@@ -10,7 +11,7 @@ export function buildDefaultCoverLetter({ userId, templateId, title }) {
   return {
     userId: String(userId),
     title: title?.trim() || 'Untitled Cover Letter',
-    templateId: templateId || 'classic-cover-letter',
+    templateId: normalizeCoverLetterTemplateId(templateId || 'classic-letter'),
     basics: {
       fullName: '',
       email: '',
@@ -50,19 +51,21 @@ export function buildDefaultCoverLetter({ userId, templateId, title }) {
 }
 
 export async function createCoverLetterForUser(userId, payload) {
-  const normalized =
-    payload.data ||
-    buildDefaultCoverLetter({
-      userId,
-      templateId: payload.templateId,
-      title: payload.title,
-    });
+  const normalizedTemplateId = normalizeCoverLetterTemplateId(payload.templateId || 'classic-letter');
+
+  const normalized = payload.data
+    ? { ...payload.data, templateId: normalizeCoverLetterTemplateId(payload.data.templateId || normalizedTemplateId) }
+    : buildDefaultCoverLetter({
+        userId,
+        templateId: normalizedTemplateId,
+        title: payload.title,
+      });
 
   return createOwnedDraft({
     table: 'cover_letter_drafts',
     userId,
     title: payload.title?.trim() || 'Untitled Cover Letter',
-    templateId: payload.templateId || 'classic-cover-letter',
+    templateId: normalizedTemplateId,
     data: normalized,
   });
 }
@@ -76,11 +79,16 @@ export async function getCoverLetterForUser(userId, draftId) {
 }
 
 export async function updateCoverLetterForUser(userId, draftId, patch) {
+  const safePatch = {
+    ...patch,
+    ...(patch.templateId ? { templateId: normalizeCoverLetterTemplateId(patch.templateId) } : {}),
+  };
+
   return updateOwnedDraft({
     table: 'cover_letter_drafts',
     userId,
     draftId,
-    patch,
+    patch: safePatch,
     titleFallback: 'Untitled Cover Letter',
     nestedKeys: ['basics', 'content', 'design', 'sectionVisibility'],
     loadDraft: getCoverLetterForUser,

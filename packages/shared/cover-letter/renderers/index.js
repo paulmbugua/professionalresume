@@ -1,4 +1,6 @@
 import {
+  normalizeCoverLetterTemplateId,
+  renderClassicLetterHtml,
   renderCleanModernHeaderHtml,
   renderDarkHeaderCorporateHtml,
   renderMinimalWideNameHeaderHtml,
@@ -9,9 +11,10 @@ import {
   templateMarkersById,
 } from './templates/renderers.js';
 
-export { templateMarkersById };
+export { normalizeCoverLetterTemplateId, templateMarkersById };
 
 export const renderersById = {
+  'classic-letter': renderClassicLetterHtml,
   'professional-blue-letterhead': renderProfessionalBlueLetterheadHtml,
   'clean-modern-header': renderCleanModernHeaderHtml,
   'dark-header-corporate': renderDarkHeaderCorporateHtml,
@@ -22,10 +25,7 @@ export const renderersById = {
 };
 
 export function renderCoverLetterHtmlByTemplate(draft = {}) {
-  const templateId = String(draft.templateId || '').trim();
-  const renderer = renderersById[templateId];
-  if (!renderer) {
-    throw new Error(`No cover-letter HTML renderer for templateId=${templateId || 'unknown'}`);
-  }
-  return renderer(draft);
+  const templateId = normalizeCoverLetterTemplateId(draft.templateId);
+  const renderer = renderersById[templateId] || renderersById['classic-letter'];
+  return renderer({ ...draft, templateId });
 }

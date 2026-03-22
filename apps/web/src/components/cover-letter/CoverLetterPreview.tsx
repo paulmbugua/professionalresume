@@ -5,7 +5,7 @@ import { coverLetterTemplateRegistryById } from '../../templates/coverLetterRegi
 type Props = { draft: CoverLetterDraft };
 
 const CoverLetterPreview: React.FC<Props> = ({ draft }) => {
-  const template = coverLetterTemplateRegistryById[draft.templateId];
+  const template = coverLetterTemplateRegistryById[draft.templateId] || coverLetterTemplateRegistryById['classic-letter'];
   const Template = template.component;
   return <Template draft={draft} />;
 };

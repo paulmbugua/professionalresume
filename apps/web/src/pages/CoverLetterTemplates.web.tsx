@@ -66,7 +66,12 @@ const CoverLetterTemplatesPage: React.FC = () => {
             Selected template
           </p>
           <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{selectedTemplate?.name}</h2>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{selectedTemplate?.name}</h2>
+              <p className="mt-1 text-sm text-gray-500 dark:text-white/70">
+                {selectedTemplate?.description}
+              </p>
+            </div>
             <button
               type="button"
               onClick={() => selectedTemplate && handleUseTemplate(selectedTemplate.id)}
@@ -131,8 +136,21 @@ const CoverLetterTemplatesPage: React.FC = () => {
                 <div className="mt-4">
                   <h3 className="text-base font-semibold text-gray-900 dark:text-white">{template.name}</h3>
                   <p className="mt-1 text-xs text-gray-500 dark:text-white/60">
-                    Professional formatting optimized for clear, readable cover-letter content.
+                    {template.description}
                   </p>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:bg-white/10 dark:text-slate-200">
+                      {template.category}
+                    </span>
+                    {template.tags.slice(0, 2).map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full border border-slate-200 px-2 py-0.5 text-[10px] text-slate-500 dark:border-white/15 dark:text-slate-300"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="mt-4 flex gap-2">
