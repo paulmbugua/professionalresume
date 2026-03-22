@@ -1,5 +1,11 @@
-import crypto from 'crypto';
 import pool from '../config/db.js';
+import {
+  createOwnedDraft,
+  listOwnedDrafts,
+  getOwnedDraft,
+  updateOwnedDraft,
+  softDeleteOwnedDraft,
+} from './userOwnedDraftsService.js';
 
 const defaultSectionOrder = [
   'summary',
@@ -18,8 +24,6 @@ const defaultSectionVisibility = defaultSectionOrder.reduce((acc, key) => {
 
 export function buildDefaultDraft({ userId, templateId, title }) {
   return {
-    id: crypto.randomUUID(),
-    userId: String(userId),
     title: title?.trim() || 'Untitled CV',
     templateId,
     updatedAt: new Date().toISOString(),
@@ -31,26 +35,21 @@ export function buildDefaultDraft({ userId, templateId, title }) {
     projects: [],
     certifications: [],
     extras: { languages: [], interests: [] },
-    typography: { baseFontSize: 12, h1Size: 28, h2Size: 13, h3Size: 11, bodySize: 12, lineHeight: 1.48, fontFamily: 'Inter, system-ui, Arial' },
+    typography: {
+      baseFontSize: 12,
+      h1Size: 28,
+      h2Size: 13,
+      h3Size: 11,
+      bodySize: 12,
+      lineHeight: 1.48,
+      fontFamily: 'Inter, system-ui, Arial',
+    },
     formatting: { textColor: '#0f172a', mutedTextColor: '#475569', linkColor: '#0f766e' },
     templateTheme: { primary: '#0f172a', accent: '#0f766e' },
     richText: {},
     sectionOrder: defaultSectionOrder,
     sectionVisibility: defaultSectionVisibility,
-  };
-}
-
-function mapDraft(row) {
-  const data = row.data_json || {};
-  return {
-    id: row.id,
-    userId: String(row.user_id),
-    title: row.title,
-    templateId: row.template_key,
-    updatedAt: row.updated_at,
-    createdAt: row.created_at,
-    version: row.version,
-    ...data,
+    userId: String(userId),
   };
 }
 
@@ -82,83 +81,49 @@ export async function templateExists(templateKey) {
 }
 
 export async function createDraftForUser(userId, payload) {
-  const id = crypto.randomUUID();
-  const normalized = payload.data || buildDefaultDraft({ userId, templateId: payload.templateId, title: payload.title });
-  const dataJson = { ...normalized, id, userId: String(userId), templateId: payload.templateId };
+  const normalized =
+    payload.data ||
+    buildDefaultDraft({ userId, templateId: payload.templateId, title: payload.title });
 
-  const { rows } = await pool.query(
-    `INSERT INTO cv_drafts (id, user_id, title, template_key, data_json)
-     VALUES ($1,$2,$3,$4,$5::jsonb)
-     RETURNING *`,
-    [id, Number(userId), payload.title?.trim() || 'Untitled CV', payload.templateId, JSON.stringify(dataJson)],
-  );
-  return mapDraft(rows[0]);
+  return createOwnedDraft({
+    table: 'cv_drafts',
+    userId,
+    title: payload.title?.trim() || 'Untitled CV',
+    templateId: payload.templateId,
+    data: normalized,
+  });
 }
 
 export async function listDraftsForUser(userId) {
-  const { rows } = await pool.query(
-    `SELECT * FROM cv_drafts
-     WHERE user_id = $1 AND is_deleted = FALSE
-     ORDER BY updated_at DESC`,
-    [Number(userId)],
-  );
-  return rows.map(mapDraft);
+  return listOwnedDrafts({ table: 'cv_drafts', userId });
 }
 
 export async function getDraftForUser(userId, draftId) {
-  const { rows } = await pool.query(
-    `SELECT * FROM cv_drafts
-     WHERE id = $1 AND user_id = $2 AND is_deleted = FALSE`,
-    [draftId, Number(userId)],
-  );
-  return rows[0] ? mapDraft(rows[0]) : null;
+  return getOwnedDraft({ table: 'cv_drafts', userId, draftId });
 }
 
 export async function updateDraftForUser(userId, draftId, patch) {
-  const current = await getDraftForUser(userId, draftId);
-  if (!current) return null;
-
-  const merged = {
-    ...current,
-    ...patch,
-    basics: { ...current.basics, ...(patch.basics || {}) },
-    extras: { ...current.extras, ...(patch.extras || {}) },
-    sectionVisibility: { ...current.sectionVisibility, ...(patch.sectionVisibility || {}) },
-    typography: { ...(current.typography || {}), ...(patch.typography || {}) },
-    formatting: { ...(current.formatting || {}), ...(patch.formatting || {}) },
-    templateTheme: { ...(current.templateTheme || {}), ...(patch.templateTheme || {}) },
-    richText: { ...(current.richText || {}), ...(patch.richText || {}) },
-    id: draftId,
-    userId: String(userId),
-    templateId: patch.templateId || current.templateId,
-  };
-
-  const { rows } = await pool.query(
-    `UPDATE cv_drafts
-        SET title = $1,
-            template_key = $2,
-            data_json = $3::jsonb,
-            version = version + 1,
-            updated_at = NOW()
-      WHERE id = $4 AND user_id = $5 AND is_deleted = FALSE
-      RETURNING *`,
-    [merged.title || current.title || 'Untitled CV', merged.templateId, JSON.stringify(merged), draftId, Number(userId)],
-  );
-
-  return rows[0] ? mapDraft(rows[0]) : null;
+  return updateOwnedDraft({
+    table: 'cv_drafts',
+    userId,
+    draftId,
+    patch,
+    titleFallback: 'Untitled CV',
+    nestedKeys: [
+      'basics',
+      'extras',
+      'sectionVisibility',
+      'typography',
+      'formatting',
+      'templateTheme',
+      'richText',
+    ],
+    loadDraft: getDraftForUser,
+  });
 }
 
 export async function deleteDraftForUser(userId, draftId) {
-  const { rows } = await pool.query(
-    `UPDATE cv_drafts
-        SET is_deleted = TRUE,
-            deleted_at = NOW(),
-            updated_at = NOW()
-      WHERE id = $1 AND user_id = $2 AND is_deleted = FALSE
-      RETURNING id`,
-    [draftId, Number(userId)],
-  );
-  return rows.length > 0;
+  return softDeleteOwnedDraft({ table: 'cv_drafts', userId, draftId });
 }
 
 export async function createExportRecord({ draftId, userId, fileKey, publicUrl, mimeType, bytes }) {
@@ -199,7 +164,6 @@ export async function getUserRole(userId) {
   const { rows } = await pool.query('SELECT role FROM users WHERE id = $1', [Number(userId)]);
   return rows[0]?.role || null;
 }
-
 
 export async function ensureTemplatesSeeded(templates = []) {
   for (const t of templates) {

@@ -18,6 +18,7 @@ import cvRoutes from './routes/cvRoutes.js';
 import cloudinaryRoutes from './routes/cloudinaryRoutes.js';
 import earningsRoutes from './routes/earningsRoutes.js';
 import uploadsRoutes from './routes/uploadsRoutes.js';
+import coverLetterRoutes from './routes/coverLetterRoutes.js';
 
 
 // Middleware
@@ -194,6 +195,7 @@ if (isProduction) {
 // Payments & webhooks
 app.use('/api/payment',                                paymentRoutes);
 app.use('/api/cv',                                      cvRoutes);
+app.use('/api/cover-letters',                           coverLetterRoutes);
 
 app.use('/api/mpesa',                                  mpesaUrlsRoutes);
 
