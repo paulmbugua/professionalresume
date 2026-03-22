@@ -7,7 +7,6 @@ import {
   updateDraftForUser,
   deleteDraftForUser,
   createExportRecord,
-  createCoverLetterExportRecord,
   userCanAccessFileKey,
   upsertTemplate,
   getUserRole,
@@ -17,15 +16,16 @@ import {
 import { cvTemplates as localTemplates } from '../services/cvTemplates.js';
 import { improveExperienceWithAi } from '../services/cvAiService.js';
 import { buildCvHtml, htmlToPdfBuffer } from '../services/cvRenderService.js';
-import { buildCoverLetterHtml } from '../services/coverLetterRenderService.js';
 import { putDocObject, signDocGetUrl, getPublicR2Url } from '../services/r2.js';
+import {
+  exportCoverLetter as exportCoverLetterFromCoverLetterController,
+  getCoverLetterPrintHtml as getCoverLetterPrintHtmlFromCoverLetterController,
+} from './coverLetterController.js';
 import {
   createDraftSchema,
   draftPatchSchema,
   cvExportSchema,
   templateUploadSchema,
-  coverLetterExportDataSchema,
-  coverLetterExportSchema,
 } from '../validators/cvValidators.js';
 
 function sanitizeObjectKey(input = '') {
@@ -311,55 +311,9 @@ export async function getCoverLetterEntitlementController(req, res) {
 }
 
 export async function getCoverLetterPrintHtml(req, res) {
-  try {
-    const { error, value } = coverLetterExportDataSchema.validate(req.body || {});
-    if (error) {
-      return res.status(400).json({ error: error.details?.[0]?.message || error.message });
-    }
-    const html = buildCoverLetterHtml(value);
-    return res.json({ html });
-  } catch (err) {
-    console.error('getCoverLetterPrintHtml error', err);
-    return res.status(500).json({ error: 'Failed to build cover letter html' });
-  }
+  return getCoverLetterPrintHtmlFromCoverLetterController(req, res);
 }
 
 export async function exportCoverLetter(req, res) {
-  try {
-    const { error, value } = coverLetterExportSchema.validate(req.body || {});
-    if (error) {
-      return res.status(400).json({ error: error.details?.[0]?.message || error.message });
-    }
-
-    const html = buildCoverLetterHtml(value.coverLetterJson || {});
-    const buffer = await htmlToPdfBuffer(html);
-    const objectKey = sanitizeObjectKey(
-      `cvpro/${req.user.id}/cover-letters/export-${Date.now()}.pdf`,
-    );
-
-    const uploaded = await putDocObject({
-      key: objectKey,
-      body: buffer,
-      contentType: 'application/pdf',
-    });
-
-    await createCoverLetterExportRecord({
-      userId: req.user.id,
-      fileKey: uploaded.key,
-      publicUrl: uploaded.url,
-      mimeType: uploaded.contentType,
-      bytes: uploaded.bytes,
-    });
-
-    return res.status(201).json({
-      url: uploaded.url,
-      fileKey: uploaded.key,
-      signedUrl: await signDocGetUrl(uploaded.key),
-      bytes: uploaded.bytes,
-      mimeType: uploaded.contentType,
-    });
-  } catch (err) {
-    console.error('exportCoverLetter error', err);
-    return res.status(500).json({ error: err.message || 'Failed to export cover letter' });
-  }
+  return exportCoverLetterFromCoverLetterController(req, res);
 }

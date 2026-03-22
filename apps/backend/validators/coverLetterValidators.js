@@ -75,11 +75,54 @@ export const patchCoverLetterSchema = Joi.object({
 
 export const coverLetterExportSchema = Joi.object({
   draftId: Joi.string().guid({ version: ['uuidv4', 'uuidv5'] }).optional(),
-  coverLetterJson: Joi.object({
-    basics: basicsSchema,
-    content: contentSchema,
-    design: designSchema,
-  }).optional(),
+  coverLetterJson: Joi.alternatives()
+    .try(
+      Joi.object({
+        templateId: Joi.string().optional(),
+        sender: Joi.object({
+          fullName: Joi.string().max(120).allow(''),
+          email: Joi.string().email().allow(''),
+          phone: Joi.string().max(40).allow(''),
+          location: Joi.string().max(120).allow(''),
+        }).optional(),
+        recipient: Joi.object({
+          name: Joi.string().max(120).allow(''),
+          title: Joi.string().max(120).allow(''),
+          company: Joi.string().max(140).allow(''),
+          address: Joi.string().max(400).allow(''),
+          addressLine1: Joi.string().max(200).allow(''),
+          addressLine2: Joi.string().max(200).allow(''),
+        }).optional(),
+        letter: Joi.object({
+          role: Joi.string().max(140).allow(''),
+          date: Joi.string().allow(''),
+          subject: Joi.string().max(200).allow(''),
+          greeting: Joi.string().max(5000).allow(''),
+          signoff: Joi.string().max(200).allow(''),
+        }).optional(),
+        body: Joi.object({
+          opening: Joi.string().max(5000).allow(''),
+          middleParagraphs: Joi.array().items(Joi.string().max(5000).allow('')).max(8),
+          closing: Joi.string().max(5000).allow(''),
+        }).optional(),
+        basics: basicsSchema,
+        content: contentSchema,
+        design: designSchema,
+      }).unknown(false),
+      Joi.object({
+        templateId: Joi.string().optional(),
+        applicantName: Joi.string().max(120).allow('').required(),
+        applicantEmail: Joi.string().email().allow(''),
+        applicantPhone: Joi.string().max(40).allow(''),
+        applicantLocation: Joi.string().max(120).allow(''),
+        recipientName: Joi.string().max(120).allow(''),
+        companyName: Joi.string().max(140).allow(''),
+        roleTitle: Joi.string().max(140).allow(''),
+        letterBody: Joi.string().max(12000).allow('').required(),
+        closingLine: Joi.string().max(200).allow(''),
+      }).unknown(false),
+    )
+    .optional(),
   fileName: Joi.string().max(180).allow('').optional(),
 }).or('draftId', 'coverLetterJson');
 
