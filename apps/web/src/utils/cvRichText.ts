@@ -14,6 +14,14 @@ export function stripHtml(value?: string): string {
   return String(value || '').replace(/<[^>]*>/g, '');
 }
 
+export type InlineRichTextTag = 'strong' | 'em' | 'u';
+
+export function appendInlineRichTextTag(value: string | undefined, tag: InlineRichTextTag): string {
+  const current = String(value || '');
+  const spacer = current && !/\s$/.test(current) ? ' ' : '';
+  return `${current}${spacer}<${tag}></${tag}>`;
+}
+
 export function sanitizeRichTextHtml(input?: string): string {
   if (!input) return '';
   const cleaned = input

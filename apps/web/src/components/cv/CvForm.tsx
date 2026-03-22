@@ -32,28 +32,8 @@ const RichTextField: React.FC<{
   const { setValue, watch } = useFormContext<CvDraft>();
   const value = (watch(name as any) as string) || '';
 
-  const applyWrap = (tag: 'strong' | 'em' | 'u') => {
-    const next = `${value}<${tag}>`;
-    setValue(name as any, next, { shouldDirty: true, shouldTouch: true });
-  };
-
   return (
     <div className="space-y-2">
-      <div className="flex gap-2 text-xs">
-        <button
-          type="button"
-          className="rounded border px-2 py-1"
-          onClick={() => applyWrap('strong')}
-        >
-          Bold
-        </button>
-        <button type="button" className="rounded border px-2 py-1" onClick={() => applyWrap('em')}>
-          Italic
-        </button>
-        <button type="button" className="rounded border px-2 py-1" onClick={() => applyWrap('u')}>
-          Underline
-        </button>
-      </div>
       <Textarea
         value={value}
         onChange={(e) => {
