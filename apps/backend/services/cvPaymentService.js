@@ -86,7 +86,7 @@ async function createCvPaymentIntent({ userId, provider, paymentMethod, amount, 
   return rows[0];
 }
 
-export async function initCvMpesaPayment({ userId, phone }) {
+export async function initCvMpesaPayment({ userId, phone, requestBaseUrl }) {
   const normalizedPhone = normalizePhoneNumber(phone);
   if (!normalizedPhone) {
     const err = new PaymentInitError(

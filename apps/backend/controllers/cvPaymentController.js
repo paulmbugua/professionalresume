@@ -26,7 +26,11 @@ export async function getCvPaymentConfig(_req, res) {
 export async function initMpesa(req, res) {
   try {
     const { phone } = req.body || {};
-    const out = await initCvMpesaPayment({ userId: req.user.id, phone });
+    const forwardedProto = req.headers['x-forwarded-proto'];
+    const proto = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto || req.protocol || 'http';
+    const host = req.headers['x-forwarded-host'] || req.get('host');
+    const requestBaseUrl = host ? `${proto}://${host}` : null;
+    const out = await initCvMpesaPayment({ userId: req.user.id, phone, requestBaseUrl });
     return res.status(200).json(out);
   } catch (error) {
     return resolveError(res, error);
