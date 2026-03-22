@@ -11,7 +11,12 @@ import {
 
 function resolveError(res, error) {
   const status = error?.statusCode || 500;
-  return res.status(status).json({ error: error.message || 'Unexpected server error' });
+  return res.status(status).json({
+    message: error?.message || 'Unexpected server error',
+    error: error?.message || 'Unexpected server error',
+    code: error?.code || 'CV_PAYMENT_ERROR',
+    ...(error?.providerMessage ? { providerMessage: error.providerMessage } : {}),
+  });
 }
 
 export async function getCvPaymentConfig(_req, res) {
@@ -21,7 +26,11 @@ export async function getCvPaymentConfig(_req, res) {
 export async function initMpesa(req, res) {
   try {
     const { phone } = req.body || {};
-    const out = await initCvMpesaPayment({ userId: req.user.id, phone });
+    const forwardedProto = req.headers['x-forwarded-proto'];
+    const proto = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto || req.protocol || 'http';
+    const host = req.headers['x-forwarded-host'] || req.get('host');
+    const requestBaseUrl = host ? `${proto}://${host}` : null;
+    const out = await initCvMpesaPayment({ userId: req.user.id, phone, requestBaseUrl });
     return res.status(200).json(out);
   } catch (error) {
     return resolveError(res, error);

@@ -27,6 +27,8 @@ const MPESA_BASE = MPESA_ENV === 'sandbox'
   ? 'https://sandbox.safaricom.co.ke'
   : 'https://api.safaricom.co.ke';
 
+const CVPRO_CALLBACK_URL = process.env.CVPRO_MPESA_CALLBACK_URL;
+
 /* ─────────────────────────────────────────────────────────
  * Validate presence (warn — don’t crash boot)
  * ───────────────────────────────────────────────────────── */
@@ -36,6 +38,7 @@ const MPESA_BASE = MPESA_ENV === 'sandbox'
   ['MPESA_PASSKEY', passkey],
   ['MPESA_SHORTCODE', shortcode],
   ['CALLBACK_URL', callbackURL],
+  ['CVPRO_MPESA_CALLBACK_URL', CVPRO_CALLBACK_URL],
   ['TIMEOUT_URL', timeoutURL],
   ['RESULT_URL', resultURL],
   ['MPESA_INITIATOR_NAME', initiatorName],
@@ -45,6 +48,64 @@ const MPESA_BASE = MPESA_ENV === 'sandbox'
 ].forEach(([name, val]) => {
   if (!val) console.warn(`⚠️ ${name} is missing`);
 });
+
+function ensureAbsoluteUrl(value) {
+  if (!value) return null;
+  try {
+    const out = new URL(value);
+    return out.toString();
+  } catch {
+    return null;
+  }
+}
+
+function toBase(value) {
+  if (!value) return null;
+  try {
+    const out = new URL(value);
+    out.pathname = '/';
+    out.search = '';
+    out.hash = '';
+    return out.toString().replace(/\/$/, '');
+  } catch {
+    return null;
+  }
+}
+
+export function resolveStkCallbackUrl({ product = 'default', requestBaseUrl } = {}) {
+  const envPreferred = product === 'cvpro' ? CVPRO_CALLBACK_URL : null;
+  const envFallback = callbackURL;
+
+  const direct = ensureAbsoluteUrl(envPreferred) || ensureAbsoluteUrl(envFallback);
+  if (direct) return direct;
+
+  const baseCandidates = [
+    requestBaseUrl,
+    process.env.PUBLIC_BACKEND_URL,
+    process.env.PUBLIC_API_URL,
+    process.env.PROD_BACKEND_URL,
+    process.env.BACKEND_URL,
+  ];
+
+  for (const rawBase of baseCandidates) {
+    const base = toBase(rawBase);
+    if (base) {
+      return `${base}/api/mpesa/callback`;
+    }
+  }
+
+  return null;
+}
+
+export function getMpesaConfigHealth() {
+  const missing = [
+    ['MPESA_CONSUMER_KEY', consumerKey],
+    ['MPESA_CONSUMER_SECRET', consumerSecret],
+    ['MPESA_PASSKEY', passkey],
+    ['MPESA_SHORTCODE', shortcode],
+  ].filter(([, value]) => !value).map(([name]) => name);
+  return { ok: missing.length === 0, missing };
+}
 
 /* ─────────────────────────────────────────────────────────
  * Dynamic timestamp/password helpers (per-request safe)
