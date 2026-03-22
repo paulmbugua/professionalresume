@@ -1,5 +1,11 @@
-import CoverLetterPage from '../../../pages/CoverLetterPage.web';
+import { redirect } from 'next/navigation';
 
-export default function Page() {
-  return <CoverLetterPage />;
+type Props = {
+  params: {
+    id: string;
+  };
+};
+
+export default function Page({ params }: Props) {
+  redirect(`/cover-letters/editor/${params.id}`);
 }

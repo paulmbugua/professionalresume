@@ -6,11 +6,6 @@ const routes = [
   },
   { url: '/login', wrapper: 'src/app/login/page.tsx', component: 'src/pages/LoginPage.web.tsx' },
   {
-    url: '/cover-letters',
-    wrapper: 'src/app/cover-letters/page.tsx',
-    component: 'src/pages/CoverLetterTemplates.web.tsx',
-  },
-  {
     url: '/templates',
     wrapper: 'src/app/templates/page.tsx',
     component: 'src/pages/CvTemplates.web.tsx',
@@ -43,9 +38,19 @@ const routes = [
     component: 'src/pages/CoverLetterNew.web.tsx',
   },
   {
+    url: '/cover-letters/templates',
+    wrapper: 'src/app/cover-letters/templates/page.tsx',
+    component: 'src/pages/CoverLetterTemplates.web.tsx',
+  },
+  {
+    url: '/cover-letters/editor/[id]',
+    wrapper: 'src/app/cover-letters/editor/[id]/page.tsx',
+    component: 'src/pages/CoverLetterBuilderPage.web.tsx',
+  },
+  {
     url: '/cover-letters/[id]',
     wrapper: 'src/app/cover-letters/[id]/page.tsx',
-    component: 'src/pages/CoverLetterPage.web.tsx',
+    component: 'legacy redirect to /cover-letters/editor/[id]',
   },
   { url: '/help', wrapper: 'src/app/help/page.tsx', component: 'src/pages/HelpPage.web.tsx' },
   {

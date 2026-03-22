@@ -121,22 +121,31 @@ export const updateCoverLetterDraft = async (
     if (typeof payload.title === 'string') safe.title = payload.title;
     if (typeof payload.templateId === 'string') safe.templateId = payload.templateId;
 
-    if (payload.recipient && typeof payload.recipient === 'object') safe.recipient = payload.recipient;
     if (payload.sender && typeof payload.sender === 'object') safe.sender = payload.sender;
+    if (payload.recipient && typeof payload.recipient === 'object') safe.recipient = payload.recipient;
+    if (payload.letter && typeof payload.letter === 'object') safe.letter = payload.letter;
+    if (payload.body && typeof payload.body === 'object') safe.body = payload.body;
+    if (payload.style && typeof payload.style === 'object') safe.style = payload.style;
 
-    if (typeof payload.subject === 'string') safe.subject = payload.subject;
-    if (typeof payload.opening === 'string') safe.opening = payload.opening;
-    if (typeof payload.body === 'string') safe.body = payload.body;
-    if (typeof payload.closing === 'string') safe.closing = payload.closing;
-    if (typeof payload.signature === 'string') safe.signature = payload.signature;
-    if (typeof payload.tone === 'string') safe.tone = payload.tone;
-
-    if (Array.isArray(payload.highlights)) safe.highlights = payload.highlights;
-    if (payload.richText && typeof payload.richText === 'object') safe.richText = payload.richText;
-    if (payload.templateTheme && typeof payload.templateTheme === 'object') {
-      safe.templateTheme = payload.templateTheme;
+    // backwards-compatibility for older payload variants that may still be cached client-side
+    if (typeof (payload as any).subject === 'string' || typeof (payload as any).greeting === 'string' || typeof (payload as any).closing === 'string') {
+      safe.letter = {
+        ...(safe.letter || (payload as any).letter || {}),
+        subject: (payload as any).subject ?? (safe.letter as any)?.subject ?? '',
+        greeting: (payload as any).greeting ?? (safe.letter as any)?.greeting ?? '',
+        signoff: (payload as any).closing ?? (safe.letter as any)?.signoff ?? '',
+        role: (safe.letter as any)?.role ?? '',
+        date: (safe.letter as any)?.date ?? '',
+      } as any;
     }
-
+    if (typeof (payload as any).body === 'string') {
+      safe.body = {
+        ...(safe.body || (payload as any).body || {}),
+        opening: (payload as any).body,
+        middleParagraphs: (safe.body as any)?.middleParagraphs || [''],
+        closing: (safe.body as any)?.closing || '',
+      } as any;
+    }
     if (Object.keys(safe).length === 0) {
       const res = await api.get<CoverLetterDraft>(`/api/cover-letter/drafts/${id}`);
       return res.data;

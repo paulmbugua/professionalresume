@@ -1,24 +1,47 @@
 'use client';
 
-import React, { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useEffect, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useShopContext } from '@cvpro/shared/context';
-import { getReturnToFromQuery } from '../lib/returnTo';
+import { useCreateCoverLetterDraft } from '@cvpro/shared/hooks';
+import { EMPTY_COVER_LETTER_DRAFT } from '../utils/coverLetterDefaults';
 
 const CoverLetterNewPage: React.FC = () => {
   const router = useRouter();
-  const { token } = useShopContext() as any;
+  const params = useSearchParams();
+  const { token, backendUrl } = useShopContext() as any;
+  const createDraft = useCreateCoverLetterDraft({ backendUrl: backendUrl || '', token: token || '' });
+  const startedRef = useRef(false);
 
   useEffect(() => {
     if (!token) {
-      const returnTo = getReturnToFromQuery(new URLSearchParams({ returnTo: '/cover-letters/new' }), '/cover-letters');
-      router.replace(`/login?returnTo=${encodeURIComponent(returnTo)}`);
+      router.replace(`/login?returnTo=${encodeURIComponent('/cover-letters/new')}`);
       return;
     }
 
-    const generatedId = `draft-${Date.now()}`;
-    router.replace(`/cover-letters/${generatedId}`);
-  }, [router, token]);
+    if (!backendUrl) return;
+
+    if (startedRef.current) return;
+    startedRef.current = true;
+
+    const templateId = params?.get('templateId') || 'classic-letter';
+
+    createDraft
+      .mutateAsync({
+        templateId,
+        title: 'Untitled Cover Letter',
+        data: {
+          ...EMPTY_COVER_LETTER_DRAFT,
+          templateId,
+        },
+      })
+      .then((created) => {
+        router.replace(`/cover-letters/editor/${created.id}`);
+      })
+      .catch(() => {
+        router.replace('/cover-letters/templates');
+      });
+  }, [backendUrl, createDraft, params, router, token]);
 
   return (
     <div className="mx-auto flex min-h-[60vh] w-full max-w-screen-lg items-center justify-center px-4 py-12 text-center">
