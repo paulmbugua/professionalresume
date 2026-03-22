@@ -27,6 +27,8 @@ const MPESA_BASE = MPESA_ENV === 'sandbox'
   ? 'https://sandbox.safaricom.co.ke'
   : 'https://api.safaricom.co.ke';
 
+const CVPRO_CALLBACK_URL = process.env.CVPRO_MPESA_CALLBACK_URL;
+
 /* ─────────────────────────────────────────────────────────
  * Validate presence (warn — don’t crash boot)
  * ───────────────────────────────────────────────────────── */
@@ -36,6 +38,7 @@ const MPESA_BASE = MPESA_ENV === 'sandbox'
   ['MPESA_PASSKEY', passkey],
   ['MPESA_SHORTCODE', shortcode],
   ['CALLBACK_URL', callbackURL],
+  ['CVPRO_MPESA_CALLBACK_URL', CVPRO_CALLBACK_URL],
   ['TIMEOUT_URL', timeoutURL],
   ['RESULT_URL', resultURL],
   ['MPESA_INITIATOR_NAME', initiatorName],
@@ -45,6 +48,21 @@ const MPESA_BASE = MPESA_ENV === 'sandbox'
 ].forEach(([name, val]) => {
   if (!val) console.warn(`⚠️ ${name} is missing`);
 });
+
+export function resolveStkCallbackUrl({ product = 'default' } = {}) {
+  if (product === 'cvpro') return CVPRO_CALLBACK_URL || callbackURL || null;
+  return callbackURL || null;
+}
+
+export function getMpesaConfigHealth() {
+  const missing = [
+    ['MPESA_CONSUMER_KEY', consumerKey],
+    ['MPESA_CONSUMER_SECRET', consumerSecret],
+    ['MPESA_PASSKEY', passkey],
+    ['MPESA_SHORTCODE', shortcode],
+  ].filter(([, value]) => !value).map(([name]) => name);
+  return { ok: missing.length === 0, missing };
+}
 
 /* ─────────────────────────────────────────────────────────
  * Dynamic timestamp/password helpers (per-request safe)
