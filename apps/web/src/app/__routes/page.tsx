@@ -6,6 +6,11 @@ const routes = [
   },
   { url: '/login', wrapper: 'src/app/login/page.tsx', component: 'src/pages/LoginPage.web.tsx' },
   {
+    url: '/cover-letters',
+    wrapper: 'src/app/cover-letters/page.tsx',
+    component: 'src/pages/CoverLetterTemplates.web.tsx',
+  },
+  {
     url: '/templates',
     wrapper: 'src/app/templates/page.tsx',
     component: 'src/pages/CvTemplates.web.tsx',
