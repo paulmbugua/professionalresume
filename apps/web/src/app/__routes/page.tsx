@@ -26,6 +26,22 @@ const routes = [
     wrapper: 'src/app/profile/page.tsx',
     component: 'src/pages/ProfilePage.web.tsx',
   },
+
+  {
+    url: '/cover-letters',
+    wrapper: 'src/app/cover-letters/page.tsx',
+    component: 'src/pages/CoverLetters.web.tsx',
+  },
+  {
+    url: '/cover-letters/new',
+    wrapper: 'src/app/cover-letters/new/page.tsx',
+    component: 'src/pages/CoverLetterNew.web.tsx',
+  },
+  {
+    url: '/cover-letters/[id]',
+    wrapper: 'src/app/cover-letters/[id]/page.tsx',
+    component: 'src/pages/CoverLetterPage.web.tsx',
+  },
   { url: '/help', wrapper: 'src/app/help/page.tsx', component: 'src/pages/HelpPage.web.tsx' },
   {
     url: '/find-tutor',

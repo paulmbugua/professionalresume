@@ -3,11 +3,21 @@
 import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { usePathname } from 'next/navigation';
 import { Moon, Sun, User } from 'lucide-react';
 import useTheme from '@cvpro/shared/hooks/useTheme';
 
+const linkClass = (isActive: boolean) =>
+  [
+    'transition',
+    isActive
+      ? 'text-primary dark:text-primary'
+      : 'text-slate-700 hover:text-primary dark:text-white/80',
+  ].join(' ');
+
 const CvTopNav: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
+  const pathname = usePathname();
   const isDark = theme === 'dark';
   const themeLabel = isDark ? 'Switch to light theme' : 'Switch to dark theme';
 
@@ -29,23 +39,17 @@ const CvTopNav: React.FC = () => {
         </Link>
 
         <nav className="flex items-center gap-4 text-sm font-medium">
-          <Link
-            href="/builder/new?templateId=ats-minimal"
-            className="text-slate-700 transition hover:text-primary dark:text-white/80"
-          >
+          <Link href="/builder/new?templateId=ats-minimal" className={linkClass(pathname === '/builder/new')}>
             CV Builder
           </Link>
-          <Link
-            href="/templates"
-            className="text-slate-700 transition hover:text-primary dark:text-white/80"
-          >
+          <Link href="/templates" className={linkClass(pathname === '/templates')}>
             Templates
           </Link>
-          <Link
-            href="/builder"
-            className="text-slate-700 transition hover:text-primary dark:text-white/80"
-          >
+          <Link href="/builder" className={linkClass(pathname === '/builder' || pathname?.startsWith('/builder/'))}>
             Drafts
+          </Link>
+          <Link href="/cover-letters" className={linkClass(pathname === '/cover-letters' || pathname?.startsWith('/cover-letters/'))}>
+            Cover Letters
           </Link>
           <button
             type="button"
