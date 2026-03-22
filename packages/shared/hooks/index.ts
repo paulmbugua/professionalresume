@@ -13,3 +13,5 @@ export { default as useTheme, ThemeProvider, useThemeProvider } from './useTheme
 
 // CV hooks (single export; no duplicates)
 export * from './useCv';
+
+export * from './useCoverLetter';
