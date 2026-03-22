@@ -159,6 +159,9 @@ export const exportCvPdf = async (
     const res = await api.post<CvExportResponse>('/api/cv/export', payload);
     return res.data;
   } catch (err: any) {
+    if (err?.response?.status === 403) {
+      throw new Error(err?.response?.data?.error || 'Resume export is available after the one-time $1 unlock.');
+    }
     throw new Error(toMessage(err));
   }
 };
@@ -189,6 +192,9 @@ export const getCvPrintHtml = async (
     const res = await api.get<{ html: string }>(`/api/cv/drafts/${id}/print-html`);
     return res.data;
   } catch (err: any) {
+    if (err?.response?.status === 403) {
+      throw new Error(err?.response?.data?.error || 'Resume printing is available after the one-time $1 unlock.');
+    }
     throw new Error(toMessage(err));
   }
 };
@@ -199,7 +205,7 @@ export const getCoverLetterEntitlement = async (
 ): Promise<CoverLetterEntitlement> => {
   try {
     const api = client(backendUrl, token);
-    const res = await api.get<CoverLetterEntitlement>('/api/cv/cover-letter/entitlement');
+    const res = await api.get<CoverLetterEntitlement>('/api/cv/payments/entitlement');
     return res.data;
   } catch (err: any) {
     throw new Error(toMessage(err));

@@ -2,6 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import requireAuth from '../middleware/auth.js';
 import { requireCoverLetterEntitlement } from '../middleware/coverLetterEntitlement.js';
+import { requireCvExportEntitlement } from '../middleware/cvExportEntitlement.js';
 import {
   listTemplates,
   listDrafts,
@@ -42,12 +43,12 @@ r.post('/templates/upload', requireAuth, upload.single('file'), uploadTemplate);
 r.get('/drafts', requireAuth, listDrafts);
 r.post('/drafts', requireAuth, createDraftHandler);
 r.get('/drafts/:id', requireAuth, getDraft);
-r.get('/drafts/:id/print-html', requireAuth, getPrintHtml);
+r.get('/drafts/:id/print-html', requireAuth, requireCvExportEntitlement, getPrintHtml);
 r.put('/drafts/:id', requireAuth, updateDraft);
 r.patch('/drafts/:id', requireAuth, updateDraft);
 r.delete('/drafts/:id', requireAuth, deleteDraft);
 r.post('/improve-experience', requireAuth, improveExperienceController);
-r.post('/export', requireAuth, upload.single('file'), exportCv);
+r.post('/export', requireAuth, requireCvExportEntitlement, upload.single('file'), exportCv);
 r.get('/cover-letter/entitlement', requireAuth, getCoverLetterEntitlementController);
 r.post('/cover-letter/print-html', requireAuth, requireCoverLetterEntitlement, getCoverLetterPrintHtml);
 r.post('/cover-letter/export', requireAuth, requireCoverLetterEntitlement, exportCoverLetter);

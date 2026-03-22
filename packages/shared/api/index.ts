@@ -48,3 +48,5 @@ export {
   aiSuggestCoverLetterGreetingClosing,
   aiGenerateCoverLetter as aiGenerateLegacyCoverLetter,
 } from './aiCvApi';
+
+export * from './cvPaymentApi';

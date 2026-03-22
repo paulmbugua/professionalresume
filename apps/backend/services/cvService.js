@@ -1,4 +1,5 @@
 import pool from '../config/db.js';
+import { getCvExportEntitlement } from './cvPaymentService.js';
 import {
   createOwnedDraft,
   listOwnedDrafts,
@@ -165,54 +166,7 @@ export async function userCanAccessFileKey(userId, fileKey) {
 }
 
 export async function getCoverLetterEntitlement(userId) {
-  const numericUserId = Number(userId);
-  if (!Number.isFinite(numericUserId)) {
-    return { eligible: false, reason: 'invalid_user_id' };
-  }
-
-  try {
-    const { rows } = await pool.query(
-      `SELECT p.id
-       FROM payments p
-       LEFT JOIN packages pkg ON pkg.id = p.package_id
-       WHERE p.user_id = $1
-         AND lower(coalesce(p.status, '')) IN ('success', 'completed')
-         AND p.amount >= 1
-         AND (
-           lower(coalesce(pkg.offer, '')) LIKE '%resume%'
-           OR lower(coalesce(pkg.offer, '')) LIKE '%cv%'
-         )
-       ORDER BY p.updated_at DESC NULLS LAST, p.created_at DESC NULLS LAST
-       LIMIT 1`,
-      [numericUserId],
-    );
-
-    return {
-      eligible: rows.length > 0,
-      reason: rows.length > 0 ? 'qualifying_paid_resume_purchase' : 'requires_paid_resume_purchase',
-    };
-  } catch (error) {
-    const missingPackages =
-      String(error?.message || '').toLowerCase().includes('relation "packages" does not exist') ||
-      String(error?.message || '').toLowerCase().includes('column p.package_id does not exist');
-    if (!missingPackages) throw error;
-
-    const { rows } = await pool.query(
-      `SELECT p.id
-       FROM payments p
-       WHERE p.user_id = $1
-         AND lower(coalesce(p.status, '')) IN ('success', 'completed')
-         AND p.amount >= 1
-       ORDER BY p.updated_at DESC NULLS LAST, p.created_at DESC NULLS LAST
-       LIMIT 1`,
-      [numericUserId],
-    );
-
-    return {
-      eligible: rows.length > 0,
-      reason: rows.length > 0 ? 'qualifying_paid_resume_purchase' : 'requires_paid_resume_purchase',
-    };
-  }
+  return getCvExportEntitlement(userId);
 }
 
 export async function upsertTemplate({ key, name, description, previewUrl }) {

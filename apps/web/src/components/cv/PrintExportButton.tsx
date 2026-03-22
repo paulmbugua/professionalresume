@@ -5,23 +5,16 @@ type Props = {
   isExporting?: boolean;
   downloadUrl?: string;
   onCopyLink?: () => void;
-  draftId?: string;
+  onPrint: () => void;
 };
 
-const PrintExportButton: React.FC<Props> = ({ onExport, isExporting, downloadUrl, onCopyLink, draftId }) => {
-  const handlePrint = () => {
-    if (!draftId) {
-      window.print();
-      return;
-    }
-    window.open(`/print/${draftId}`, '_blank', 'noopener,noreferrer');
-  };
+const PrintExportButton: React.FC<Props> = ({ onExport, isExporting, downloadUrl, onCopyLink, onPrint }) => {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
       <button
         type="button"
-        onClick={handlePrint}
+        onClick={onPrint}
         className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:border-primary hover:text-primary dark:border-white/10 dark:bg-white/5 dark:text-white"
       >
         Print

@@ -23,6 +23,7 @@ type Props = {
   onSave: () => void;
   onExport: () => void;
   onCopyExportLink: () => void;
+  onPrint: () => void;
   exportUrl?: string;
   isSaving: boolean;
   isExporting?: boolean;
@@ -36,6 +37,7 @@ const CvEditorShell: React.FC<Props> = ({
   onSave,
   onExport,
   onCopyExportLink,
+  onPrint,
   exportUrl,
   isSaving,
   isExporting,
@@ -155,7 +157,7 @@ const CvEditorShell: React.FC<Props> = ({
             isExporting={isExporting}
             downloadUrl={exportUrl}
             onCopyLink={onCopyExportLink}
-            draftId={previewDraft.id}
+            onPrint={onPrint}
           />
 
           <button

@@ -11,6 +11,7 @@ type Props = {
   onSave: () => void;
   onExport: () => void;
   onCopyExportLink: () => void;
+  onPrint: () => void;
   exportUrl?: string;
   isSaving: boolean;
   isExporting?: boolean;
@@ -22,6 +23,7 @@ const CoverLetterEditorShell: React.FC<Props> = ({
   onSave,
   onExport,
   onCopyExportLink,
+  onPrint,
   exportUrl,
   isSaving,
   isExporting,
@@ -64,7 +66,7 @@ const CoverLetterEditorShell: React.FC<Props> = ({
             </select>
             <button
               type="button"
-              onClick={() => window.print()}
+              onClick={onPrint}
               className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold"
             >
               Print

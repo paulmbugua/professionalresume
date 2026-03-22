@@ -28,7 +28,7 @@ export default function CoverLetterPrintPage() {
       const payload = decodePayload(params?.get('payload') || null);
       if (!payload || !backendUrl || !token) return;
       try {
-        const res = await getCoverLetterPrintHtml(backendUrl, token, payload);
+        const res = await getCoverLetterPrintHtml(backendUrl, token, { coverLetterJson: payload });
         const html = (res.html || '').replace(
           '</head>',
           `<style>

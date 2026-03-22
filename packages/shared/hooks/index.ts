@@ -39,3 +39,5 @@ export {
   useExportCoverLetter,
   useAiCoverLetterAssist,
 } from './useCoverLetter';
+
+export { useCvPayment, useCvExportEntitlement } from './useCvPayment';

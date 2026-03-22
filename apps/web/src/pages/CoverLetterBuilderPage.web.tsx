@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { FormProvider, useForm, useWatch } from 'react-hook-form';
 import debounce from 'lodash.debounce';
 import { useShopContext } from '@cvpro/shared/context';
@@ -9,9 +9,11 @@ import {
   useCoverLetterDraft,
   useSaveCoverLetterDraft,
   useExportCoverLetter,
+  useCvPayment,
 } from '@cvpro/shared/hooks';
 import type { CoverLetterDraft } from '@cvpro/shared/types';
 import CoverLetterEditorShell from '../components/cover-letter/CoverLetterEditorShell';
+import CvPaymentModal from '../components/cv/CvPaymentModal';
 import { EMPTY_COVER_LETTER_DRAFT, normalizeCoverLetterDraft } from '../utils/coverLetterDefaults';
 import { getReturnToFromQuery } from '../lib/returnTo';
 
@@ -61,15 +63,20 @@ function mapEditorDraftToUpdatePayload(values: CoverLetterDraft): {
   };
 }
 
-const CoverLetterBuilderPageInner: React.FC<{ id: string; backendUrl: string; token: string }> = ({
+const CoverLetterBuilderPageInner: React.FC<{ id: string; backendUrl: string; token: string; actionFromQuery?: string; paymentSuccessFromQuery?: boolean; clearPaymentQuery: () => void }> = ({
   id,
   backendUrl,
   token,
+  actionFromQuery,
+  paymentSuccessFromQuery,
+  clearPaymentQuery,
 }) => {
   const { data, isLoading, error } = useCoverLetterDraft({ backendUrl, token, id } as any);
   const updateDraft = useSaveCoverLetterDraft({ backendUrl, token });
   const exportDraft = useExportCoverLetter({ backendUrl, token });
+  const cvPayment = useCvPayment({ backendUrl, token });
 
+  const [paymentMessage, setPaymentMessage] = useState<string>('');
   const [exportUrl, setExportUrl] = useState<string | undefined>();
   const [lastSavedAt, setLastSavedAt] = useState<string | undefined>();
 
@@ -148,13 +155,27 @@ const CoverLetterBuilderPageInner: React.FC<{ id: string; backendUrl: string; to
     setLastSavedAt(updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined);
   };
 
-  const handleExport = async () => {
+  const doExport = async () => {
     const values = normalizeCoverLetterDraft(getValues());
     const exported = await exportDraft.mutateAsync({
       draftId: id,
       coverLetterJson: values,
     });
     setExportUrl(exported.signedUrl || exported.url || undefined);
+  };
+
+  const doPrint = async () => {
+    const values = normalizeCoverLetterDraft(getValues());
+    const payload = encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(values)))));
+    window.open(`/cover-letter/print?payload=${payload}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleExport = async () => {
+    await cvPayment.ensurePaidBeforeCoverLetterExport(doExport);
+  };
+
+  const handlePrint = async () => {
+    await cvPayment.ensurePaidBeforeCoverLetterPrint(doPrint);
   };
 
   const copyExportLink = async () => {
@@ -168,6 +189,17 @@ const CoverLetterBuilderPageInner: React.FC<{ id: string; backendUrl: string; to
       EMPTY_COVER_LETTER_DRAFT) as CoverLetterDraft;
     return normalizeCoverLetterDraft(base);
   }, [formValues, data]);
+
+
+  useEffect(() => {
+    if (!paymentSuccessFromQuery || !actionFromQuery) return;
+    const run = async () => {
+      if (actionFromQuery === 'cover_letter_export') await doExport();
+      if (actionFromQuery === 'cover_letter_print') await doPrint();
+      clearPaymentQuery();
+    };
+    void run();
+  }, [paymentSuccessFromQuery, actionFromQuery]);
 
   const content = isLoading ? (
     <div className="mx-auto flex min-h-[60vh] w-full items-center justify-center">
@@ -183,6 +215,7 @@ const CoverLetterBuilderPageInner: React.FC<{ id: string; backendUrl: string; to
       onSave={handleManualSave}
       onExport={handleExport}
       onCopyExportLink={copyExportLink}
+      onPrint={handlePrint}
       exportUrl={exportUrl}
       isSaving={updateDraft.isPending}
       isExporting={exportDraft.isPending}
@@ -190,14 +223,42 @@ const CoverLetterBuilderPageInner: React.FC<{ id: string; backendUrl: string; to
     />
   );
 
-  return <FormProvider {...methods}>{content}</FormProvider>;
+  return <FormProvider {...methods}>{content}
+    <CvPaymentModal
+      isOpen={cvPayment.modalOpen}
+      pendingAction={cvPayment.pendingAction}
+      onClose={cvPayment.cancelPayment}
+      onPayWithMpesa={async (phone) => {
+        const res = await cvPayment.initMpesaMutation.mutateAsync(phone);
+        setPaymentMessage(res.message || 'Waiting for M-Pesa confirmation');
+      }}
+      onConfirmMpesa={async (payload) => {
+        const res = await cvPayment.confirmMpesaMutation.mutateAsync(payload);
+        if (res.status === 'Pending') setPaymentMessage('Waiting for M-Pesa confirmation');
+        if (res.status === 'Completed') setPaymentMessage('Unlock successful. Export unlocked.');
+      }}
+      onPayWithPaystack={async () => {
+        const nextPath = `${window.location.pathname}?cv_action=${cvPayment.pendingAction}`;
+        const order = await cvPayment.startPaystackCheckout.mutateAsync(nextPath);
+        window.location.href = order.authorizationUrl;
+      }}
+      isLoadingMpesaInit={cvPayment.initMpesaMutation.isPending}
+      isLoadingMpesaConfirm={cvPayment.confirmMpesaMutation.isPending}
+      isLoadingPaystack={cvPayment.startPaystackCheckout.isPending}
+      message={paymentMessage}
+      error={cvPayment.initMpesaMutation.error?.message || cvPayment.confirmMpesaMutation.error?.message || cvPayment.startPaystackCheckout.error?.message || null}
+    />
+  </FormProvider>;
 };
 
 const CoverLetterBuilderPage: React.FC = () => {
   const params = useParams();
   const id = pickParam((params as any)?.id);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { backendUrl, token } = useShopContext() as any;
+  const actionFromQuery = searchParams?.get('cv_action') || undefined;
+  const paymentSuccessFromQuery = searchParams?.get('cvpay') === 'success';
 
   useEffect(() => {
     if (!id) router.replace('/cover-letters');
@@ -216,7 +277,7 @@ const CoverLetterBuilderPage: React.FC = () => {
   if (!id) return null;
   if (!token || !backendUrl) return null;
 
-  return <CoverLetterBuilderPageInner id={id} backendUrl={backendUrl} token={token} />;
+  return <CoverLetterBuilderPageInner id={id} backendUrl={backendUrl} token={token} actionFromQuery={actionFromQuery} paymentSuccessFromQuery={paymentSuccessFromQuery} clearPaymentQuery={() => router.replace(`/cover-letters/editor/${id}`)} />;
 };
 
 export default CoverLetterBuilderPage;
