@@ -11,6 +11,31 @@ export { default as useAuth } from './useAuth';
 
 export { default as useTheme, ThemeProvider, useThemeProvider } from './useTheme';
 
-// CV hooks (single export; no duplicates)
-export * from './useCv';
-export * from './useCoverLetter';
+// CV hooks
+export {
+  useCvTemplates,
+  useCvDrafts,
+  useMyCvDrafts,
+  useCvDraft,
+  useCreateCvDraft,
+  useSaveCvDraft,
+  useUpdateCvDraft,
+  useDeleteCvDraft,
+  useExportCv,
+  useAiCvAssist,
+  useCoverLetterEntitlement,
+} from './useCv';
+
+// Cover-letter hooks
+export {
+  useCoverLetterTemplates,
+  useCoverLetterDrafts,
+  useMyCoverLetterDrafts,
+  useCoverLetterDraft,
+  useCreateCoverLetterDraft,
+  useSaveCoverLetterDraft,
+  useUpdateCoverLetterDraft,
+  useDeleteCoverLetterDraft,
+  useExportCoverLetter,
+  useAiCoverLetterAssist,
+} from './useCoverLetter';

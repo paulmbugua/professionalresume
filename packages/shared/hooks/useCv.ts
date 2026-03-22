@@ -9,12 +9,11 @@ import {
   updateCvDraft,
   deleteCvDraft,
   exportCvPdf,
-  exportCoverLetterPdf,
   getCoverLetterEntitlement,
   aiGenerateSummary,
   aiRewriteBullet,
   aiSuggestSkills,
-  aiGenerateCoverLetter,
+  aiGenerateLegacyCoverLetter,
   aiRewriteCoverLetterStyle,
   aiImproveCoverLetterParagraph,
   aiSuggestCoverLetterSubjectLines,
@@ -24,7 +23,6 @@ import type {
   CvDraft,
   CvTemplateResponse,
   CvExportResponse,
-  CoverLetterDraft,
   CoverLetterEntitlement,
 } from '@cvpro/shared/types';
 
@@ -149,7 +147,7 @@ export function useAiCvAssist({ backendUrl, token }: BaseArgs) {
       seniority: string;
     }) => {
       if (!token) throw new Error('Unauthorized');
-      return aiGenerateCoverLetter(backendUrl, token, payload);
+      return aiGenerateLegacyCoverLetter(backendUrl, token, payload);
     },
   });
 
@@ -219,11 +217,3 @@ export function useCoverLetterEntitlement({ backendUrl, token }: BaseArgs) {
   );
 }
 
-export function useExportCoverLetter({ backendUrl, token }: BaseArgs) {
-  return useMutation<CvExportResponse, Error, CoverLetterDraft>({
-    mutationFn: (payload) => {
-      if (!token) throw new Error('Unauthorized');
-      return exportCoverLetterPdf(backendUrl, token, payload);
-    },
-  });
-}

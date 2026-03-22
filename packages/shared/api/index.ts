@@ -8,8 +8,43 @@ export * from './profileActionsApi';
 export * from './profileApi';
 export * from './profileCardApi';
 
-export * from './cvApi';
-export * from './coverLetterApi';
-export * from './aiCvApi';
+// CV API surface
+export {
+  listCvTemplates,
+  listMyCvDrafts,
+  getCvDraft,
+  createCvDraft,
+  updateCvDraft,
+  deleteCvDraft,
+  exportCvPdf,
+  signCvFile,
+  getCvPrintHtml,
+  getCoverLetterEntitlement,
+} from './cvApi';
 
-export * from './coverLetterApi';
+// Cover-letter API surface
+export {
+  listCoverLetterTemplates,
+  listMyCoverLetterDrafts,
+  getCoverLetterDraft,
+  createCoverLetterDraft,
+  updateCoverLetterDraft,
+  deleteCoverLetterDraft,
+  getCoverLetterPrintHtml,
+  exportCoverLetterPdf,
+  signCoverLetterFile,
+  aiGenerateCoverLetter,
+  aiRewriteCoverLetter,
+} from './coverLetterApi';
+
+// CV AI API surface
+export {
+  aiGenerateSummary,
+  aiRewriteBullet,
+  aiSuggestSkills,
+  aiRewriteCoverLetterStyle,
+  aiImproveCoverLetterParagraph,
+  aiSuggestCoverLetterSubjectLines,
+  aiSuggestCoverLetterGreetingClosing,
+  aiGenerateCoverLetter as aiGenerateLegacyCoverLetter,
+} from './aiCvApi';
