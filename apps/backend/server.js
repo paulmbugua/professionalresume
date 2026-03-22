@@ -12,6 +12,7 @@ import connectCloudinary from './config/cloudinary.js';
 import userRouter from './routes/userRoute.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import aiCvRoutes from './routes/aiCvRoutes.js';
+import aiCoverLetterRoutes from './routes/aiCoverLetterRoutes.js';
 import mpesaUrlsRoutes from './routes/mpesaUrlsRoutes.js';
 import { inflightLimiter } from './middleware/inflightLimiter.js';
 import cvRoutes from './routes/cvRoutes.js';
@@ -207,6 +208,7 @@ app.use('/api/ai', inflightLimiter({ keyFn: aiKeyFn, max: Number(process.env.AI_
 // ✅ Apply strict AI limiter to expensive AI/TTS work (per-user, per-bucket)
 
 app.use('/api/ai',                aiLimiterStrict,     aiCvRoutes);        // AI CV assistant
+app.use('/api/ai',                aiLimiterStrict,     aiCoverLetterRoutes);
 
 
 // Root ping

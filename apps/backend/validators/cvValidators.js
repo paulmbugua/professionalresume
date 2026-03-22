@@ -46,6 +46,21 @@ const certificationSchema = Joi.object({
   year: Joi.string().allow(''),
 });
 
+const coverLetterSchema = Joi.object({
+  subject: Joi.string().allow(''),
+  greeting: Joi.string().allow(''),
+  body: Joi.string().allow(''),
+  closing: Joi.string().allow(''),
+});
+
+const aiMetaSchema = Joi.object({
+  coverLetter: Joi.object({
+    lastAction: Joi.string().allow(''),
+    lastModel: Joi.string().allow(''),
+    lastUpdatedAt: Joi.string().allow(''),
+  }).optional(),
+}).unknown(true);
+
 const hexColor = Joi.string().pattern(/^#(?:[0-9a-fA-F]{3}){1,2}$/);
 
 const typographySchema = Joi.object({
@@ -108,6 +123,9 @@ export const draftPatchSchema = Joi.object({
   formatting: formattingSchema,
   templateTheme: templateThemeSchema,
   richText: Joi.object().pattern(Joi.string(), Joi.string().allow('')),
+  coverLetter: coverLetterSchema,
+  aiMeta: aiMetaSchema,
+  generationMeta: Joi.object().unknown(true),
   sectionOrder: Joi.array().items(Joi.string().valid(...sectionKeys)),
   sectionVisibility: Joi.object().pattern(
     Joi.string().valid(...sectionKeys),
@@ -139,4 +157,38 @@ export const aiRewriteSchema = Joi.object({
 
 export const aiSuggestSkillsSchema = Joi.object({
   draft: Joi.object().required(),
+});
+
+const coverLetterStyleSchema = Joi.string()
+  .valid('professional', 'concise', 'confident', 'ats-friendly')
+  .required();
+
+export const aiCoverLetterGenerateSchema = Joi.object({
+  jobTitle: Joi.string().allow('').required(),
+  company: Joi.string().allow('').required(),
+  experience: Joi.string().allow('').required(),
+  tone: Joi.string().allow('').required(),
+  seniority: Joi.string().allow('').required(),
+});
+
+export const aiCoverLetterRewriteSchema = Joi.object({
+  body: Joi.string().allow('').required(),
+  style: coverLetterStyleSchema,
+});
+
+export const aiCoverLetterParagraphSchema = Joi.object({
+  paragraph: Joi.string().allow('').required(),
+  context: Joi.string().allow('').optional(),
+});
+
+export const aiCoverLetterSubjectSchema = Joi.object({
+  body: Joi.string().allow('').required(),
+  jobTitle: Joi.string().allow('').optional(),
+  company: Joi.string().allow('').optional(),
+});
+
+export const aiCoverLetterGreetingClosingSchema = Joi.object({
+  body: Joi.string().allow('').required(),
+  jobTitle: Joi.string().allow('').optional(),
+  company: Joi.string().allow('').optional(),
 });

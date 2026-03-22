@@ -25,6 +25,9 @@ const EMPTY_DRAFT: CvDraft = normalizeDraft({
   projects: [],
   certifications: [],
   extras: { languages: [], interests: [] },
+  coverLetter: { subject: '', greeting: '', body: '', closing: '' },
+  aiMeta: {},
+  generationMeta: {},
   sectionOrder: [],
   sectionVisibility: {} as any,
 } as CvDraft);

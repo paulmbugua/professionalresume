@@ -12,6 +12,11 @@ import {
   aiGenerateSummary,
   aiRewriteBullet,
   aiSuggestSkills,
+  aiGenerateCoverLetter,
+  aiRewriteCoverLetterStyle,
+  aiImproveCoverLetterParagraph,
+  aiSuggestCoverLetterSubjectLines,
+  aiSuggestCoverLetterGreetingClosing,
 } from '@cvpro/shared/api';
 import type { CvDraft, CvTemplateResponse, CvExportResponse } from '@cvpro/shared/types';
 
@@ -127,12 +132,70 @@ export function useAiCvAssist({ backendUrl, token }: BaseArgs) {
     },
   });
 
+  const generateCoverLetterMutation = useMutation({
+    mutationFn: (payload: {
+      jobTitle: string;
+      company: string;
+      experience: string;
+      tone: string;
+      seniority: string;
+    }) => {
+      if (!token) throw new Error('Unauthorized');
+      return aiGenerateCoverLetter(backendUrl, token, payload);
+    },
+  });
+
+  const rewriteCoverLetterStyleMutation = useMutation({
+    mutationFn: (payload: {
+      body: string;
+      style: 'professional' | 'concise' | 'confident' | 'ats-friendly';
+    }) => {
+      if (!token) throw new Error('Unauthorized');
+      return aiRewriteCoverLetterStyle(backendUrl, token, payload);
+    },
+  });
+
+  const improveCoverLetterParagraphMutation = useMutation({
+    mutationFn: (payload: { paragraph: string; context?: string }) => {
+      if (!token) throw new Error('Unauthorized');
+      return aiImproveCoverLetterParagraph(backendUrl, token, payload);
+    },
+  });
+
+  const suggestCoverLetterSubjectLinesMutation = useMutation({
+    mutationFn: (payload: { body: string; jobTitle?: string; company?: string }) => {
+      if (!token) throw new Error('Unauthorized');
+      return aiSuggestCoverLetterSubjectLines(backendUrl, token, payload);
+    },
+  });
+
+  const suggestCoverLetterGreetingClosingMutation = useMutation({
+    mutationFn: (payload: { body: string; jobTitle?: string; company?: string }) => {
+      if (!token) throw new Error('Unauthorized');
+      return aiSuggestCoverLetterGreetingClosing(backendUrl, token, payload);
+    },
+  });
+
   return useMemo(
     () => ({
       generateSummary: summaryMutation,
       rewriteBullet: rewriteMutation,
       suggestSkills: skillsMutation,
+      generateCoverLetter: generateCoverLetterMutation,
+      rewriteCoverLetterStyle: rewriteCoverLetterStyleMutation,
+      improveCoverLetterParagraph: improveCoverLetterParagraphMutation,
+      suggestCoverLetterSubjectLines: suggestCoverLetterSubjectLinesMutation,
+      suggestCoverLetterGreetingClosing: suggestCoverLetterGreetingClosingMutation,
     }),
-    [summaryMutation, rewriteMutation, skillsMutation],
+    [
+      summaryMutation,
+      rewriteMutation,
+      skillsMutation,
+      generateCoverLetterMutation,
+      rewriteCoverLetterStyleMutation,
+      improveCoverLetterParagraphMutation,
+      suggestCoverLetterSubjectLinesMutation,
+      suggestCoverLetterGreetingClosingMutation,
+    ],
   );
 }
