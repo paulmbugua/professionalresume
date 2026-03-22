@@ -92,7 +92,28 @@ const CoverLetterBuilderPageInner: React.FC<{ id: string; backendUrl: string; to
   };
 
   const handleExport = async () => {
-    const exported = await exportDraft.mutateAsync({ draftId: id, coverLetterJson: getValues() });
+    const values = normalizeCoverLetterDraft(getValues());
+    const exported = await exportDraft.mutateAsync({
+      draftId: id,
+      coverLetterJson: {
+        applicantName: values.sender.fullName,
+        applicantEmail: values.sender.email,
+        applicantPhone: values.sender.phone,
+        applicantLocation: values.sender.location,
+        recipientName: values.recipient.name,
+        companyName: values.recipient.company,
+        roleTitle: values.letter.role,
+        letterBody: [
+          values.letter.greeting,
+          values.body.opening,
+          ...values.body.middleParagraphs,
+          values.body.closing,
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+        closingLine: values.letter.signoff,
+      },
+    });
     setExportUrl(exported.signedUrl || exported.url || undefined);
   };
 
@@ -139,14 +160,14 @@ const CoverLetterBuilderPage: React.FC = () => {
   const { backendUrl, token } = useShopContext() as any;
 
   useEffect(() => {
-    if (!id) router.replace('/builder');
+    if (!id) router.replace('/cover-letters');
   }, [id, router]);
 
   useEffect(() => {
     if (!token) {
       const returnTo = getReturnToFromQuery(
-        new URLSearchParams({ returnTo: id ? `/cover-letter/${id}` : '/cover-letter' }),
-        '/cover-letter'
+        new URLSearchParams({ returnTo: id ? `/cover-letters/editor/${id}` : '/cover-letters' }),
+        '/cover-letters'
       );
       router.replace(`/login?returnTo=${encodeURIComponent(returnTo)}`);
     }

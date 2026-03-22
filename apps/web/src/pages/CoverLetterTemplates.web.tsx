@@ -1,60 +1,50 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useShopContext } from '@cvpro/shared/context';
-import { useCvTemplates } from '@cvpro/shared/hooks';
-import type { CvTemplate } from '@cvpro/shared/types';
+import { useCreateCoverLetterDraft } from '@cvpro/shared/hooks';
 
 import TemplateThumbnail from '../components/cv/templates/TemplateThumbnail';
-import { demoResume } from '../templates/demoResume';
-import { templateRegistryById, templateRegistryList } from '../templates/registry';
-import { normalizeDraft } from '../utils/cvDefaults';
+import { coverLetterTemplateRegistry } from '../templates/coverLetterRegistry';
+import { EMPTY_COVER_LETTER_DRAFT } from '../utils/coverLetterDefaults';
 
 const CoverLetterTemplatesPage: React.FC = () => {
   const router = useRouter();
   const { backendUrl, token } = useShopContext() as { backendUrl?: string; token?: string | null };
+  const createDraft = useCreateCoverLetterDraft({ backendUrl: backendUrl || '', token: token || '' });
 
-  const processEnv = typeof process !== 'undefined' ? process.env : undefined;
-  const envBackendUrl = processEnv?.NEXT_PUBLIC_BACKEND_URL?.trim() || '';
-  const resolvedBackendUrl = envBackendUrl || backendUrl?.trim() || 'http://localhost:4001';
-
-  const { data, isLoading, error } = useCvTemplates({ backendUrl: resolvedBackendUrl });
-
-  const templates: CvTemplate[] = useMemo(() => {
-    const apiTemplates = data?.templates ?? [];
-    if (!apiTemplates.length) return templateRegistryList;
-
-    const byId = new Map(apiTemplates.map((template) => [template.id, template]));
-    const merged = [...apiTemplates];
-
-    for (const localTemplate of templateRegistryList) {
-      if (!byId.has(localTemplate.id)) merged.push(localTemplate);
-    }
-
-    return merged;
-  }, [data?.templates]);
-
-  const routeWithAuth = React.useCallback(
-    (destination: string) => {
-      if (!token) {
-        router.push(`/login?returnTo=${encodeURIComponent(destination)}`);
-        return;
-      }
-      router.push(destination);
-    },
-    [router, token]
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(
+    coverLetterTemplateRegistry[0]?.id || 'classic-letter'
   );
 
-  const cardPreviewHtml = React.useMemo(() => {
-    const htmlById = new Map<string, string | undefined>();
-    for (const template of templates) {
-      const previewDraft = normalizeDraft({ ...demoResume, templateId: template.id });
-      const html = templateRegistryById[template.id]?.renderHtml?.(previewDraft);
-      htmlById.set(template.id, html || undefined);
+  const selectedTemplate = useMemo(
+    () =>
+      coverLetterTemplateRegistry.find((template) => template.id === selectedTemplateId) ||
+      coverLetterTemplateRegistry[0],
+    [selectedTemplateId]
+  );
+
+  const handleUseTemplate = async (templateId: string) => {
+    const destination = `/cover-letters/templates?templateId=${encodeURIComponent(templateId)}`;
+    if (!token) {
+      router.push(`/login?returnTo=${encodeURIComponent(destination)}`);
+      return;
     }
-    return htmlById;
-  }, [templates]);
+    if (!backendUrl) return;
+
+    const template = coverLetterTemplateRegistry.find((item) => item.id === templateId);
+    const draft = await createDraft.mutateAsync({
+      templateId,
+      title: template?.name || 'Untitled Cover Letter',
+      data: {
+        ...EMPTY_COVER_LETTER_DRAFT,
+        templateId,
+      },
+    });
+
+    router.push(`/cover-letters/editor/${draft.id}`);
+  };
 
   return (
     <main className="min-h-screen bg-site pb-12 pt-8 text-slate-900 dark:text-white">
@@ -64,73 +54,107 @@ const CoverLetterTemplatesPage: React.FC = () => {
             Cover letter templates
           </p>
           <h1 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">
-            Pick a cover letter layout and start in seconds
+            Explore designs for your cover letter
           </h1>
           <p className="mt-3 max-w-3xl text-sm text-slate-600 dark:text-slate-300 sm:text-base">
-            Browse professionally styled templates, then launch your draft from scratch or kick things
-            off with AI writing support.
+            Select a layout, preview it, and launch directly into the dedicated cover-letter editor.
           </p>
         </div>
 
-        {error && (
-          <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800 dark:border-rose-800/60 dark:bg-rose-950/35 dark:text-rose-200">
-            {error.message} Showing fallback templates so you can keep going.
+        <div className="mt-6 rounded-2xl border border-gray-200 bg-white/90 p-4 shadow-sm dark:border-white/10 dark:bg-white/5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-white/60">
+            Selected template
+          </p>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{selectedTemplate?.name}</h2>
+            <button
+              type="button"
+              onClick={() => selectedTemplate && handleUseTemplate(selectedTemplate.id)}
+              disabled={createDraft.isPending || !backendUrl}
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {createDraft.isPending ? 'Creating...' : 'Use this template'}
+            </button>
           </div>
-        )}
+        </div>
 
         <div className="mt-8 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-          {isLoading
-            ? Array.from({ length: 6 }).map((_, index) => (
-                <div
-                  key={`cover-template-skeleton-${index}`}
-                  className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/5"
-                >
-                  <div className="h-[440px] animate-pulse rounded-2xl bg-slate-100 dark:bg-white/10" />
-                  <div className="mt-4 h-5 w-2/3 animate-pulse rounded bg-slate-100 dark:bg-white/10" />
-                  <div className="mt-2 h-4 w-1/2 animate-pulse rounded bg-slate-100 dark:bg-white/10" />
+          {coverLetterTemplateRegistry.map((template) => {
+            const previewHtml = template.renderHtml({
+              ...EMPTY_COVER_LETTER_DRAFT,
+              templateId: template.id,
+              title: template.name,
+              sender: {
+                ...EMPTY_COVER_LETTER_DRAFT.sender,
+                fullName: 'Jane Applicant',
+                email: 'jane@example.com',
+                phone: '(555) 010-2233',
+                location: 'New York, NY',
+              },
+              recipient: {
+                ...EMPTY_COVER_LETTER_DRAFT.recipient,
+                name: 'Hiring Manager',
+                title: 'Talent Acquisition',
+                company: 'CVPro Inc',
+              },
+              letter: {
+                ...EMPTY_COVER_LETTER_DRAFT.letter,
+                role: 'Product Designer',
+                subject: 'Application for Product Designer',
+                date: new Date().toLocaleDateString(),
+              },
+              body: {
+                opening: 'I am excited to apply for the Product Designer role at CVPro.',
+                middleParagraphs: [
+                  'I have designed and shipped user-focused experiences that improved conversion and retention.',
+                ],
+                closing:
+                  'I would welcome the opportunity to discuss how my background can support your product goals.',
+              },
+            });
+
+            const isSelected = selectedTemplateId === template.id;
+
+            return (
+              <article
+                key={template.id}
+                className={`rounded-2xl border bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg dark:bg-white/5 ${
+                  isSelected
+                    ? 'border-primary/60 ring-2 ring-primary/20 dark:border-primary/60'
+                    : 'border-gray-200 dark:border-white/10'
+                }`}
+              >
+                <button type="button" onClick={() => setSelectedTemplateId(template.id)} className="w-full text-left">
+                  <TemplateThumbnail html={previewHtml} label={template.name} />
+                </button>
+
+                <div className="mt-4">
+                  <h3 className="text-base font-semibold text-gray-900 dark:text-white">{template.name}</h3>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-white/60">
+                    Professional formatting optimized for clear, readable cover-letter content.
+                  </p>
                 </div>
-              ))
-            : templates.map((template) => (
-                <article
-                  key={template.id}
-                  className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg dark:border-white/10 dark:bg-white/5"
-                >
-                  <TemplateThumbnail html={cardPreviewHtml.get(template.id)} label={template.name} />
 
-                  <div className="mt-4">
-                    <h2 className="text-base font-semibold text-gray-900 dark:text-white">
-                      {template.name}
-                    </h2>
-                    <p className="mt-1 text-xs text-gray-500 dark:text-white/60">
-                      {template.description?.trim() ||
-                        'Designed for clear, compelling cover letters that read well and look polished.'}
-                    </p>
-                  </div>
-
-                  <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        routeWithAuth(`/builder/new?templateId=${encodeURIComponent(template.id)}`)
-                      }
-                      className="flex-1 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white"
-                    >
-                      Start from scratch
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        routeWithAuth(
-                          `/builder/new?templateId=${encodeURIComponent(template.id)}&aiStart=1`
-                        )
-                      }
-                      className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:bg-white/5 dark:text-white"
-                    >
-                      AI-assisted start
-                    </button>
-                  </div>
-                </article>
-              ))}
+                <div className="mt-4 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTemplateId(template.id)}
+                    className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                  >
+                    {isSelected ? 'Selected' : 'Select'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleUseTemplate(template.id)}
+                    disabled={createDraft.isPending || !backendUrl}
+                    className="flex-1 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                  >
+                    Use Template
+                  </button>
+                </div>
+              </article>
+            );
+          })}
         </div>
       </section>
     </main>
