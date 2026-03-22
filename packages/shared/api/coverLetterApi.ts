@@ -245,11 +245,11 @@ export const deleteCoverLetterDraft = async (
 export const getCoverLetterPrintHtml = async (
   backendUrl: string,
   token: string,
-  id: string,
+  payload: { coverLetterJson: Partial<CoverLetterDraft> | CoverLetterDraft },
 ): Promise<{ html: string }> => {
   try {
     const api = client(backendUrl, token);
-    const res = await api.get<{ html: string }>(`/api/cover-letters/drafts/${id}/print-html`);
+    const res = await api.post<{ html: string }>('/api/cover-letters/print-html', payload);
     return res.data;
   } catch (err: any) {
     throw new Error(toMessage(err));
