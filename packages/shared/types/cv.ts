@@ -85,6 +85,23 @@ export type CvDraftMeta = {
   importMode?: 'merge' | 'replace';
 };
 
+export type CoverLetterDraft = {
+  subject?: string;
+  greeting?: string;
+  body?: string;
+  closing?: string;
+};
+
+export type CvAiMeta = {
+  coverLetter?: {
+    lastAction?: string;
+    lastModel?: string;
+    lastUpdatedAt?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+};
+
 export type CvDraft = {
   id: string;
   userId: string;
@@ -113,6 +130,9 @@ export type CvDraft = {
   formatting?: CvFormattingDefaults;
   templateTheme?: CvTemplateTheme;
   richText?: CvRichTextMap;
+  coverLetter?: CoverLetterDraft;
+  aiMeta?: CvAiMeta;
+  generationMeta?: Record<string, unknown>;
   meta?: CvDraftMeta;
   sectionOrder: CvSectionKey[];
   sectionVisibility: Record<CvSectionKey, boolean>;
@@ -142,19 +162,50 @@ export type CvExportResponse = {
   mimeType?: string;
 };
 
+export type CoverLetterTemplateId = 'classic-letter' | 'modern-accent';
+
 export type CoverLetterDraft = {
-  applicantName: string;
-  applicantEmail?: string;
-  applicantPhone?: string;
-  applicantLocation?: string;
-  recipientName?: string;
-  companyName?: string;
-  roleTitle?: string;
-  letterBody: string;
-  closingLine?: string;
+  id: string;
+  userId: string;
+  title: string;
+  templateId: CoverLetterTemplateId;
+  updatedAt: string;
+  createdAt?: string;
+  sender: {
+    fullName: string;
+    email: string;
+    phone: string;
+    location: string;
+  };
+  recipient: {
+    name: string;
+    title: string;
+    company: string;
+    address: string;
+  };
+  letter: {
+    role: string;
+    date: string;
+    subject: string;
+    greeting: string;
+    signoff: string;
+  };
+  body: {
+    opening: string;
+    middleParagraphs: string[];
+    closing: string;
+  };
+  style: {
+    fontFamily: string;
+    fontSize: number;
+    lineHeight: number;
+    accentColor: string;
+    pageTheme: 'light' | 'warm';
+  };
 };
 
-export type CoverLetterEntitlement = {
-  eligible: boolean;
-  reason: string;
+export type CoverLetterExportResponse = {
+  url: string | null;
+  fileKey: string;
+  signedUrl?: string;
 };

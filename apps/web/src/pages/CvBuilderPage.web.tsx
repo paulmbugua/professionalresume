@@ -25,6 +25,9 @@ const EMPTY_DRAFT: CvDraft = normalizeDraft({
   projects: [],
   certifications: [],
   extras: { languages: [], interests: [] },
+  coverLetter: { subject: '', greeting: '', body: '', closing: '' },
+  aiMeta: {},
+  generationMeta: {},
   sectionOrder: [],
   sectionVisibility: {} as any,
 } as CvDraft);
@@ -51,7 +54,8 @@ const CvBuilderPageInner: React.FC<{
   backendUrl: string;
   token: string;
   forcedTemplateId?: string;
-}> = ({ id, backendUrl, token, forcedTemplateId }) => {
+  autoFocusAi?: boolean;
+}> = ({ id, backendUrl, token, forcedTemplateId, autoFocusAi }) => {
   const { data, isLoading, error } = useCvDraft({ backendUrl, token, id } as any);
   const updateDraft = useSaveCvDraft({ backendUrl, token });
   const exportCv = useExportCv({ backendUrl, token });
@@ -170,6 +174,7 @@ const CvBuilderPageInner: React.FC<{
       isSaving={updateDraft.isPending}
       isExporting={exportCv.isPending}
       lastSavedAt={lastSavedAt}
+      autoFocusAi={autoFocusAi}
     />
   );
 
@@ -183,6 +188,7 @@ const CvBuilderPage: React.FC = () => {
   const searchParams = useSearchParams();
   const { backendUrl, token } = useShopContext() as any;
   const forcedTemplateId = searchParams?.get('templateId') ?? undefined;
+  const autoFocusAi = searchParams?.get('aiStart') === '1';
 
   // If route param missing → go to /builder (notFound-safe)
   useEffect(() => {
@@ -210,6 +216,7 @@ const CvBuilderPage: React.FC = () => {
       backendUrl={backendUrl}
       token={token}
       forcedTemplateId={forcedTemplateId}
+      autoFocusAi={autoFocusAi}
     />
   );
 };

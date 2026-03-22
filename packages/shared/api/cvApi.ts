@@ -113,6 +113,11 @@ export const updateCvDraft = async (
     if ((payload as any).formatting && typeof (payload as any).formatting === 'object') safe.formatting = (payload as any).formatting;
     if ((payload as any).templateTheme && typeof (payload as any).templateTheme === 'object') safe.templateTheme = (payload as any).templateTheme;
     if ((payload as any).richText && typeof (payload as any).richText === 'object') safe.richText = (payload as any).richText;
+    if ((payload as any).coverLetter && typeof (payload as any).coverLetter === 'object') safe.coverLetter = (payload as any).coverLetter;
+    if ((payload as any).aiMeta && typeof (payload as any).aiMeta === 'object') safe.aiMeta = (payload as any).aiMeta;
+    if ((payload as any).generationMeta && typeof (payload as any).generationMeta === 'object') {
+      safe.generationMeta = (payload as any).generationMeta;
+    }
 
     if (Array.isArray((payload as any).sectionOrder)) safe.sectionOrder = (payload as any).sectionOrder;
     if ((payload as any).sectionVisibility && typeof (payload as any).sectionVisibility === 'object') {

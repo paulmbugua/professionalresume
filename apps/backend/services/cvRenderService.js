@@ -1,11 +1,16 @@
 import fs from 'node:fs';
 import {
   normalizeCvDraft,
-  renderersById,
-  templateMarkersById,
+  renderersById as cvRenderersById,
+  templateMarkersById as cvTemplateMarkersById,
 } from '../../../packages/shared/cv/renderers/index.js';
+import {
+  renderersById as coverLetterRenderersById,
+  templateMarkersById as coverLetterTemplateMarkersById,
+} from '../../../packages/shared/cover-letter/renderers/index.js';
 
 const SIDEBAR_TEMPLATE_IDS = new Set(['modern-sidebar', 'modern-sidebar-blue']);
+const COVER_LETTER_TEMPLATE_IDS = new Set(Object.keys(coverLetterRenderersById));
 
 function applySidebarPagedBackgroundCss(templateId) {
   if (!SIDEBAR_TEMPLATE_IDS.has(String(templateId || '').trim())) return '';
@@ -78,9 +83,13 @@ function assertTemplateMarkers(templateId, html) {
     ],
   ];
 
-  const templateChecks = (templateMarkersById[templateId] || []).map(
-    (marker) => [marker, html.includes(marker)],
-  );
+  const markerRegistry = COVER_LETTER_TEMPLATE_IDS.has(templateId)
+    ? coverLetterTemplateMarkersById
+    : cvTemplateMarkersById;
+  const templateChecks = (markerRegistry[templateId] || []).map((marker) => [
+    marker,
+    html.includes(marker),
+  ]);
   const checks = [...baseChecks, ...templateChecks];
 
   const missing = checks.filter(([, ok]) => !ok).map(([name]) => name);
@@ -92,9 +101,13 @@ function assertTemplateMarkers(templateId, html) {
 }
 
 export function buildCvHtml({ draft }) {
-  const normalized = normalizeCvDraft(draft || {});
+  const isCoverLetter = COVER_LETTER_TEMPLATE_IDS.has(
+    String(draft?.templateId || draft?.template_key || '').trim(),
+  );
+  const normalized = isCoverLetter ? { ...(draft || {}) } : normalizeCvDraft(draft || {});
   const templateId = normalized.templateId || normalized.template_key;
-  const renderer = renderersById[templateId];
+  const rendererRegistry = isCoverLetter ? coverLetterRenderersById : cvRenderersById;
+  const renderer = rendererRegistry[templateId];
   if (!renderer) {
     throw new Error(
       `No HTML renderer registered for templateId=${templateId || 'unknown'}`,

@@ -10,6 +10,7 @@ const CvBuilderNew: React.FC = () => {
   const params = useSearchParams();
   const templateId = params?.get('templateId')?.trim() || 'ats-minimal';
   const importFromUpload = params?.get('importFrom') === 'upload';
+  const aiStart = params?.get('aiStart') === '1';
 
   const router = useRouter();
   const { backendUrl, token } = useShopContext() as any;
@@ -75,7 +76,8 @@ const CvBuilderNew: React.FC = () => {
         console.log('[CvBuilderNew] created draft', { id: draft?.id });
         setStatus('Opening editor...');
 
-        router.replace(`/builder/${draft.id}`);
+        const editorTarget = aiStart ? `/builder/${draft.id}?aiStart=1` : `/builder/${draft.id}`;
+        router.replace(editorTarget);
       } catch (e: any) {
         console.error('[CvBuilderNew] create failed', e);
         if (cancelled) return;
@@ -90,9 +92,10 @@ const CvBuilderNew: React.FC = () => {
           });
 
           if (cancelled) return;
-          router.replace(
-            `/builder/${fallbackDraft.id}?templateId=${encodeURIComponent(templateId)}`
-          );
+          const fallbackTarget = aiStart
+            ? `/builder/${fallbackDraft.id}?templateId=${encodeURIComponent(templateId)}&aiStart=1`
+            : `/builder/${fallbackDraft.id}?templateId=${encodeURIComponent(templateId)}`;
+          router.replace(fallbackTarget);
           return;
         } catch (fallbackError) {
           console.error('[CvBuilderNew] fallback create failed', fallbackError);
@@ -108,7 +111,7 @@ const CvBuilderNew: React.FC = () => {
     };
     // Do NOT include createDraft as a dependency (unstable object)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [templateId, importFromUpload, token, backendUrl, router]);
+  }, [templateId, importFromUpload, aiStart, token, backendUrl, router]);
 
   return (
     <div className="mx-auto flex min-h-[60vh] w-full max-w-screen-lg items-center justify-center px-4 py-12 text-center">
