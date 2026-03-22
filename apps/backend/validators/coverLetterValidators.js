@@ -11,31 +11,14 @@ const basicsSchema = Joi.object({
   hiringManager: Joi.string().max(120).allow(''),
   jobTitle: Joi.string().max(140).allow(''),
   date: Joi.string().allow(''),
-}).default({
-  fullName: '',
-  email: '',
-  phone: '',
-  location: '',
-  companyName: '',
-  hiringManager: '',
-  jobTitle: '',
-  date: '',
 });
 
-const paragraphSchema = Joi.string().max(5000).allow('');
-
 const contentSchema = Joi.object({
-  opening: paragraphSchema,
-  body: Joi.array().items(paragraphSchema).max(8),
-  closing: paragraphSchema,
+  opening: Joi.string().max(5000).allow(''),
+  body: Joi.array().items(Joi.string().max(5000).allow('')).max(8),
+  closing: Joi.string().max(5000).allow(''),
   signature: Joi.string().max(120).allow(''),
   highlights: Joi.array().items(Joi.string().max(300).allow('')).max(20),
-}).default({
-  opening: '',
-  body: [],
-  closing: '',
-  signature: '',
-  highlights: [],
 });
 
 const designSchema = Joi.object({
@@ -58,24 +41,36 @@ const visibilityKeys = ['header', 'opening', 'body', 'closing', 'signature'];
 
 export const createCoverLetterSchema = Joi.object({
   title: Joi.string().max(140).allow('').optional(),
-  templateId: Joi.string().default('classic-letter'),
+  templateKey: Joi.string().default('classic-letter'),
   data: Joi.object({
-    basics: basicsSchema,
-    content: contentSchema,
-    design: designSchema,
-    sectionVisibility: Joi.object()
-      .pattern(Joi.string().valid(...visibilityKeys), Joi.boolean())
-      .default({ header: true, opening: true, body: true, closing: true, signature: true }),
-  }).default(),
+    applicantName: Joi.string().max(120).allow('').default(''),
+    applicantEmail: Joi.string().email().allow('').default(''),
+    applicantPhone: Joi.string().max(40).allow('').default(''),
+    applicantLocation: Joi.string().max(120).allow('').default(''),
+    recipientName: Joi.string().max(120).allow('').default(''),
+    companyName: Joi.string().max(140).allow('').default(''),
+    roleTitle: Joi.string().max(140).allow('').default(''),
+    letterBody: Joi.string().max(12000).allow('').default(''),
+    closingLine: Joi.string().max(200).allow('').default(''),
+  })
+    .default()
+    .unknown(false),
 });
 
 export const patchCoverLetterSchema = Joi.object({
   title: Joi.string().max(140).allow(''),
-  templateId: Joi.string(),
-  basics: basicsSchema,
-  content: contentSchema,
-  design: designSchema,
-  sectionVisibility: Joi.object().pattern(Joi.string().valid(...visibilityKeys), Joi.boolean()),
+  templateKey: Joi.string(),
+  data: Joi.object({
+    applicantName: Joi.string().max(120).allow(''),
+    applicantEmail: Joi.string().email().allow(''),
+    applicantPhone: Joi.string().max(40).allow(''),
+    applicantLocation: Joi.string().max(120).allow(''),
+    recipientName: Joi.string().max(120).allow(''),
+    companyName: Joi.string().max(140).allow(''),
+    roleTitle: Joi.string().max(140).allow(''),
+    letterBody: Joi.string().max(12000).allow(''),
+    closingLine: Joi.string().max(200).allow(''),
+  }).unknown(false),
 }).min(1);
 
 export const coverLetterExportSchema = Joi.object({

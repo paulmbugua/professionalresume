@@ -51,10 +51,10 @@ export function buildDefaultCoverLetter({ userId, templateId, title }) {
 }
 
 export async function createCoverLetterForUser(userId, payload) {
-  const normalizedTemplateId = normalizeCoverLetterTemplateId(payload.templateId || 'classic-letter');
+  const normalizedTemplateId = normalizeCoverLetterTemplateId(payload.templateKey || 'classic-letter');
 
   const normalized = payload.data
-    ? { ...payload.data, templateId: normalizeCoverLetterTemplateId(payload.data.templateId || normalizedTemplateId) }
+    ? { ...payload.data }
     : buildDefaultCoverLetter({
         userId,
         templateId: normalizedTemplateId,
@@ -80,8 +80,9 @@ export async function getCoverLetterForUser(userId, draftId) {
 
 export async function updateCoverLetterForUser(userId, draftId, patch) {
   const safePatch = {
-    ...patch,
-    ...(patch.templateId ? { templateId: normalizeCoverLetterTemplateId(patch.templateId) } : {}),
+    ...(typeof patch.title === 'string' ? { title: patch.title } : {}),
+    ...(patch.data && typeof patch.data === 'object' ? { ...patch.data } : {}),
+    ...(patch.templateKey ? { templateId: normalizeCoverLetterTemplateId(patch.templateKey) } : {}),
   };
 
   return updateOwnedDraft({
@@ -90,7 +91,7 @@ export async function updateCoverLetterForUser(userId, draftId, patch) {
     draftId,
     patch: safePatch,
     titleFallback: 'Untitled Cover Letter',
-    nestedKeys: ['basics', 'content', 'design', 'sectionVisibility'],
+    nestedKeys: [],
     loadDraft: getCoverLetterForUser,
   });
 }

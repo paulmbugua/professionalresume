@@ -4,7 +4,6 @@ import React, { useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useShopContext } from '@cvpro/shared/context';
 import { useCreateCoverLetterDraft } from '@cvpro/shared/hooks';
-import { EMPTY_COVER_LETTER_DRAFT } from '../utils/coverLetterDefaults';
 
 const CoverLetterNewPage: React.FC = () => {
   const router = useRouter();
@@ -28,11 +27,18 @@ const CoverLetterNewPage: React.FC = () => {
 
     createDraft
       .mutateAsync({
-        templateId,
+        templateKey: templateId,
         title: 'Untitled Cover Letter',
         data: {
-          ...EMPTY_COVER_LETTER_DRAFT,
-          templateId,
+          applicantName: '',
+          applicantEmail: '',
+          applicantPhone: '',
+          applicantLocation: '',
+          recipientName: '',
+          companyName: '',
+          roleTitle: '',
+          letterBody: '',
+          closingLine: '',
         },
       })
       .then((created) => {

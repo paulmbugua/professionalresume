@@ -35,11 +35,18 @@ const CoverLetterTemplatesPage: React.FC = () => {
 
     const template = coverLetterTemplateRegistry.find((item) => item.id === templateId);
     const draft = await createDraft.mutateAsync({
-      templateId,
+      templateKey: templateId,
       title: template?.name || 'Untitled Cover Letter',
       data: {
-        ...EMPTY_COVER_LETTER_DRAFT,
-        templateId,
+        applicantName: '',
+        applicantEmail: '',
+        applicantPhone: '',
+        applicantLocation: '',
+        recipientName: '',
+        companyName: '',
+        roleTitle: '',
+        letterBody: '',
+        closingLine: '',
       },
     });
 

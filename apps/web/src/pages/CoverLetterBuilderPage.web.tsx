@@ -21,6 +21,46 @@ function pickParam(v: unknown): string | undefined {
   return undefined;
 }
 
+function mapEditorDraftToUpdatePayload(values: CoverLetterDraft): {
+  title?: string;
+  templateKey?: string;
+  data?: {
+    applicantName?: string;
+    applicantEmail?: string;
+    applicantPhone?: string;
+    applicantLocation?: string;
+    recipientName?: string;
+    companyName?: string;
+    roleTitle?: string;
+    letterBody?: string;
+    closingLine?: string;
+  };
+} {
+  const normalized = normalizeCoverLetterDraft(values);
+  return {
+    title: normalized.title,
+    templateKey: normalized.templateId,
+    data: {
+      applicantName: normalized.sender.fullName,
+      applicantEmail: normalized.sender.email,
+      applicantPhone: normalized.sender.phone,
+      applicantLocation: normalized.sender.location,
+      recipientName: normalized.recipient.name,
+      companyName: normalized.recipient.company,
+      roleTitle: normalized.letter.role,
+      letterBody: [
+        normalized.letter.greeting,
+        normalized.body.opening,
+        ...normalized.body.middleParagraphs,
+        normalized.body.closing,
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+      closingLine: normalized.letter.signoff,
+    },
+  };
+}
+
 const CoverLetterBuilderPageInner: React.FC<{ id: string; backendUrl: string; token: string }> = ({
   id,
   backendUrl,
@@ -36,6 +76,7 @@ const CoverLetterBuilderPageInner: React.FC<{ id: string; backendUrl: string; to
   const initRef = useRef(true);
   const hydratedDraftIdRef = useRef<string | null>(null);
   const lastSavedSigRef = useRef<string>('');
+  const lastValidationFailedSigRef = useRef<string>('');
 
   const methods = useForm<CoverLetterDraft>({
     defaultValues: EMPTY_COVER_LETTER_DRAFT,
@@ -54,17 +95,31 @@ const CoverLetterBuilderPageInner: React.FC<{ id: string; backendUrl: string; to
     reset(initial);
 
     lastSavedSigRef.current = JSON.stringify(initial);
+    lastValidationFailedSigRef.current = '';
     setLastSavedAt(data.updatedAt ? new Date(data.updatedAt).toLocaleString() : undefined);
   }, [data, id, reset]);
 
   const debouncedSave = useMemo(
     () =>
       debounce(async (values: CoverLetterDraft) => {
-        const updated = await updateDraft.mutateAsync({ id, payload: values });
-        lastSavedSigRef.current = JSON.stringify(values);
-        setLastSavedAt(
-          updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined
-        );
+        const payload = mapEditorDraftToUpdatePayload(values);
+        const payloadSig = JSON.stringify(payload);
+
+        if (payloadSig === lastValidationFailedSigRef.current) return;
+
+        try {
+          const updated = await updateDraft.mutateAsync({ id, payload });
+          lastSavedSigRef.current = payloadSig;
+          lastValidationFailedSigRef.current = '';
+          setLastSavedAt(
+            updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined
+          );
+        } catch (err: any) {
+          if (String(err?.message || '').includes('not allowed')) {
+            lastValidationFailedSigRef.current = payloadSig;
+          }
+          throw err;
+        }
       }, 900),
     [id, updateDraft]
   );
@@ -77,7 +132,7 @@ const CoverLetterBuilderPageInner: React.FC<{ id: string; backendUrl: string; to
       return;
     }
 
-    const sig = JSON.stringify(formValues);
+    const sig = JSON.stringify(mapEditorDraftToUpdatePayload(formValues as CoverLetterDraft));
     if (sig === lastSavedSigRef.current) return;
 
     debouncedSave(formValues as CoverLetterDraft);
@@ -86,8 +141,10 @@ const CoverLetterBuilderPageInner: React.FC<{ id: string; backendUrl: string; to
 
   const handleManualSave = async () => {
     const values = getValues();
-    const updated = await updateDraft.mutateAsync({ id, payload: values });
-    lastSavedSigRef.current = JSON.stringify(values);
+    const payload = mapEditorDraftToUpdatePayload(values);
+    const updated = await updateDraft.mutateAsync({ id, payload });
+    lastSavedSigRef.current = JSON.stringify(payload);
+    lastValidationFailedSigRef.current = '';
     setLastSavedAt(updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined);
   };
 

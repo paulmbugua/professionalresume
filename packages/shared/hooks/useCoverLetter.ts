@@ -60,7 +60,21 @@ export function useCoverLetterDraft({ backendUrl, token, id }: BaseArgs & { id?:
 export function useCreateCoverLetterDraft({ backendUrl, token }: BaseArgs) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { templateId: string; title?: string; data?: Partial<CoverLetterDraft> }) => {
+    mutationFn: (payload: {
+      templateKey: string;
+      title?: string;
+      data?: {
+        applicantName?: string;
+        applicantEmail?: string;
+        applicantPhone?: string;
+        applicantLocation?: string;
+        recipientName?: string;
+        companyName?: string;
+        roleTitle?: string;
+        letterBody?: string;
+        closingLine?: string;
+      };
+    }) => {
       if (!token) throw new Error('Unauthorized');
       return createCoverLetterDraft(backendUrl, token, payload);
     },
@@ -74,10 +88,30 @@ export function useCreateCoverLetterDraft({ backendUrl, token }: BaseArgs) {
 export function useSaveCoverLetterDraft({ backendUrl, token }: BaseArgs) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, payload }: { id: string; payload: Partial<CoverLetterDraft> }) => {
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: string;
+      payload: Partial<CoverLetterDraft> & {
+        templateKey?: string;
+        data?: {
+          applicantName?: string;
+          applicantEmail?: string;
+          applicantPhone?: string;
+          applicantLocation?: string;
+          recipientName?: string;
+          companyName?: string;
+          roleTitle?: string;
+          letterBody?: string;
+          closingLine?: string;
+        };
+      };
+    }) => {
       if (!token) throw new Error('Unauthorized');
       return updateCoverLetterDraft(backendUrl, token, id, payload);
     },
+    retry: false,
     onSuccess: (draft) => {
       qc.setQueryData(['cover-letter-draft', backendUrl, token, draft.id], draft);
       qc.invalidateQueries({ queryKey: ['cover-letter-drafts', backendUrl, token] });

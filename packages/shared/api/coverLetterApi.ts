@@ -80,24 +80,56 @@ export const createCoverLetterDraft = async (
   backendUrl: string,
   token: string,
   payload: {
-    templateId: string;
+    templateKey: string;
     title?: string;
-    data?: Partial<CoverLetterDraft>;
+    data?: {
+      applicantName?: string;
+      applicantEmail?: string;
+      applicantPhone?: string;
+      applicantLocation?: string;
+      recipientName?: string;
+      companyName?: string;
+      roleTitle?: string;
+      letterBody?: string;
+      closingLine?: string;
+    };
   },
 ): Promise<CoverLetterDraft> => {
   try {
     const api = client(backendUrl, token);
 
     const safePayload: {
-      templateId: string;
+      templateKey: string;
       title?: string;
-      data?: Partial<CoverLetterDraft>;
+      data?: {
+        applicantName: string;
+        applicantEmail: string;
+        applicantPhone: string;
+        applicantLocation: string;
+        recipientName: string;
+        companyName: string;
+        roleTitle: string;
+        letterBody: string;
+        closingLine: string;
+      };
     } = {
-      templateId: payload.templateId,
+      templateKey: payload.templateKey,
     };
 
     if (typeof payload.title === 'string') safePayload.title = payload.title;
-    if (payload.data && typeof payload.data === 'object') safePayload.data = payload.data;
+    if (payload.data && typeof payload.data === 'object') {
+      safePayload.data = {
+        applicantName: typeof payload.data.applicantName === 'string' ? payload.data.applicantName : '',
+        applicantEmail: typeof payload.data.applicantEmail === 'string' ? payload.data.applicantEmail : '',
+        applicantPhone: typeof payload.data.applicantPhone === 'string' ? payload.data.applicantPhone : '',
+        applicantLocation: typeof payload.data.applicantLocation === 'string' ? payload.data.applicantLocation : '',
+        recipientName: typeof payload.data.recipientName === 'string' ? payload.data.recipientName : '',
+        companyName: typeof payload.data.companyName === 'string' ? payload.data.companyName : '',
+        roleTitle: typeof payload.data.roleTitle === 'string' ? payload.data.roleTitle : '',
+        letterBody: typeof payload.data.letterBody === 'string' ? payload.data.letterBody : '',
+        closingLine: typeof payload.data.closingLine === 'string' ? payload.data.closingLine : '',
+      };
+    }
 
     const res = await api.post<CoverLetterDraft>('/api/cover-letters/drafts', safePayload);
     return res.data;
@@ -110,42 +142,81 @@ export const updateCoverLetterDraft = async (
   backendUrl: string,
   token: string,
   id: string,
-  payload: Partial<CoverLetterDraft>,
+  payload: Partial<CoverLetterDraft> & {
+    templateKey?: string;
+    data?: {
+      applicantName?: string;
+      applicantEmail?: string;
+      applicantPhone?: string;
+      applicantLocation?: string;
+      recipientName?: string;
+      companyName?: string;
+      roleTitle?: string;
+      letterBody?: string;
+      closingLine?: string;
+    };
+  },
 ): Promise<CoverLetterDraft> => {
   try {
     const api = client(backendUrl, token);
 
-    // whitelist exactly what backend patch validators should allow
-    const safe: Partial<CoverLetterDraft> = {};
+    const safe: {
+      title?: string;
+      templateKey?: string;
+      data?: {
+        applicantName?: string;
+        applicantEmail?: string;
+        applicantPhone?: string;
+        applicantLocation?: string;
+        recipientName?: string;
+        companyName?: string;
+        roleTitle?: string;
+        letterBody?: string;
+        closingLine?: string;
+      };
+    } = {};
 
     if (typeof payload.title === 'string') safe.title = payload.title;
-    if (typeof payload.templateId === 'string') safe.templateId = payload.templateId;
+    if (typeof payload.templateKey === 'string') safe.templateKey = payload.templateKey;
+    else if (typeof payload.templateId === 'string') safe.templateKey = payload.templateId;
 
-    if (payload.sender && typeof payload.sender === 'object') safe.sender = payload.sender;
-    if (payload.recipient && typeof payload.recipient === 'object') safe.recipient = payload.recipient;
-    if (payload.letter && typeof payload.letter === 'object') safe.letter = payload.letter;
-    if (payload.body && typeof payload.body === 'object') safe.body = payload.body;
-    if (payload.style && typeof payload.style === 'object') safe.style = payload.style;
+    const dataCandidate =
+      payload.data && typeof payload.data === 'object'
+        ? payload.data
+        : {
+            applicantName: (payload as any)?.sender?.fullName,
+            applicantEmail: (payload as any)?.sender?.email,
+            applicantPhone: (payload as any)?.sender?.phone,
+            applicantLocation: (payload as any)?.sender?.location,
+            recipientName: (payload as any)?.recipient?.name,
+            companyName: (payload as any)?.recipient?.company,
+            roleTitle: (payload as any)?.letter?.role,
+            letterBody: [
+              (payload as any)?.letter?.greeting,
+              (payload as any)?.body?.opening,
+              ...(((payload as any)?.body?.middleParagraphs as string[] | undefined) || []),
+              (payload as any)?.body?.closing,
+            ]
+              .filter((part) => typeof part === 'string' && part.trim().length > 0)
+              .join('\n\n'),
+            closingLine: (payload as any)?.letter?.signoff,
+          };
 
-    // backwards-compatibility for older payload variants that may still be cached client-side
-    if (typeof (payload as any).subject === 'string' || typeof (payload as any).greeting === 'string' || typeof (payload as any).closing === 'string') {
-      safe.letter = {
-        ...(safe.letter || (payload as any).letter || {}),
-        subject: (payload as any).subject ?? (safe.letter as any)?.subject ?? '',
-        greeting: (payload as any).greeting ?? (safe.letter as any)?.greeting ?? '',
-        signoff: (payload as any).closing ?? (safe.letter as any)?.signoff ?? '',
-        role: (safe.letter as any)?.role ?? '',
-        date: (safe.letter as any)?.date ?? '',
-      } as any;
-    }
-    if (typeof (payload as any).body === 'string') {
-      safe.body = {
-        ...(safe.body || (payload as any).body || {}),
-        opening: (payload as any).body,
-        middleParagraphs: (safe.body as any)?.middleParagraphs || [''],
-        closing: (safe.body as any)?.closing || '',
-      } as any;
-    }
+    const sanitizedData = {
+      applicantName: typeof dataCandidate.applicantName === 'string' ? dataCandidate.applicantName : undefined,
+      applicantEmail: typeof dataCandidate.applicantEmail === 'string' ? dataCandidate.applicantEmail : undefined,
+      applicantPhone: typeof dataCandidate.applicantPhone === 'string' ? dataCandidate.applicantPhone : undefined,
+      applicantLocation:
+        typeof dataCandidate.applicantLocation === 'string' ? dataCandidate.applicantLocation : undefined,
+      recipientName: typeof dataCandidate.recipientName === 'string' ? dataCandidate.recipientName : undefined,
+      companyName: typeof dataCandidate.companyName === 'string' ? dataCandidate.companyName : undefined,
+      roleTitle: typeof dataCandidate.roleTitle === 'string' ? dataCandidate.roleTitle : undefined,
+      letterBody: typeof dataCandidate.letterBody === 'string' ? dataCandidate.letterBody : undefined,
+      closingLine: typeof dataCandidate.closingLine === 'string' ? dataCandidate.closingLine : undefined,
+    };
+
+    if (Object.values(sanitizedData).some((value) => value !== undefined)) safe.data = sanitizedData;
+
     if (Object.keys(safe).length === 0) {
       const res = await api.get<CoverLetterDraft>(`/api/cover-letters/drafts/${id}`);
       return res.data;
