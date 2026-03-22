@@ -59,11 +59,18 @@ export const createCoverLetterSchema = Joi.object({
 
 export const patchCoverLetterSchema = Joi.object({
   title: Joi.string().max(140).allow(''),
-  templateId: Joi.string(),
-  basics: basicsSchema,
-  content: contentSchema,
-  design: designSchema,
-  sectionVisibility: Joi.object().pattern(Joi.string().valid(...visibilityKeys), Joi.boolean()),
+  templateKey: Joi.string(),
+  data: Joi.object({
+    applicantName: Joi.string().max(120).allow(''),
+    applicantEmail: Joi.string().email().allow(''),
+    applicantPhone: Joi.string().max(40).allow(''),
+    applicantLocation: Joi.string().max(120).allow(''),
+    recipientName: Joi.string().max(120).allow(''),
+    companyName: Joi.string().max(140).allow(''),
+    roleTitle: Joi.string().max(140).allow(''),
+    letterBody: Joi.string().max(12000).allow(''),
+    closingLine: Joi.string().max(200).allow(''),
+  }).unknown(false),
 }).min(1);
 
 export const coverLetterExportSchema = Joi.object({

@@ -88,10 +88,30 @@ export function useCreateCoverLetterDraft({ backendUrl, token }: BaseArgs) {
 export function useSaveCoverLetterDraft({ backendUrl, token }: BaseArgs) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, payload }: { id: string; payload: Partial<CoverLetterDraft> }) => {
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: string;
+      payload: Partial<CoverLetterDraft> & {
+        templateKey?: string;
+        data?: {
+          applicantName?: string;
+          applicantEmail?: string;
+          applicantPhone?: string;
+          applicantLocation?: string;
+          recipientName?: string;
+          companyName?: string;
+          roleTitle?: string;
+          letterBody?: string;
+          closingLine?: string;
+        };
+      };
+    }) => {
       if (!token) throw new Error('Unauthorized');
       return updateCoverLetterDraft(backendUrl, token, id, payload);
     },
+    retry: false,
     onSuccess: (draft) => {
       qc.setQueryData(['cover-letter-draft', backendUrl, token, draft.id], draft);
       qc.invalidateQueries({ queryKey: ['cover-letter-drafts', backendUrl, token] });
