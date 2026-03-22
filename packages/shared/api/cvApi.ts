@@ -4,6 +4,8 @@ import type {
   CvTemplate,
   CvTemplateResponse,
   CvExportResponse,
+  CoverLetterDraft,
+  CoverLetterEntitlement,
 } from '@cvpro/shared/types';
 
 function client(backendUrl: string, token?: string) {
@@ -185,6 +187,49 @@ export const getCvPrintHtml = async (
   try {
     const api = client(backendUrl, token);
     const res = await api.get<{ html: string }>(`/api/cv/drafts/${id}/print-html`);
+    return res.data;
+  } catch (err: any) {
+    throw new Error(toMessage(err));
+  }
+};
+
+export const getCoverLetterEntitlement = async (
+  backendUrl: string,
+  token: string,
+): Promise<CoverLetterEntitlement> => {
+  try {
+    const api = client(backendUrl, token);
+    const res = await api.get<CoverLetterEntitlement>('/api/cv/cover-letter/entitlement');
+    return res.data;
+  } catch (err: any) {
+    throw new Error(toMessage(err));
+  }
+};
+
+export const getCoverLetterPrintHtml = async (
+  backendUrl: string,
+  token: string,
+  payload: CoverLetterDraft,
+): Promise<{ html: string }> => {
+  try {
+    const api = client(backendUrl, token);
+    const res = await api.post<{ html: string }>('/api/cv/cover-letter/print-html', payload);
+    return res.data;
+  } catch (err: any) {
+    throw new Error(toMessage(err));
+  }
+};
+
+export const exportCoverLetterPdf = async (
+  backendUrl: string,
+  token: string,
+  payload: CoverLetterDraft,
+): Promise<CvExportResponse> => {
+  try {
+    const api = client(backendUrl, token);
+    const res = await api.post<CvExportResponse>('/api/cv/cover-letter/export', {
+      coverLetterJson: payload,
+    });
     return res.data;
   } catch (err: any) {
     throw new Error(toMessage(err));

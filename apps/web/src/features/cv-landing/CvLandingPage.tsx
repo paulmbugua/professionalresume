@@ -201,6 +201,9 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
                 <button onClick={createNewResume} className={primaryButtonClass}>
                   Create new resume
                 </button>
+                <Link href="/cover-letter" className={secondaryButtonClass}>
+                  Cover letter (free after $1 resume purchase)
+                </Link>
               </div>
 
               <div className="mt-7 grid grid-cols-3 gap-4 sm:flex sm:gap-10">

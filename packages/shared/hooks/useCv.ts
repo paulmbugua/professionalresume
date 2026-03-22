@@ -9,6 +9,8 @@ import {
   updateCvDraft,
   deleteCvDraft,
   exportCvPdf,
+  exportCoverLetterPdf,
+  getCoverLetterEntitlement,
   aiGenerateSummary,
   aiRewriteBullet,
   aiSuggestSkills,
@@ -18,7 +20,13 @@ import {
   aiSuggestCoverLetterSubjectLines,
   aiSuggestCoverLetterGreetingClosing,
 } from '@cvpro/shared/api';
-import type { CvDraft, CvTemplateResponse, CvExportResponse } from '@cvpro/shared/types';
+import type {
+  CvDraft,
+  CvTemplateResponse,
+  CvExportResponse,
+  CoverLetterDraft,
+  CoverLetterEntitlement,
+} from '@cvpro/shared/types';
 
 type BaseArgs = {
   backendUrl: string;
@@ -198,4 +206,24 @@ export function useAiCvAssist({ backendUrl, token }: BaseArgs) {
       suggestCoverLetterGreetingClosingMutation,
     ],
   );
+}
+
+export function useCoverLetterEntitlement({ backendUrl, token }: BaseArgs) {
+  return useAppQuery<CoverLetterEntitlement, Error>(
+    ['cover-letter-entitlement', backendUrl, token],
+    () => {
+      if (!token) throw new Error('Unauthorized');
+      return getCoverLetterEntitlement(backendUrl, token);
+    },
+    { enabled: Boolean(backendUrl && token) },
+  );
+}
+
+export function useExportCoverLetter({ backendUrl, token }: BaseArgs) {
+  return useMutation<CvExportResponse, Error, CoverLetterDraft>({
+    mutationFn: (payload) => {
+      if (!token) throw new Error('Unauthorized');
+      return exportCoverLetterPdf(backendUrl, token, payload);
+    },
+  });
 }
