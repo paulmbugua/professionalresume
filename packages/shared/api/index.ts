@@ -9,4 +9,5 @@ export * from './profileApi';
 export * from './profileCardApi';
 
 export * from './cvApi';
+export * from './coverLetterApi';
 export * from './aiCvApi';

@@ -7,7 +7,14 @@ const srcDir = path.join(root, 'src');
 const appDir = path.join(srcDir, 'app');
 
 const PAGE_RE = /^page\.(tsx|ts|jsx|js)$/;
-const TARGET_PATHS = ['/login', '/templates', '/builder/new'];
+const TARGET_PATHS = [
+  '/login',
+  '/templates',
+  '/builder/new',
+  '/cover-letters',
+  '/cover-letters/new',
+  '/cover-letters/[id]',
+];
 
 function walkFiles(dir, results = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

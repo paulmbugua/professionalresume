@@ -19,6 +19,7 @@ export type OrgTier = 'starter' | 'pro' | 'enterprise';
 
 
 export * from './cv';
+export * from './coverLetter';
 
 
 // UI-friendly strings (for display forms etc.)

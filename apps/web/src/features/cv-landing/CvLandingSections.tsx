@@ -17,6 +17,9 @@ const softCardClass =
 const primaryButtonClass =
   'rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 dark:bg-blue-500 dark:shadow-[0_10px_24px_rgba(37,99,235,0.35)] dark:hover:bg-blue-400';
 
+const secondaryButtonClass =
+  'rounded-xl border border-blue-200 bg-white/95 px-6 py-3 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-50 dark:border-blue-400/30 dark:bg-white/5 dark:text-blue-100 dark:hover:bg-white/10';
+
 const navButtonClass =
   'absolute top-1/2 z-10 -translate-y-1/2 rounded-xl border border-slate-200/80 bg-white/90 px-2.5 py-2 text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:opacity-40 dark:border-white/10 dark:bg-[#0B1220]/90 dark:text-slate-100 dark:hover:bg-white/10';
 
@@ -262,6 +265,83 @@ export function TemplatesCarousel({
   );
 }
 
+export function CoverLettersPromoSection({
+  onCreateCoverLetter,
+  onExploreDesigns,
+}: {
+  onCreateCoverLetter: () => void;
+  onExploreDesigns: () => void;
+}) {
+  const highlights = [
+    {
+      title: 'Premium AI support',
+      body: 'Use built-in AI assist to tailor every paragraph to your role, tone, and experience in seconds.',
+      icon: <IconChip tone="purple">✨</IconChip>,
+    },
+    {
+      title: 'Ready to print or download',
+      body: 'Export polished cover letters as print-ready, downloadable files whenever you are ready to apply.',
+      icon: <IconChip tone="blue">⬇️</IconChip>,
+    },
+    {
+      title: 'Included after your first resume',
+      body: 'Cover letters are included at no extra cost after your first $1 resume purchase.',
+      icon: <IconChip tone="emerald">💎</IconChip>,
+    },
+  ];
+
+  return (
+    <section className="bg-site pb-12 pt-2 dark:bg-slate-950 sm:pb-14">
+      <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
+        <div className={`${sectionCardClass} overflow-hidden p-5 sm:p-7`}>
+          <div className="grid gap-6 lg:grid-cols-[1.15fr_1fr] lg:items-center">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-600 dark:text-blue-300">
+                Premium cover letters
+              </p>
+              <h2 className="mt-3 text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+                Turn your resume into a complete application package
+              </h2>
+              <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300 sm:text-base">
+                Create professional cover letters with AI assist, then print or download your final
+                version instantly. Once you purchase your first resume for $1, cover letters are
+                included for free in your account.
+              </p>
+
+              <div className="mt-6 flex flex-wrap gap-3">
+                <button type="button" onClick={onCreateCoverLetter} className={primaryButtonClass}>
+                  Create Cover Letter
+                </button>
+                <button type="button" onClick={onExploreDesigns} className={secondaryButtonClass}>
+                  Explore Designs
+                </button>
+              </div>
+            </div>
+
+            <div className="grid gap-3">
+              {highlights.map((item) => (
+                <div key={item.title} className={`${softCardClass} p-4 sm:p-5`}>
+                  <div className="flex items-start gap-3">
+                    {item.icon}
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                        {item.title}
+                      </p>
+                      <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                        {item.body}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function WhyChooseSection() {
   const items = [
     {
@@ -443,9 +523,7 @@ export function FAQSection({ onCta }: { onCta: () => void }) {
                   </span>
                 </div>
               </summary>
-              <div className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                {f.a}
-              </div>
+              <div className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{f.a}</div>
             </details>
           ))}
 
@@ -481,26 +559,44 @@ export function SiteFooter() {
           <div className="grid grid-cols-2 gap-10 sm:grid-cols-3">
             <div className="flex flex-col gap-2">
               <div className="text-sm font-semibold">Contact Us</div>
-              <Link href="/contact" className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white">
+              <Link
+                href="/contact"
+                className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white"
+              >
                 Support
               </Link>
-              <Link href="/pricing" className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white">
+              <Link
+                href="/pricing"
+                className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white"
+              >
                 Pricing
               </Link>
-              <Link href="/help" className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white">
+              <Link
+                href="/help"
+                className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white"
+              >
                 FAQ
               </Link>
             </div>
 
             <div className="flex flex-col gap-2">
               <div className="text-sm font-semibold">Legal</div>
-              <Link href="/privacy" className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white">
+              <Link
+                href="/privacy"
+                className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white"
+              >
                 Privacy Policy
               </Link>
-              <Link href="/terms" className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white">
+              <Link
+                href="/terms"
+                className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white"
+              >
                 Terms &amp; Conditions
               </Link>
-              <Link href="/cookie-policy" className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white">
+              <Link
+                href="/cookie-policy"
+                className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white"
+              >
                 Cookies Policy
               </Link>
             </div>

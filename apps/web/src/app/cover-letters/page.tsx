@@ -1,11 +1,5 @@
-import type { Metadata } from 'next';
-import CoverLetterTemplatesPage from '../../pages/CoverLetterTemplates.web';
-
-export const metadata: Metadata = {
-  title: 'Cover Letter Templates | CVPro',
-  description: 'Browse professional cover letter templates and start drafting quickly.',
-};
+import CoverLettersPage from '../../pages/CoverLetters.web';
 
 export default function Page() {
-  return <CoverLetterTemplatesPage />;
+  return <CoverLettersPage />;
 }
