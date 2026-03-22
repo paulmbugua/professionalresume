@@ -27,7 +27,7 @@ This audit standardizes routing on **Next.js App Router** and fixes the missing 
 ## Guardrails added
 
 - `src/lib/returnTo.ts` now normalizes and validates return paths to avoid open redirects.
-- `scripts/verify-routes.mjs` validates required routes (`/login`, `/templates`, `/builder/new`) exist in `src/app/**/page.*`.
+- `scripts/verify-routes.mjs` validates required routes (`/login`, `/templates`, `/builder/new`, `/cover-letters`, `/cover-letters/new`, `/cover-letters/[id]`) exist in `src/app/**/page.*`.
 - `eslint.config.ts` disallows `react-router-dom` imports in `src/app/**` route files.
 
 ## Manual test steps
