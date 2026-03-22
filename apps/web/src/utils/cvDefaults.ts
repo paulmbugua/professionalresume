@@ -131,6 +131,18 @@ export function normalizeDraft(draft: CvDraft): CvDraft {
     richText: {
       ...(draft.richText || {}),
     },
+    coverLetter: {
+      subject: draft.coverLetter?.subject || '',
+      greeting: draft.coverLetter?.greeting || '',
+      body: draft.coverLetter?.body || '',
+      closing: draft.coverLetter?.closing || '',
+    },
+    aiMeta: {
+      ...(draft.aiMeta || {}),
+    },
+    generationMeta: {
+      ...(draft.generationMeta || {}),
+    },
     meta: {
       isDemoSeeded: Boolean(draft.meta?.isDemoSeeded),
       hasImportedCv: Boolean(draft.meta?.hasImportedCv),

@@ -85,6 +85,23 @@ export type CvDraftMeta = {
   importMode?: 'merge' | 'replace';
 };
 
+export type CoverLetterDraft = {
+  subject?: string;
+  greeting?: string;
+  body?: string;
+  closing?: string;
+};
+
+export type CvAiMeta = {
+  coverLetter?: {
+    lastAction?: string;
+    lastModel?: string;
+    lastUpdatedAt?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+};
+
 export type CvDraft = {
   id: string;
   userId: string;
@@ -113,6 +130,9 @@ export type CvDraft = {
   formatting?: CvFormattingDefaults;
   templateTheme?: CvTemplateTheme;
   richText?: CvRichTextMap;
+  coverLetter?: CoverLetterDraft;
+  aiMeta?: CvAiMeta;
+  generationMeta?: Record<string, unknown>;
   meta?: CvDraftMeta;
   sectionOrder: CvSectionKey[];
   sectionVisibility: Record<CvSectionKey, boolean>;

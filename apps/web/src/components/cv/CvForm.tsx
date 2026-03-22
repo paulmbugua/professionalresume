@@ -1461,6 +1461,28 @@ const CvForm: React.FC = () => {
       </SectionCard>
 
       <SectionCard
+        title="Cover Letter"
+        subtitle="Optional: subject, greeting, body, and closing for job applications."
+        isOpen
+        collapsible={false}
+      >
+        <div className="grid gap-2 md:grid-cols-2">
+          <Input placeholder="Subject line" {...register('coverLetter.subject' as const)} />
+          <Input placeholder="Greeting (e.g., Dear Hiring Manager,)" {...register('coverLetter.greeting' as const)} />
+        </div>
+        <div className="mt-3">
+          <Textarea
+            placeholder="Cover-letter body"
+            className="min-h-40"
+            {...register('coverLetter.body' as const)}
+          />
+        </div>
+        <div className="mt-3">
+          <Input placeholder="Closing (e.g., Sincerely, Jane Doe)" {...register('coverLetter.closing' as const)} />
+        </div>
+      </SectionCard>
+
+      <SectionCard
         title="Skills"
         subtitle="Add only what you want recruiters to see."
         collapsedPreview={collapsedPreviews.skills}
