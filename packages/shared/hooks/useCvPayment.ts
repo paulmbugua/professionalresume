@@ -11,6 +11,19 @@ import {
 type Args = { backendUrl: string; token?: string };
 type Action = 'resume_export' | 'resume_print' | 'cover_letter_export' | 'cover_letter_print';
 
+function normalizeKenyanPhoneInput(rawPhone: string): string | null {
+  const digits = String(rawPhone || '').replace(/[^\d+]/g, '').trim();
+  if (!digits) return null;
+  if (digits.startsWith('+254')) {
+    const compact = `254${digits.slice(4)}`.replace(/[^\d]/g, '');
+    return /^254[71]\d{8}$/.test(compact) ? compact : null;
+  }
+  const numeric = digits.replace(/[^\d]/g, '');
+  if (/^(07|01)\d{8}$/.test(numeric)) return `254${numeric.slice(1)}`;
+  if (/^254[71]\d{8}$/.test(numeric)) return numeric;
+  return null;
+}
+
 export function useCvExportEntitlement({ backendUrl, token }: Args) {
   return useQuery({
     queryKey: ['cv-export-entitlement', backendUrl, token],
@@ -36,7 +49,11 @@ export function useCvPayment({ backendUrl, token }: Args) {
   const initMpesaMutation = useMutation({
     mutationFn: (phone: string) => {
       if (!token) throw new Error('Unauthorized');
-      return initCvMpesaPayment(backendUrl, token, { phone });
+      const normalizedPhone = normalizeKenyanPhoneInput(phone);
+      if (!normalizedPhone) {
+        throw new Error('Use a valid Safaricom number in format 2547XXXXXXXX.');
+      }
+      return initCvMpesaPayment(backendUrl, token, { phone: normalizedPhone });
     },
     onSuccess: (data) => {
       setMpesaTransactionId(data.transactionId);

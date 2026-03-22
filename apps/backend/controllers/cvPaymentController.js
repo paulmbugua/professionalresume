@@ -11,7 +11,12 @@ import {
 
 function resolveError(res, error) {
   const status = error?.statusCode || 500;
-  return res.status(status).json({ error: error.message || 'Unexpected server error' });
+  return res.status(status).json({
+    message: error?.message || 'Unexpected server error',
+    error: error?.message || 'Unexpected server error',
+    code: error?.code || 'CV_PAYMENT_ERROR',
+    ...(error?.providerMessage ? { providerMessage: error.providerMessage } : {}),
+  });
 }
 
 export async function getCvPaymentConfig(_req, res) {

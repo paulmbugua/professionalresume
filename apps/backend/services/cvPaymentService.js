@@ -7,7 +7,9 @@ import {
   shortcode,
   mpesaTimestamp,
   mpesaPassword,
-  callbackURL,
+  resolveStkCallbackUrl,
+  getMpesaConfigHealth,
+  MPESA_ENV,
   MPESA_BASE,
 } from '../utils/mpesa.js';
 
@@ -15,6 +17,15 @@ export const CVPRO_EXPORT_PRICE_USD = 1;
 export const CVPRO_EXPORT_PRICE_KES = 100;
 export const CV_EXPORT_PURCHASE_KIND = 'cv_export_unlock';
 export const CV_EXPORT_ENTITLEMENT_KEY = 'cv_export_unlock';
+
+class PaymentInitError extends Error {
+  constructor(message, statusCode, code, providerMessage) {
+    super(message);
+    this.statusCode = statusCode;
+    this.code = code;
+    if (providerMessage) this.providerMessage = providerMessage;
+  }
+}
 
 function baseMeta() {
   return {
@@ -78,9 +89,30 @@ async function createCvPaymentIntent({ userId, provider, paymentMethod, amount, 
 export async function initCvMpesaPayment({ userId, phone }) {
   const normalizedPhone = normalizePhoneNumber(phone);
   if (!normalizedPhone) {
-    const err = new Error('Please enter a valid Kenyan phone number.');
-    err.statusCode = 400;
+    const err = new PaymentInitError(
+      'Please enter a valid Kenyan phone number in 2547XXXXXXXX format.',
+      400,
+      'INVALID_PHONE',
+    );
     throw err;
+  }
+
+  const callbackUrl = resolveStkCallbackUrl({ product: 'cvpro' });
+  if (!callbackUrl) {
+    throw new PaymentInitError(
+      'M-Pesa callback URL is not configured for CVPro.',
+      500,
+      'MPESA_CALLBACK_URL_MISSING',
+    );
+  }
+
+  const health = getMpesaConfigHealth();
+  if (!health.ok) {
+    throw new PaymentInitError(
+      'M-Pesa credentials are incomplete. Please configure MPESA keys, shortcode, and passkey.',
+      500,
+      'MPESA_CONFIG_INCOMPLETE',
+    );
   }
 
   const payment = await createCvPaymentIntent({
@@ -104,10 +136,20 @@ export async function initCvMpesaPayment({ userId, phone }) {
       PartyA: normalizedPhone,
       PartyB: shortcode,
       PhoneNumber: normalizedPhone,
-      CallBackURL: callbackURL,
+      CallBackURL: callbackUrl,
       AccountReference: 'CVPRO_EXPORT_UNLOCK',
       TransactionDesc: 'CVPro export unlock',
     };
+
+    console.log('[cv/mpesa/init] sending stk push', {
+      paymentId: payment.id,
+      userId: Number(userId),
+      amount: CVPRO_EXPORT_PRICE_KES,
+      phone: normalizedPhone,
+      callbackUrl,
+      mpesaEnv: MPESA_ENV,
+      mpesaBase: MPESA_BASE,
+    });
 
     const response = await axios.post(
       `${MPESA_BASE}/mpesa/stkpush/v1/processrequest`,
@@ -115,9 +157,24 @@ export async function initCvMpesaPayment({ userId, phone }) {
       { headers: { Authorization: `Bearer ${accessToken}` } },
     );
 
+    console.log('[cv/mpesa/init] stk response summary', {
+      paymentId: payment.id,
+      responseCode: response?.data?.ResponseCode,
+      responseDescription: response?.data?.ResponseDescription,
+      customerMessage: response?.data?.CustomerMessage,
+      merchantRequestId: response?.data?.MerchantRequestID,
+      checkoutRequestId: response?.data?.CheckoutRequestID,
+    });
+
     const checkoutRequestId = response?.data?.CheckoutRequestID;
     if (!checkoutRequestId) {
-      throw new Error('Missing CheckoutRequestID from M-Pesa response');
+      const providerMessage = response?.data?.errorMessage || response?.data?.ResponseDescription;
+      throw new PaymentInitError(
+        'M-Pesa did not return a CheckoutRequestID. STK request was not accepted.',
+        502,
+        'MPESA_CHECKOUT_ID_MISSING',
+        providerMessage,
+      );
     }
 
     await pool.query(
@@ -136,19 +193,53 @@ export async function initCvMpesaPayment({ userId, phone }) {
     );
 
     return {
+      paymentId: payment.id,
       transactionId: payment.transaction_id,
       checkoutRequestId,
+      amount: CVPRO_EXPORT_PRICE_KES,
+      currency: 'KES',
       message: 'STK push sent. Complete payment on your phone.',
     };
   } catch (error) {
+    const providerPayload = error?.response?.data || null;
+    const providerMessage =
+      providerPayload?.errorMessage ||
+      providerPayload?.ResponseDescription ||
+      providerPayload?.errorCode ||
+      error?.providerMessage ||
+      error?.message;
+
     await pool.query(
       `UPDATE cv_payments SET status='Failed', metadata = metadata || $2::jsonb, updated_at=NOW() WHERE id=$1`,
-      [payment.id, JSON.stringify({ providerError: error?.response?.data || error.message })],
+      [
+        payment.id,
+        JSON.stringify({
+          providerError: providerPayload || error.message,
+          normalizedPhone,
+          callbackUrl,
+          mpesaEnv: MPESA_ENV,
+        }),
+      ],
     );
+    console.error('[cv/mpesa/init] failed', {
+      paymentId: payment.id,
+      code: error?.code || 'MPESA_STK_INIT_FAILED',
+      message: error?.message,
+      providerMessage,
+      status: error?.response?.status,
+      providerPayload,
+    });
 
-    const err = new Error('Payment initialization failed for M-Pesa.');
-    err.statusCode = 502;
-    throw err;
+    if (error instanceof PaymentInitError) {
+      throw error;
+    }
+
+    throw new PaymentInitError(
+      'Payment initialization failed for M-Pesa.',
+      502,
+      'MPESA_STK_INIT_FAILED',
+      providerMessage,
+    );
   }
 }
 

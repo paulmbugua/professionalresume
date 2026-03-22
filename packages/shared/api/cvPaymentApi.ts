@@ -12,7 +12,15 @@ function client(backendUrl: string, token?: string) {
 }
 
 const toMessage = (err: any) =>
-  err?.response?.data?.message ||
+  [
+    err?.response?.data?.message,
+    err?.response?.data?.providerMessage
+      ? `Provider: ${err.response.data.providerMessage}`
+      : null,
+    err?.response?.data?.code ? `(Code: ${err.response.data.code})` : null,
+  ]
+    .filter(Boolean)
+    .join(' ') ||
   err?.response?.data?.error ||
   (typeof err?.response?.data === 'string' ? err.response.data : '') ||
   err?.message ||
@@ -41,7 +49,14 @@ export const initCvMpesaPayment = async (
   backendUrl: string,
   token: string,
   payload: { phone: string },
-): Promise<{ transactionId: string; checkoutRequestId: string; message: string }> => {
+): Promise<{
+  paymentId: number;
+  transactionId: string;
+  checkoutRequestId: string;
+  amount: number;
+  currency: 'KES';
+  message: string;
+}> => {
   try {
     const api = client(backendUrl, token);
     const res = await api.post('/api/cv/payments/mpesa/init', payload);
