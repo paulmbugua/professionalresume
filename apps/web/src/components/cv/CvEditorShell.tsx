@@ -8,6 +8,7 @@ import AiAssistPanel from './AiAssistPanel';
 import PrintExportButton from './PrintExportButton';
 import TemplateErrorBoundary from './TemplateErrorBoundary';
 import DesignFormattingPanel from './DesignFormattingPanel';
+import TemplateFillSlider from './TemplateFillSlider';
 import { templateRegistryById, templateRegistryList } from '../../templates/registry';
 import { resolvePreviewDraft } from '../../templates/demoResume';
 import {
@@ -106,7 +107,7 @@ const CvEditorShell: React.FC<Props> = ({
   return (
     <div className="mx-auto w-full max-w-screen-2xl px-4 pb-12 pt-6 lg:px-8">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4 print:hidden">
-        <div>
+        <div className="w-full max-w-xl">
           <p className="text-xs uppercase tracking-[0.24em] text-gray-400">CV Builder</p>
           <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">
             {templateHeaderTitle}
@@ -114,6 +115,7 @@ const CvEditorShell: React.FC<Props> = ({
           <p className="text-xs text-gray-500 dark:text-white/60">
             {lastSavedAt ? `Last saved ${lastSavedAt}` : 'Autosaving enabled'}
           </p>
+          <TemplateFillSlider />
         </div>
 
         <div className="flex flex-wrap gap-2">
