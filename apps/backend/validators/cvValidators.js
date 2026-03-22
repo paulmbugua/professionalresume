@@ -128,6 +128,22 @@ export const templateUploadSchema = Joi.object({
   previewUrl: Joi.string().uri().allow('').optional(),
 });
 
+export const coverLetterSchema = Joi.object({
+  applicantName: Joi.string().allow('').required(),
+  applicantEmail: Joi.string().allow(''),
+  applicantPhone: Joi.string().allow(''),
+  applicantLocation: Joi.string().allow(''),
+  recipientName: Joi.string().allow(''),
+  companyName: Joi.string().allow(''),
+  roleTitle: Joi.string().allow(''),
+  letterBody: Joi.string().allow('').required(),
+  closingLine: Joi.string().allow(''),
+});
+
+export const coverLetterExportSchema = Joi.object({
+  coverLetterJson: coverLetterSchema.required(),
+});
+
 export const aiSummarySchema = Joi.object({
   draft: Joi.object().required(),
 });

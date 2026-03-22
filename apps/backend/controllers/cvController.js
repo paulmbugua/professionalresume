@@ -7,20 +7,25 @@ import {
   updateDraftForUser,
   deleteDraftForUser,
   createExportRecord,
+  createCoverLetterExportRecord,
   userCanAccessFileKey,
   upsertTemplate,
   getUserRole,
   ensureTemplatesSeeded,
+  getCoverLetterEntitlement,
 } from '../services/cvService.js';
 import { cvTemplates as localTemplates } from '../services/cvTemplates.js';
 import { improveExperienceWithAi } from '../services/cvAiService.js';
 import { buildCvHtml, htmlToPdfBuffer } from '../services/cvRenderService.js';
+import { buildCoverLetterHtml } from '../services/coverLetterRenderService.js';
 import { putDocObject, signDocGetUrl, getPublicR2Url } from '../services/r2.js';
 import {
   createDraftSchema,
   draftPatchSchema,
   cvExportSchema,
   templateUploadSchema,
+  coverLetterSchema,
+  coverLetterExportSchema,
 } from '../validators/cvValidators.js';
 
 function sanitizeObjectKey(input = '') {
@@ -292,5 +297,69 @@ export async function improveExperienceController(req, res) {
     return res.status(500).json({
       error: err?.message || 'Failed to improve experience.',
     });
+  }
+}
+
+export async function getCoverLetterEntitlementController(req, res) {
+  try {
+    const entitlement = await getCoverLetterEntitlement(req.user.id);
+    return res.json(entitlement);
+  } catch (err) {
+    console.error('getCoverLetterEntitlementController error', err);
+    return res.status(500).json({ error: 'Failed to read entitlement' });
+  }
+}
+
+export async function getCoverLetterPrintHtml(req, res) {
+  try {
+    const { error, value } = coverLetterSchema.validate(req.body || {});
+    if (error) {
+      return res.status(400).json({ error: error.details?.[0]?.message || error.message });
+    }
+    const html = buildCoverLetterHtml(value);
+    return res.json({ html });
+  } catch (err) {
+    console.error('getCoverLetterPrintHtml error', err);
+    return res.status(500).json({ error: 'Failed to build cover letter html' });
+  }
+}
+
+export async function exportCoverLetter(req, res) {
+  try {
+    const { error, value } = coverLetterExportSchema.validate(req.body || {});
+    if (error) {
+      return res.status(400).json({ error: error.details?.[0]?.message || error.message });
+    }
+
+    const html = buildCoverLetterHtml(value.coverLetterJson || {});
+    const buffer = await htmlToPdfBuffer(html);
+    const objectKey = sanitizeObjectKey(
+      `cvpro/${req.user.id}/cover-letters/export-${Date.now()}.pdf`,
+    );
+
+    const uploaded = await putDocObject({
+      key: objectKey,
+      body: buffer,
+      contentType: 'application/pdf',
+    });
+
+    await createCoverLetterExportRecord({
+      userId: req.user.id,
+      fileKey: uploaded.key,
+      publicUrl: uploaded.url,
+      mimeType: uploaded.contentType,
+      bytes: uploaded.bytes,
+    });
+
+    return res.status(201).json({
+      url: uploaded.url,
+      fileKey: uploaded.key,
+      signedUrl: await signDocGetUrl(uploaded.key),
+      bytes: uploaded.bytes,
+      mimeType: uploaded.contentType,
+    });
+  } catch (err) {
+    console.error('exportCoverLetter error', err);
+    return res.status(500).json({ error: err.message || 'Failed to export cover letter' });
   }
 }

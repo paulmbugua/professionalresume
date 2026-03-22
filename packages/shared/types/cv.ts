@@ -141,3 +141,20 @@ export type CvExportResponse = {
   bytes?: number;
   mimeType?: string;
 };
+
+export type CoverLetterDraft = {
+  applicantName: string;
+  applicantEmail?: string;
+  applicantPhone?: string;
+  applicantLocation?: string;
+  recipientName?: string;
+  companyName?: string;
+  roleTitle?: string;
+  letterBody: string;
+  closingLine?: string;
+};
+
+export type CoverLetterEntitlement = {
+  eligible: boolean;
+  reason: string;
+};
