@@ -4,6 +4,7 @@ import { resolvePreviewDraft } from '../../templates/demoResume';
 import { templateRegistryById, templateRegistry } from '../../templates/registry';
 import { stripScripts } from '../../utils/sanitizeHtmlForIframe';
 import { PREVIEW_MAX_HEIGHT, withPreviewEnhancements } from '../../utils/cvHtmlEnhance';
+import { normalizeSectionOrder, normalizeSectionVisibility } from '../../utils/cvDefaults';
 
 type Props = {
   draft: CvDraft;
@@ -17,7 +18,11 @@ const hasPdfJunk = (draft: CvDraft) => {
     draft?.basics?.name,
     draft?.basics?.headline,
     ...(draft?.skills || []).slice(0, 20),
-    ...(draft?.experience || []).flatMap((item) => [item.role, item.company, ...(item.bullets || [])]),
+    ...(draft?.experience || []).flatMap((item) => [
+      item.role,
+      item.company,
+      ...(item.bullets || []),
+    ]),
   ]
     .filter(Boolean)
     .join('\n')
@@ -53,11 +58,14 @@ const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSource
         formatting: { ...(resolved.draft.formatting || {}), ...(draft.formatting || {}) },
         templateTheme: { ...(resolved.draft.templateTheme || {}), ...(draft.templateTheme || {}) },
         richText: { ...(resolved.draft.richText || {}), ...(draft.richText || {}) },
-        sectionOrder: draft.sectionOrder || resolved.draft.sectionOrder,
-        sectionVisibility: {
+        sectionOrder: normalizeSectionOrder(
+          draft.sectionOrder || resolved.draft.sectionOrder,
+          resolved.draft.sectionOrder
+        ),
+        sectionVisibility: normalizeSectionVisibility({
           ...(resolved.draft.sectionVisibility || {}),
           ...(draft.sectionVisibility || {}),
-        },
+        }),
       }) as CvDraft,
     [resolved.draft, draft]
   );
@@ -179,8 +187,8 @@ const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSource
           <div className="p-6 text-sm text-rose-600">
             <p className="font-semibold">Imported resume data looks corrupted.</p>
             <p className="mt-1 text-xs text-rose-700">
-              We detected PDF internal tokens in extracted content and blocked preview rendering to avoid
-              showing invalid data. Please retry extraction with a text-based PDF or DOCX.
+              We detected PDF internal tokens in extracted content and blocked preview rendering to
+              avoid showing invalid data. Please retry extraction with a text-based PDF or DOCX.
             </p>
           </div>
         ) : html ? (

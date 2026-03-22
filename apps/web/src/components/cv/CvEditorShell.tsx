@@ -10,7 +10,11 @@ import TemplateErrorBoundary from './TemplateErrorBoundary';
 import DesignFormattingPanel from './DesignFormattingPanel';
 import { templateRegistryById, templateRegistryList } from '../../templates/registry';
 import { resolvePreviewDraft } from '../../templates/demoResume';
-import { normalizeDraft } from '../../utils/cvDefaults';
+import {
+  normalizeDraft,
+  normalizeSectionOrder,
+  normalizeSectionVisibility,
+} from '../../utils/cvDefaults';
 
 type Props = {
   draft: CvDraft;
@@ -85,8 +89,10 @@ const CvEditorShell: React.FC<Props> = ({
     sectionOrder: CvSectionKey[];
     sectionVisibility: Record<CvSectionKey, boolean>;
   }) => {
-    setValue('sectionOrder', next.sectionOrder, { shouldDirty: true });
-    setValue('sectionVisibility', next.sectionVisibility, { shouldDirty: true });
+    setValue('sectionOrder', normalizeSectionOrder(next.sectionOrder), { shouldDirty: true });
+    setValue('sectionVisibility', normalizeSectionVisibility(next.sectionVisibility), {
+      shouldDirty: true,
+    });
   };
 
   const handleAiJump = () => {
