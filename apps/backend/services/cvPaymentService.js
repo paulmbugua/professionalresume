@@ -97,7 +97,7 @@ export async function initCvMpesaPayment({ userId, phone, requestBaseUrl }) {
     throw err;
   }
 
-  const callbackUrl = resolveStkCallbackUrl({ product: 'cvpro', requestBaseUrl });
+  const callbackUrl = resolveStkCallbackUrl({ product: 'cvpro' });
   if (!callbackUrl) {
     throw new PaymentInitError(
       'M-Pesa callback URL is not configured for CVPro.',

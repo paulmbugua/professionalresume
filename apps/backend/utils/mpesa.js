@@ -49,52 +49,9 @@ const CVPRO_CALLBACK_URL = process.env.CVPRO_MPESA_CALLBACK_URL;
   if (!val) console.warn(`⚠️ ${name} is missing`);
 });
 
-function ensureAbsoluteUrl(value) {
-  if (!value) return null;
-  try {
-    const out = new URL(value);
-    return out.toString();
-  } catch {
-    return null;
-  }
-}
-
-function toBase(value) {
-  if (!value) return null;
-  try {
-    const out = new URL(value);
-    out.pathname = '/';
-    out.search = '';
-    out.hash = '';
-    return out.toString().replace(/\/$/, '');
-  } catch {
-    return null;
-  }
-}
-
-export function resolveStkCallbackUrl({ product = 'default', requestBaseUrl } = {}) {
-  const envPreferred = product === 'cvpro' ? CVPRO_CALLBACK_URL : null;
-  const envFallback = callbackURL;
-
-  const direct = ensureAbsoluteUrl(envPreferred) || ensureAbsoluteUrl(envFallback);
-  if (direct) return direct;
-
-  const baseCandidates = [
-    requestBaseUrl,
-    process.env.PUBLIC_BACKEND_URL,
-    process.env.PUBLIC_API_URL,
-    process.env.PROD_BACKEND_URL,
-    process.env.BACKEND_URL,
-  ];
-
-  for (const rawBase of baseCandidates) {
-    const base = toBase(rawBase);
-    if (base) {
-      return `${base}/api/mpesa/callback`;
-    }
-  }
-
-  return null;
+export function resolveStkCallbackUrl({ product = 'default' } = {}) {
+  if (product === 'cvpro') return CVPRO_CALLBACK_URL || callbackURL || null;
+  return callbackURL || null;
 }
 
 export function getMpesaConfigHealth() {
