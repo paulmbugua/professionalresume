@@ -54,7 +54,7 @@ export async function createCoverLetterForUser(userId, payload) {
   const normalizedTemplateId = normalizeCoverLetterTemplateId(payload.templateKey || 'classic-letter');
 
   const normalized = payload.data
-    ? { ...payload.data }
+    ? { ...payload.data, ...(payload.style && typeof payload.style === 'object' ? { style: payload.style } : {}) }
     : buildDefaultCoverLetter({
         userId,
         templateId: normalizedTemplateId,
@@ -82,6 +82,7 @@ export async function updateCoverLetterForUser(userId, draftId, patch) {
   const safePatch = {
     ...(typeof patch.title === 'string' ? { title: patch.title } : {}),
     ...(patch.data && typeof patch.data === 'object' ? { ...patch.data } : {}),
+    ...(patch.style && typeof patch.style === 'object' ? { style: patch.style } : {}),
     ...(patch.templateKey ? { templateId: normalizeCoverLetterTemplateId(patch.templateKey) } : {}),
   };
 

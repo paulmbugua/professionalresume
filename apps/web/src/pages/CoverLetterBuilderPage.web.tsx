@@ -38,6 +38,13 @@ function mapEditorDraftToUpdatePayload(values: CoverLetterDraft): {
     letterBody?: string;
     closingLine?: string;
   };
+  style?: {
+    fontFamily?: string;
+    fontSize?: number;
+    lineHeight?: number;
+    accentColor?: string;
+    pageTheme?: string;
+  };
 } {
   const normalized = normalizeCoverLetterDraft(values);
   return {
@@ -61,6 +68,13 @@ function mapEditorDraftToUpdatePayload(values: CoverLetterDraft): {
         .join('\n\n'),
       closingLine: normalized.letter.signoff,
     },
+    style: {
+      fontFamily: normalized.style.fontFamily,
+      fontSize: normalized.style.fontSize,
+      lineHeight: normalized.style.lineHeight,
+      accentColor: normalized.style.accentColor,
+      pageTheme: normalized.style.pageTheme,
+    },
   };
 }
 
@@ -80,6 +94,7 @@ const CoverLetterBuilderPageInner: React.FC<{ id: string; backendUrl: string; to
   const [paymentMessage, setPaymentMessage] = useState<string>('');
   const [exportUrl, setExportUrl] = useState<string | undefined>();
   const [lastSavedAt, setLastSavedAt] = useState<string | undefined>();
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   const initRef = useRef(true);
   const hydratedDraftIdRef = useRef<string | null>(null);
@@ -105,6 +120,7 @@ const CoverLetterBuilderPageInner: React.FC<{ id: string; backendUrl: string; to
     lastSavedSigRef.current = JSON.stringify(initial);
     lastValidationFailedSigRef.current = '';
     setLastSavedAt(data.updatedAt ? new Date(data.updatedAt).toLocaleString() : undefined);
+    setSaveState('saved');
   }, [data, id, reset]);
 
   const debouncedSave = useMemo(
@@ -116,13 +132,16 @@ const CoverLetterBuilderPageInner: React.FC<{ id: string; backendUrl: string; to
         if (payloadSig === lastValidationFailedSigRef.current) return;
 
         try {
+          setSaveState('saving');
           const updated = await updateDraft.mutateAsync({ id, payload });
           lastSavedSigRef.current = payloadSig;
           lastValidationFailedSigRef.current = '';
           setLastSavedAt(
             updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined
           );
+          setSaveState('saved');
         } catch (err: any) {
+          setSaveState('error');
           if (String(err?.message || '').includes('not allowed')) {
             lastValidationFailedSigRef.current = payloadSig;
           }
@@ -143,6 +162,7 @@ const CoverLetterBuilderPageInner: React.FC<{ id: string; backendUrl: string; to
     const sig = JSON.stringify(mapEditorDraftToUpdatePayload(formValues as CoverLetterDraft));
     if (sig === lastSavedSigRef.current) return;
 
+    setSaveState('idle');
     debouncedSave(formValues as CoverLetterDraft);
     return () => debouncedSave.cancel();
   }, [formValues, debouncedSave]);
@@ -150,10 +170,12 @@ const CoverLetterBuilderPageInner: React.FC<{ id: string; backendUrl: string; to
   const handleManualSave = async () => {
     const values = getValues();
     const payload = mapEditorDraftToUpdatePayload(values);
+    setSaveState('saving');
     const updated = await updateDraft.mutateAsync({ id, payload });
     lastSavedSigRef.current = JSON.stringify(payload);
     lastValidationFailedSigRef.current = '';
     setLastSavedAt(updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined);
+    setSaveState('saved');
   };
 
   const doExport = async () => {
@@ -223,6 +245,7 @@ const CoverLetterBuilderPageInner: React.FC<{ id: string; backendUrl: string; to
       isSaving={updateDraft.isPending}
       isExporting={exportDraft.isPending}
       lastSavedAt={lastSavedAt}
+      saveState={saveState}
     />
   );
 

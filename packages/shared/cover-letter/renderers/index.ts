@@ -14,3 +14,8 @@ export const templateMarkersById: Record<string, string[]> = templateMarkersById
 
 export const normalizeCoverLetterTemplateId: (templateId?: string) => string =
   normalizeCoverLetterTemplateIdJs;
+
+export {
+  normalizeCoverLetterRenderModel,
+  toCoverLetterExportJson as toCoverLetterRendererJson,
+} from './renderModel.js';
