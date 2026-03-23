@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { renderCoverLetterHtmlByTemplate } from '@cvpro/shared/cover-letter/renderers/index.js';
+import { stripScripts } from '../../../utils/sanitizeHtmlForIframe';
 
 type CoverLetterDraft = Record<string, unknown> & { templateId?: string };
 
@@ -17,11 +18,15 @@ export default function BaseCoverLetterTemplate({ draft, templateId }: Props) {
       }),
     [draft, templateId]
   );
+  const safeHtml = useMemo(() => stripScripts(html), [html]);
 
   return (
-    <div
-      className="cover-letter-template-render h-full w-full"
-      dangerouslySetInnerHTML={{ __html: html }}
+    <iframe
+      title={`Cover letter template ${templateId}`}
+      srcDoc={safeHtml}
+      sandbox="allow-same-origin"
+      className="cover-letter-template-render block aspect-[210/297] w-full"
+      style={{ border: 0, background: 'transparent' }}
     />
   );
 }
