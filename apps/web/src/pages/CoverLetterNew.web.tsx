@@ -12,6 +12,8 @@ const acceptedTypes =
 
 const cardBase =
   'rounded-2xl border border-slate-200 bg-white/95 p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg dark:border-white/10 dark:bg-slate-900/70';
+const dropActiveClass =
+  'border-primary/50 bg-primary/5 dark:border-primary/40 dark:bg-primary/10';
 
 const CoverLetterNewPage: React.FC = () => {
   const router = useRouter();
@@ -29,6 +31,7 @@ const CoverLetterNewPage: React.FC = () => {
   const [templateId, setTemplateId] = useState<string>(coverLetterTemplateRegistry[0]?.id || 'classic-letter');
   const [activeImport, setActiveImport] = useState<'cover_letter' | 'resume' | null>(null);
   const [error, setError] = useState<string>('');
+  const [dragTarget, setDragTarget] = useState<'cover_letter' | 'resume' | null>(null);
 
   const coverLetterInputRef = useRef<HTMLInputElement | null>(null);
   const resumeInputRef = useRef<HTMLInputElement | null>(null);
@@ -65,6 +68,20 @@ const CoverLetterNewPage: React.FC = () => {
   const runImport = async (file: File, sourceType: 'cover_letter' | 'resume') => {
     if (!ensureAuthed() || !backendUrl) return;
 
+    const validMime = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+    const ext = file.name.toLowerCase().split('.').pop();
+    if (!validMime.includes(file.type) && !['pdf', 'docx'].includes(String(ext || ''))) {
+      setError('Unsupported file type. Please upload PDF or DOCX.');
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setError('File is too large. Max size is 8MB.');
+      return;
+    }
+
     setError('');
     setActiveImport(sourceType);
 
@@ -84,10 +101,20 @@ const CoverLetterNewPage: React.FC = () => {
       setError(err?.message || 'Import failed. Please try another file.');
     } finally {
       setActiveImport(null);
+      setDragTarget(null);
       if (coverLetterInputRef.current) coverLetterInputRef.current.value = '';
       if (resumeInputRef.current) resumeInputRef.current.value = '';
     }
   };
+
+  const onDropFile =
+    (sourceType: 'cover_letter' | 'resume') => (event: React.DragEvent<HTMLElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setDragTarget(null);
+      const file = event.dataTransfer.files?.[0];
+      if (file) void runImport(file, sourceType);
+    };
 
   return (
     <main className="min-h-screen bg-site pb-14 pt-8 text-slate-900 dark:text-white">
@@ -123,7 +150,15 @@ const CoverLetterNewPage: React.FC = () => {
         </div>
 
         <div className="mt-6 grid gap-4 md:grid-cols-3">
-          <article className={cardBase}>
+          <article
+            className={`${cardBase} ${dragTarget === 'cover_letter' ? dropActiveClass : ''}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragTarget('cover_letter');
+            }}
+            onDragLeave={() => setDragTarget((prev) => (prev === 'cover_letter' ? null : prev))}
+            onDrop={onDropFile('cover_letter')}
+          >
             <div className="mb-3 inline-flex rounded-lg bg-blue-100 p-2 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200">
               <PenLine className="h-4 w-4" />
             </div>
@@ -141,7 +176,15 @@ const CoverLetterNewPage: React.FC = () => {
             </button>
           </article>
 
-          <article className={cardBase}>
+          <article
+            className={`${cardBase} ${dragTarget === 'resume' ? dropActiveClass : ''}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragTarget('resume');
+            }}
+            onDragLeave={() => setDragTarget((prev) => (prev === 'resume' ? null : prev))}
+            onDrop={onDropFile('resume')}
+          >
             <div className="mb-3 inline-flex rounded-lg bg-emerald-100 p-2 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200">
               <FileText className="h-4 w-4" />
             </div>
