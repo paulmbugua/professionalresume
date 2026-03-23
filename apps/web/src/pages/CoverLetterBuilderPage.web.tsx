@@ -195,6 +195,11 @@ const CoverLetterBuilderPageInner: React.FC<{
   };
 
   const handleImport = async (file: File, sourceType: 'cover_letter' | 'resume') => {
+    const proceed = window.confirm(
+      'Apply imported content to this draft now? Your current text will be replaced in mapped fields.'
+    );
+    if (!proceed) return;
+
     try {
       setImportNotice(
         sourceType === 'resume' ? 'Extracting details from resume…' : 'Importing cover letter…'
