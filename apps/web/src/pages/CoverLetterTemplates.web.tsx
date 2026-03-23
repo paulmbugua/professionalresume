@@ -12,7 +12,10 @@ import { EMPTY_COVER_LETTER_DRAFT } from '../utils/coverLetterDefaults';
 const CoverLetterTemplatesPage: React.FC = () => {
   const router = useRouter();
   const { backendUrl, token } = useShopContext() as { backendUrl?: string; token?: string | null };
-  const createDraft = useCreateCoverLetterDraft({ backendUrl: backendUrl || '', token: token || '' });
+  const createDraft = useCreateCoverLetterDraft({
+    backendUrl: backendUrl || '',
+    token: token || '',
+  });
 
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(
     coverLetterTemplateRegistry[0]?.id || 'classic-letter'
@@ -68,14 +71,16 @@ const CoverLetterTemplatesPage: React.FC = () => {
           </p>
         </div>
 
-        <div className="mt-6 rounded-2xl border border-gray-200 bg-white/90 p-4 shadow-sm dark:border-white/10 dark:bg-white/5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-white/60">
+        <div className="mt-6 rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-white/10 dark:bg-white/5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
             Selected template
           </p>
           <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{selectedTemplate?.name}</h2>
-              <p className="mt-1 text-sm text-gray-500 dark:text-white/70">
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+                {selectedTemplate?.name}
+              </h2>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
                 {selectedTemplate?.description}
               </p>
             </div>
@@ -133,16 +138,22 @@ const CoverLetterTemplatesPage: React.FC = () => {
                 className={`rounded-2xl border bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg dark:bg-white/5 ${
                   isSelected
                     ? 'border-primary/60 ring-2 ring-primary/20 dark:border-primary/60'
-                    : 'border-gray-200 dark:border-white/10'
+                    : 'border-slate-200 dark:border-white/10'
                 }`}
               >
-                <button type="button" onClick={() => setSelectedTemplateId(template.id)} className="w-full text-left">
+                <button
+                  type="button"
+                  onClick={() => setSelectedTemplateId(template.id)}
+                  className="w-full text-left"
+                >
                   <TemplateThumbnail html={previewHtml} label={template.name} />
                 </button>
 
                 <div className="mt-4">
-                  <h3 className="text-base font-semibold text-gray-900 dark:text-white">{template.name}</h3>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-white/60">
+                  <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+                    {template.name}
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">
                     {template.description}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-1">
@@ -164,7 +175,7 @@ const CoverLetterTemplatesPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setSelectedTemplateId(template.id)}
-                    className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                    className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-white"
                   >
                     {isSelected ? 'Selected' : 'Select'}
                   </button>

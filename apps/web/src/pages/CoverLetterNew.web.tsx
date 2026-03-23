@@ -9,7 +9,10 @@ const CoverLetterNewPage: React.FC = () => {
   const router = useRouter();
   const params = useSearchParams();
   const { token, backendUrl } = useShopContext() as any;
-  const createDraft = useCreateCoverLetterDraft({ backendUrl: backendUrl || '', token: token || '' });
+  const createDraft = useCreateCoverLetterDraft({
+    backendUrl: backendUrl || '',
+    token: token || '',
+  });
   const startedRef = useRef(false);
 
   useEffect(() => {
@@ -51,7 +54,9 @@ const CoverLetterNewPage: React.FC = () => {
 
   return (
     <div className="mx-auto flex min-h-[60vh] w-full max-w-screen-lg items-center justify-center px-4 py-12 text-center">
-      <p className="text-sm text-gray-500">Preparing your cover letter workspace...</p>
+      <p className="text-sm text-slate-600 dark:text-slate-300">
+        Preparing your cover letter workspace...
+      </p>
     </div>
   );
 };

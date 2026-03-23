@@ -3,9 +3,12 @@ import { useFieldArray, useFormContext } from 'react-hook-form';
 import type { CoverLetterDraft } from '@cvpro/shared/types';
 import { coverLetterTemplateRegistry } from '../../templates/coverLetterRegistry';
 
-const section = 'space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm';
-const label = 'mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500';
-const input = 'w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900';
+const section =
+  'space-y-3 rounded-xl border border-slate-200 bg-white/95 p-4 shadow-sm dark:border-white/10 dark:bg-white/5';
+const label =
+  'mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300';
+const input =
+  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-primary';
 
 const CoverLetterForm: React.FC = () => {
   const { register, control } = useFormContext<CoverLetterDraft>();
@@ -14,7 +17,7 @@ const CoverLetterForm: React.FC = () => {
   return (
     <div className="space-y-4">
       <section className={section}>
-        <h3 className="text-sm font-semibold text-gray-900">Sender Details</h3>
+        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Sender Details</h3>
         <div className="grid gap-3 md:grid-cols-2">
           <div>
             <label className={label}>Full Name</label>
@@ -40,7 +43,7 @@ const CoverLetterForm: React.FC = () => {
       </section>
 
       <section className={section}>
-        <h3 className="text-sm font-semibold text-gray-900">Recipient Details</h3>
+        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Recipient Details</h3>
         <div className="grid gap-3 md:grid-cols-2">
           <div>
             <label className={label}>Name</label>
@@ -62,7 +65,7 @@ const CoverLetterForm: React.FC = () => {
       </section>
 
       <section className={section}>
-        <h3 className="text-sm font-semibold text-gray-900">Letter Details</h3>
+        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Letter Details</h3>
         <div className="grid gap-3 md:grid-cols-2">
           <div>
             <label className={label}>Role</label>
@@ -88,7 +91,7 @@ const CoverLetterForm: React.FC = () => {
       </section>
 
       <section className={section}>
-        <h3 className="text-sm font-semibold text-gray-900">Body Content</h3>
+        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Body Content</h3>
         <div>
           <label className={label}>Opening</label>
           <textarea className={`${input} min-h-[110px]`} {...register('body.opening')} />
@@ -96,19 +99,22 @@ const CoverLetterForm: React.FC = () => {
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
               Middle Paragraphs
             </p>
             <button
               type="button"
-              className="rounded-full border border-gray-200 px-3 py-1 text-xs font-semibold"
+              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:border-primary dark:hover:text-primary"
               onClick={() => middle.append('')}
             >
               Add paragraph
             </button>
           </div>
           {middle.fields.map((field, index) => (
-            <div key={field.id} className="rounded-lg border border-gray-200 p-2">
+            <div
+              key={field.id}
+              className="rounded-lg border border-slate-200 bg-white/70 p-2 dark:border-white/10 dark:bg-slate-900/30"
+            >
               <textarea
                 className={`${input} min-h-[90px]`}
                 {...register(`body.middleParagraphs.${index}` as const)}
@@ -116,7 +122,7 @@ const CoverLetterForm: React.FC = () => {
               <div className="mt-2 flex gap-2">
                 <button
                   type="button"
-                  className="rounded border px-2 py-1 text-xs"
+                  className="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 transition hover:border-primary hover:text-primary disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-100"
                   onClick={() => middle.move(index, Math.max(0, index - 1))}
                   disabled={index === 0}
                 >
@@ -124,7 +130,7 @@ const CoverLetterForm: React.FC = () => {
                 </button>
                 <button
                   type="button"
-                  className="rounded border px-2 py-1 text-xs"
+                  className="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 transition hover:border-primary hover:text-primary disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-100"
                   onClick={() => middle.move(index, Math.min(middle.fields.length - 1, index + 1))}
                   disabled={index === middle.fields.length - 1}
                 >
@@ -132,7 +138,7 @@ const CoverLetterForm: React.FC = () => {
                 </button>
                 <button
                   type="button"
-                  className="rounded border border-rose-200 px-2 py-1 text-xs text-rose-700"
+                  className="rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs text-rose-700 transition hover:bg-rose-100 disabled:opacity-50 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-200 dark:hover:bg-rose-500/20"
                   onClick={() => middle.remove(index)}
                   disabled={middle.fields.length === 1}
                 >
@@ -150,7 +156,7 @@ const CoverLetterForm: React.FC = () => {
       </section>
 
       <section className={section}>
-        <h3 className="text-sm font-semibold text-gray-900">Design & Style</h3>
+        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Design & Style</h3>
         <div className="grid gap-3 md:grid-cols-2">
           <div>
             <label className={label}>Template</label>
