@@ -119,34 +119,29 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
   const [spotlightOpen, setSpotlightOpen] = React.useState(false);
   const [selectedTemplate, setSelectedTemplate] = React.useState<AnyTemplate | null>(null);
 
-  const returnTo = variant === 'home' ? '/' : '/templates';
-
-  const routeWithAuth = React.useCallback(
-    (destination: string, unauthenticatedReturnTo = returnTo) => {
-      if (!token) {
-        router.push(`/login?returnTo=${encodeURIComponent(unauthenticatedReturnTo)}`);
-        return;
-      }
-      router.push(destination);
-    },
-    [returnTo, router, token]
-  );
-
   const createNewResume = React.useCallback(() => {
-    routeWithAuth('/builder/new?templateId=ats-minimal');
-  }, [routeWithAuth]);
+    router.push('/builder/new?templateId=ats-minimal');
+  }, [router]);
 
   const improveResume = React.useCallback(() => {
-    routeWithAuth('/builder', '/builder');
-  }, [routeWithAuth]);
+    router.push('/builder/new?templateId=ats-minimal');
+  }, [router]);
 
   const createCoverLetter = React.useCallback(() => {
-    routeWithAuth('/cover-letters/new', '/cover-letters/new');
-  }, [routeWithAuth]);
+    if (!token) {
+      router.push(`/login?returnTo=${encodeURIComponent('/cover-letters/new')}`);
+      return;
+    }
+    router.push('/cover-letters/new');
+  }, [router, token]);
 
   const exploreCoverLetterDesigns = React.useCallback(() => {
-    routeWithAuth('/cover-letters', '/cover-letters');
-  }, [routeWithAuth]);
+    if (!token) {
+      router.push(`/login?returnTo=${encodeURIComponent('/cover-letters')}`);
+      return;
+    }
+    router.push('/cover-letters');
+  }, [router, token]);
 
   const openSpotlight = React.useCallback((template: AnyTemplate) => {
     setSelectedTemplate(template);

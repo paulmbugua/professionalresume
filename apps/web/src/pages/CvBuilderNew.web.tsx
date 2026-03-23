@@ -1,10 +1,12 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useShopContext } from '@cvpro/shared/context';
 import { useCreateCvDraft } from '@cvpro/shared/hooks';
-import { getReturnToFromQuery } from '../lib/returnTo';
+import { normalizeDraft } from '../utils/cvDefaults';
+import { demoResume } from '../templates/demoResume';
+import { persistGuestCvState } from '../lib/cvGuestSession';
 
 const CvBuilderNew: React.FC = () => {
   const params = useSearchParams();
@@ -28,19 +30,39 @@ const CvBuilderNew: React.FC = () => {
   }, [templateId]);
 
   useEffect(() => {
-    // Wait for backendUrl to exist (common in context hydration)
-    if (!backendUrl) {
-      setStatus('Loading configuration...');
+    // Guest-first mode: allow unauthenticated users to start editing immediately.
+    if (!token) {
+      let importedData: any | undefined;
+      if (importFromUpload && typeof window !== 'undefined') {
+        const raw = window.sessionStorage.getItem('cvpro:imported-draft');
+        if (raw) {
+          importedData = JSON.parse(raw);
+          window.sessionStorage.removeItem('cvpro:imported-draft');
+        }
+      }
+
+      const guestDraft = normalizeDraft({
+        ...demoResume,
+        ...(importedData || {}),
+        templateId,
+        id: 'guest',
+        userId: 'guest',
+        title: importedData?.title || demoResume.title,
+        updatedAt: new Date().toISOString(),
+      } as any);
+
+      persistGuestCvState(guestDraft);
+      setStatus('Opening guest builder...');
+      const guestTarget = aiStart
+        ? `/builder/guest?templateId=${encodeURIComponent(templateId)}&aiStart=1`
+        : `/builder/guest?templateId=${encodeURIComponent(templateId)}`;
+      router.replace(guestTarget);
       return;
     }
 
-    // If not logged in, go to login
-    if (!token) {
-      const returnTo = getReturnToFromQuery(
-        new URLSearchParams({ returnTo: `/builder/new?templateId=${templateId}` }),
-        '/builder'
-      );
-      router.replace(`/login?returnTo=${encodeURIComponent(returnTo)}`);
+    // Wait for backendUrl to exist before creating authenticated drafts.
+    if (!backendUrl) {
+      setStatus('Loading configuration...');
       return;
     }
 
@@ -63,7 +85,11 @@ const CvBuilderNew: React.FC = () => {
         }
 
         // Helpful dev log
-        console.log('[CvBuilderNew] creating draft', { templateId, backendUrl, imported: Boolean(importedData) });
+        console.log('[CvBuilderNew] creating draft', {
+          templateId,
+          backendUrl,
+          imported: Boolean(importedData),
+        });
 
         const draft = await createDraft.mutateAsync({
           templateId,
