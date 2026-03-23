@@ -101,13 +101,13 @@ function renderCommon(model, extras = '') {
   return `<div class="cl-content">
     <header class="cl-header">
       <h1 class="cl-header-name">${esc(c.applicantName || 'Your Name')}</h1>
-      <p class="cl-header-title">${esc(c.applicantHeadline || c.roleTitle || 'Professional Title')}</p>
+      <p class="cl-header-title">${esc(c.applicantTitle || c.applicantHeadline || c.roleTitle || 'Professional Title')}</p>
       <p class="cl-meta">${metaLines(c) || '<span class="cl-placeholder">email · phone · location</span>'}</p>
     </header>
     ${extras}
-    <p class="cl-date">${esc(c.date || 'Date')}</p>
+    <p class="cl-date">${esc(c.dateText || c.date || 'Date')}</p>
     <section class="cl-recipient">${recipientBlock(c)}</section>
-    ${c.subject ? `<p class="cl-subject"><strong>Re:</strong> ${esc(c.subject)}</p>` : ''}
+    ${(c.subjectLine || c.subject) ? `<p class="cl-subject"><strong>Re:</strong> ${esc(c.subjectLine || c.subject)}</p>` : ''}
     <p class="cl-greeting">${esc(c.greeting)}</p>
     ${bodyBlock(c)}
     <section class="cl-closing"><p>${esc(c.closingLine)}</p><p class="cl-signature">${esc(c.signatureName)}</p></section>
@@ -149,7 +149,7 @@ export function renderDarkHeaderCorporateHtml(draft = {}) {
   const c = model.content;
   return doc(
     model,
-    `<div class="cl-corporate-header"><h1 class="cl-header-name">${esc(c.applicantName || 'Your Name')}</h1><p class="cl-header-title">${esc(c.applicantHeadline || c.roleTitle || 'Professional Title')}</p><p class="cl-meta">${metaLines(c) || '<span class="cl-placeholder">email · phone · location</span>'}</p></div>${renderCommon({ ...model, content: { ...c, applicantName: '', applicantHeadline: '' } })}`,
+    `<div class="cl-corporate-header"><h1 class="cl-header-name">${esc(c.applicantName || 'Your Name')}</h1><p class="cl-header-title">${esc(c.applicantTitle || c.applicantHeadline || c.roleTitle || 'Professional Title')}</p><p class="cl-meta">${metaLines(c) || '<span class="cl-placeholder">email · phone · location</span>'}</p></div>${renderCommon({ ...model, content: { ...c, applicantName: '', applicantHeadline: '' } })}`,
     '.darkHeaderCorporate{padding-top:0}.darkHeaderCorporate .cl-corporate-header{margin:0 -17mm 5mm;background:color-mix(in srgb, var(--cl-accent) 45%, #0f172a);color:#e2e8f0;padding:11mm 17mm}.darkHeaderCorporate .cl-corporate-header .cl-header-title,.darkHeaderCorporate .cl-corporate-header .cl-meta{color:#cbd5e1}.darkHeaderCorporate .cl-header{display:none}',
     'darkHeaderCorporate',
   );
