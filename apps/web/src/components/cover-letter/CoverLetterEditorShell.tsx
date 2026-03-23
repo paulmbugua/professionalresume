@@ -17,6 +17,10 @@ type Props = {
   isExporting?: boolean;
   lastSavedAt?: string;
   saveState?: 'idle' | 'saving' | 'saved' | 'error';
+  onImportCoverLetter?: () => void;
+  onImportResume?: () => void;
+  isImporting?: boolean;
+  importNotice?: string;
 };
 
 const CoverLetterEditorShell: React.FC<Props> = ({
@@ -30,6 +34,10 @@ const CoverLetterEditorShell: React.FC<Props> = ({
   isExporting,
   lastSavedAt,
   saveState = 'idle',
+  onImportCoverLetter,
+  onImportResume,
+  isImporting,
+  importNotice,
 }) => {
   const [activeTab, setActiveTab] = useState<'edit' | 'preview'>('edit');
   const { control, setValue } = useFormContext<CoverLetterDraft>();
@@ -154,8 +162,38 @@ const CoverLetterEditorShell: React.FC<Props> = ({
             >
               {isSaving ? 'Saving...' : 'Save'}
             </button>
+            {onImportCoverLetter || onImportResume ? (
+              <details className="relative">
+                <summary className="cursor-pointer list-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:bg-white/5 dark:text-slate-100">
+                  {isImporting ? 'Importing…' : 'Import / AI Assist'}
+                </summary>
+                <div className="absolute right-0 z-50 mt-2 min-w-[220px] rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-white/10 dark:bg-slate-900">
+                  {onImportCoverLetter ? (
+                    <button
+                      type="button"
+                      onClick={onImportCoverLetter}
+                      className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-white/5"
+                    >
+                      Upload cover letter
+                    </button>
+                  ) : null}
+                  {onImportResume ? (
+                    <button
+                      type="button"
+                      onClick={onImportResume}
+                      className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-white/5"
+                    >
+                      Re-extract from resume
+                    </button>
+                  ) : null}
+                </div>
+              </details>
+            ) : null}
           </div>
         </div>
+        {importNotice ? (
+          <p className="mt-2 text-xs text-slate-500 dark:text-slate-300">{importNotice}</p>
+        ) : null}
       </div>
 
       <div className="mb-4 flex gap-2 lg:hidden print:hidden">

@@ -7,7 +7,7 @@ const CoverLetterPage: React.FC = () => {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace('/cover-letters/templates');
+    router.replace('/cover-letters/new');
   }, [router]);
 
   return null;
