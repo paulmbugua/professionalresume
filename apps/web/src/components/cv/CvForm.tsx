@@ -1066,7 +1066,7 @@ const CvForm: React.FC = () => {
     );
 
   const improveSingleExperience = async (index: number) => {
-    if (!backendUrl || !token) return;
+    if (!backendUrl) return;
 
     const entry = getValues(`experience.${index}` as const);
     if (!entry) return;
@@ -1119,7 +1119,7 @@ const CvForm: React.FC = () => {
   };
 
   const improveAllExperience = async () => {
-    if (!backendUrl || !token) return;
+    if (!backendUrl) return;
 
     const items = (getValues('experience') || []) as any[];
     if (!items.length) return;
