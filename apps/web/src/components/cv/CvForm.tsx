@@ -1190,9 +1190,9 @@ const CvForm: React.FC = () => {
 
   const onUploadPhoto = async (file?: File | null) => {
     if (!file) return;
-    if (!backendUrl || !token) {
+    if (!backendUrl) {
       setPhotoUploadState('error');
-      setPhotoUploadError('Sign in again to upload your image.');
+      setPhotoUploadError('Image upload is unavailable right now. Please try again.');
       return;
     }
 
