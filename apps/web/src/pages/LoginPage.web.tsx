@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Eye, EyeOff, FileCheck2, FileText, Sparkles } from 'lucide-react';
@@ -66,13 +67,11 @@ const LoginPage: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Keep your existing helper, but sanitize it.
   const computedReturnTo = useMemo(
     () => sanitizeInternalPath(getReturnToFromQuery(searchParams, DEFAULT_RETURN_TO)),
     [searchParams]
   );
 
-  // Store returnTo after mount (client-only) like DayBreak flow
   useEffect(() => {
     safeSessionSet(RETURN_TO_SS_KEY, computedReturnTo);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -100,14 +99,10 @@ const LoginPage: React.FC = () => {
     },
   });
 
-  // Redirect if already logged in
   useEffect(() => {
     if (token) router.replace(getReturnTo() || DEFAULT_RETURN_TO);
   }, [router, token, getReturnTo]);
 
-  // ─────────────────────────────────────────────────────────
-  // Local UI state (same shape as DayBreak)
-  // ─────────────────────────────────────────────────────────
   const [authMode, setAuthMode] = useState<AuthMode>('Login');
   const [resetMode, setResetMode] = useState<ResetMode>('idle');
   const [otpSent, setOtpSent] = useState(false);
@@ -137,9 +132,6 @@ const LoginPage: React.FC = () => {
     [authMode]
   );
 
-  // ─────────────────────────────────────────────────────────
-  // Email login / signup submit
-  // ─────────────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     clearErrors();
@@ -157,7 +149,6 @@ const LoginPage: React.FC = () => {
         return;
       }
 
-      // Sign Up
       if (!name.trim() || !email.trim() || !password) {
         setError('Please fill all required fields.');
         return;
@@ -171,11 +162,7 @@ const LoginPage: React.FC = () => {
         name: name.trim(),
         email: email.trim(),
         password,
-        // CVPro doesn't need role/country/languages — keep it minimal.
       } as any);
-
-      // If you later want analytics, you already have a stable hash helper:
-      // trackSignUp('email', { mode: 'cvpro', email_hash: emailHash(email) });
 
       router.replace(getReturnTo() || DEFAULT_RETURN_TO);
     } catch (err: any) {
@@ -185,9 +172,6 @@ const LoginPage: React.FC = () => {
     }
   };
 
-  // ─────────────────────────────────────────────────────────
-  // Password reset flow
-  // ─────────────────────────────────────────────────────────
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     clearErrors();
@@ -254,7 +238,23 @@ const LoginPage: React.FC = () => {
               Log in to access your drafts, premium templates, AI writing help, and one-click PDF
               export.
             </p>
+
+            <div className="mt-5 flex justify-center">
+              <div className="relative w-full max-w-[250px] overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-2">
+                <div className="relative aspect-[4/5] w-full">
+                  <Image
+                    src="/assets/ladywithcv.png"
+                    alt="Lady holding a CV"
+                    fill
+                    priority
+                    className="object-contain"
+                    sizes="250px"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
+
           <ul className="space-y-3 text-sm text-white/80">
             <li className="flex items-center gap-2">
               <FileText className="h-4 w-4" /> Professional template library
@@ -289,7 +289,6 @@ const LoginPage: React.FC = () => {
             </div>
           )}
 
-          {/* RESET MODE UI */}
           {resetMode !== 'idle' ? (
             otpSent ? (
               <form onSubmit={handleResetPassword} className="mt-6 space-y-4">
@@ -382,7 +381,6 @@ const LoginPage: React.FC = () => {
               </form>
             )
           ) : (
-            // NORMAL LOGIN / SIGNUP UI
             <form onSubmit={handleSubmit} className="mt-6 space-y-4">
               {authMode === 'Sign Up' && (
                 <div>
@@ -454,14 +452,6 @@ const LoginPage: React.FC = () => {
               )}
 
               <button
-                type="button"
-                onClick={() => setEmail('demo@cvpro.local')}
-                className="text-xs font-semibold text-primary hover:underline"
-              >
-                Use demo account email (demo@cvpro.local)
-              </button>
-
-              <button
                 type="submit"
                 disabled={busy}
                 className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
@@ -514,14 +504,12 @@ const LoginPage: React.FC = () => {
             </form>
           )}
 
-          {/* OR divider */}
           <div className="my-6 flex items-center gap-3">
             <div className="h-px flex-1 bg-gray-200 dark:bg-white/15" />
             <span className="text-xs text-gray-400 dark:text-white/40">OR</span>
             <div className="h-px flex-1 bg-gray-200 dark:bg-white/15" />
           </div>
 
-          {/* Google login (real flow) */}
           <div className="flex justify-center">
             <CustomGoogleButtonLogin
               onSuccess={handleGoogleLoginSuccess}
