@@ -13,12 +13,21 @@ export type ParsedCvResponse = {
   };
 };
 
+const normalizeToken = (token?: string): string | undefined => {
+  const next = String(token || '').trim();
+  if (!next) return undefined;
+  const lowered = next.toLowerCase();
+  if (lowered === 'null' || lowered === 'undefined') return undefined;
+  return next;
+};
+
 export async function parseUploadedCv(args: {
   backendUrl: string;
-  token: string;
+  token?: string;
   file: File;
   mode?: 'merge' | 'replace';
 }): Promise<ParsedCvResponse> {
+  const safeToken = normalizeToken(args.token);
   const form = new FormData();
   form.append('file', args.file);
   form.append('mode', args.mode || 'merge');
@@ -26,9 +35,11 @@ export async function parseUploadedCv(args: {
   const api = axios.create({
     baseURL: args.backendUrl,
     withCredentials: true,
-    headers: {
-      Authorization: `Bearer ${args.token}`,
-    },
+    headers: safeToken
+      ? {
+          Authorization: `Bearer ${safeToken}`,
+        }
+      : undefined,
   });
 
   const res = await api.post<ParsedCvResponse>('/api/cv/parse', form, {

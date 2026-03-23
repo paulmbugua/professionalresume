@@ -15,6 +15,7 @@ type ResetMode = 'idle' | 'requesting' | 'verifying';
 
 const DEFAULT_RETURN_TO = '/builder';
 const RETURN_TO_SS_KEY = 'auth:returnTo';
+const CV_AUTH_REASON_SS_KEY = 'auth:cvReason';
 
 /**
  * Avoid open redirects.
@@ -122,6 +123,12 @@ const LoginPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [authReason, setAuthReason] = useState<string>('');
+
+  useEffect(() => {
+    const reason = safeSessionGet(CV_AUTH_REASON_SS_KEY) || '';
+    if (reason) setAuthReason(reason);
+  }, []);
 
   const clearErrors = () => setError(null);
 
@@ -269,6 +276,12 @@ const LoginPage: React.FC = () => {
           <p className="mt-2 text-sm text-gray-500 dark:text-white/60">
             Continue building resumes with live preview, drafts, and PDF export.
           </p>
+
+          {authReason && (
+            <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
+              {authReason}
+            </div>
+          )}
 
           {error && (
             <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">

@@ -1,13 +1,22 @@
 import axios from 'axios';
 import type { CvDraft } from '@cvpro/shared/types';
 
+const normalizeToken = (token?: string): string | undefined => {
+  const next = String(token || '').trim();
+  if (!next) return undefined;
+  const lowered = next.toLowerCase();
+  if (lowered === 'null' || lowered === 'undefined') return undefined;
+  return next;
+};
+
 function client(backendUrl: string, token?: string) {
+  const safeToken = normalizeToken(token);
   return axios.create({
     baseURL: backendUrl,
     withCredentials: true,
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(safeToken ? { Authorization: `Bearer ${safeToken}` } : {}),
     },
   });
 }
@@ -21,7 +30,7 @@ const toMessage = (err: any) =>
 
 export const aiGenerateSummary = async (
   backendUrl: string,
-  token: string,
+  token: string | undefined,
   payload: { draft: CvDraft }
 ): Promise<{ suggestion: string }> => {
   try {
@@ -36,7 +45,7 @@ export const aiGenerateSummary = async (
 
 export const aiRewriteBullet = async (
   backendUrl: string,
-  token: string,
+  token: string | undefined,
   payload: { context: string; bullet: string }
 ): Promise<{ suggestion: string }> => {
   try {
@@ -51,15 +60,12 @@ export const aiRewriteBullet = async (
 
 export const aiSuggestSkills = async (
   backendUrl: string,
-  token: string,
+  token: string | undefined,
   payload: { draft: CvDraft }
 ): Promise<{ suggestions: string[] }> => {
   try {
     const api = client(backendUrl, token);
-    const res = await api.post<{ suggestions: string[] }>(
-      '/api/ai/cv/suggest-skills',
-      payload
-    );
+    const res = await api.post<{ suggestions: string[] }>('/api/ai/cv/suggest-skills', payload);
     return res.data;
   } catch (err: any) {
     console.error('🔴 [aiSuggestSkills] status/data:', err.response?.status, err.response?.data);
@@ -77,13 +83,19 @@ export const aiGenerateCoverLetter = async (
     tone: string;
     seniority: string;
   }
-): Promise<{ suggestion: { subject: string; greeting: string; body: string; closing: string } }> => {
+): Promise<{
+  suggestion: { subject: string; greeting: string; body: string; closing: string };
+}> => {
   try {
     const api = client(backendUrl, token);
     const res = await api.post('/api/ai/cover-letter/generate', payload);
     return res.data;
   } catch (err: any) {
-    console.error('🔴 [aiGenerateCoverLetter] status/data:', err.response?.status, err.response?.data);
+    console.error(
+      '🔴 [aiGenerateCoverLetter] status/data:',
+      err.response?.status,
+      err.response?.data
+    );
     throw new Error(toMessage(err));
   }
 };
