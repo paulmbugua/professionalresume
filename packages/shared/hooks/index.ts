@@ -38,6 +38,7 @@ export {
   useDeleteCoverLetterDraft,
   useExportCoverLetter,
   useAiCoverLetterAssist,
+  useImportCoverLetterFile,
 } from './useCoverLetter';
 
 export { useCvPayment, useCvExportEntitlement } from './useCvPayment';

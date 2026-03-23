@@ -415,3 +415,56 @@ export const aiRewriteCoverLetter = async (
     throw new Error(toMessage(err));
   }
 };
+
+export const importCoverLetterFile = async (
+  backendUrl: string,
+  token: string,
+  payload: {
+    file: File;
+    sourceType: 'cover_letter' | 'resume';
+  }
+): Promise<{
+  ok: boolean;
+  sourceType: 'cover_letter' | 'resume';
+  data: {
+    applicantName?: string;
+    applicantTitle?: string;
+    applicantEmail?: string;
+    applicantPhone?: string;
+    applicantLocation?: string;
+    recipientName?: string;
+    recipientTitle?: string;
+    companyName?: string;
+    companyAddress?: string;
+    roleTitle?: string;
+    subjectLine?: string;
+    greeting?: string;
+    letterBody?: string;
+    closingParagraph?: string;
+    closingLine?: string;
+    signatureName?: string;
+    dateText?: string;
+  };
+  diagnostics?: Record<string, unknown>;
+}> => {
+  const form = new FormData();
+  form.append('file', payload.file);
+  form.append('sourceType', payload.sourceType);
+
+  const api = axios.create({
+    baseURL: backendUrl,
+    withCredentials: true,
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  try {
+    const res = await api.post('/api/cover-letters/import', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data;
+  } catch (err: any) {
+    throw new Error(toMessage(err));
+  }
+};

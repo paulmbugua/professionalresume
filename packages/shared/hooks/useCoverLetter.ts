@@ -11,6 +11,7 @@ import {
   exportCoverLetterPdf,
   aiGenerateCoverLetter,
   aiRewriteCoverLetter,
+  importCoverLetterFile,
 } from '@cvpro/shared/api';
 import type {
   CoverLetterDraft,
@@ -184,4 +185,13 @@ export function useAiCoverLetterAssist({ backendUrl, token }: BaseArgs) {
     }),
     [generateMutation, rewriteMutation],
   );
+}
+
+export function useImportCoverLetterFile({ backendUrl, token }: BaseArgs) {
+  return useMutation({
+    mutationFn: (payload: { file: File; sourceType: 'cover_letter' | 'resume' }) => {
+      if (!token) throw new Error('Unauthorized');
+      return importCoverLetterFile(backendUrl, token, payload);
+    },
+  });
 }

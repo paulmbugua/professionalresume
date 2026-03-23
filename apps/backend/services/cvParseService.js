@@ -1587,3 +1587,42 @@ export async function parseCvFileToDraftPartial({ buffer, mimetype, filename }) 
     },
   };
 }
+
+export async function extractTextFromUploadedDocument({ buffer, mimetype, filename }) {
+  const mime = String(mimetype || '').toLowerCase();
+  const ext = String(filename || '')
+    .toLowerCase()
+    .match(/\.[a-z0-9]+$/)?.[0];
+
+  let parser = 'pdf';
+  let extractionUsed = 'none';
+  let text = '';
+  const warnings = [];
+
+  if (mime === 'application/pdf' || ext === '.pdf') {
+    parser = 'pdf';
+    const pdfResult = await extractTextFromPdf(buffer);
+    text = cleanText(pdfResult.text || '');
+    extractionUsed = pdfResult.extractionUsed;
+    if (!text) warnings.push('Could not extract readable text from PDF.');
+  } else if (
+    mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    ext === '.docx'
+  ) {
+    parser = 'docx';
+    text = cleanText(extractTextFromDocxBuffer(buffer) || '');
+    extractionUsed = 'docx-xml';
+    if (!text) warnings.push('Could not extract readable text from DOCX.');
+  } else {
+    throw new Error('Unsupported file type. Upload PDF or DOCX.');
+  }
+
+  return {
+    text,
+    diagnostics: {
+      parser,
+      extractionUsed,
+      warnings,
+    },
+  };
+}

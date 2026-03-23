@@ -11,6 +11,7 @@ import {
   useSaveCoverLetterDraft,
   useExportCoverLetter,
   useCvPayment,
+  useImportCoverLetterFile,
 } from '@cvpro/shared/hooks';
 import type { CoverLetterDraft } from '@cvpro/shared/types';
 import CoverLetterEditorShell from '../components/cover-letter/CoverLetterEditorShell';
@@ -100,17 +101,21 @@ const CoverLetterBuilderPageInner: React.FC<{
   const { data, isLoading, error } = useCoverLetterDraft({ backendUrl, token, id } as any);
   const updateDraft = useSaveCoverLetterDraft({ backendUrl, token });
   const exportDraft = useExportCoverLetter({ backendUrl, token });
+  const importFile = useImportCoverLetterFile({ backendUrl, token });
   const cvPayment = useCvPayment({ backendUrl, token });
 
   const [paymentMessage, setPaymentMessage] = useState<string>('');
   const [exportUrl, setExportUrl] = useState<string | undefined>();
   const [lastSavedAt, setLastSavedAt] = useState<string | undefined>();
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [importNotice, setImportNotice] = useState<string>('');
 
   const initRef = useRef(true);
   const hydratedDraftIdRef = useRef<string | null>(null);
   const lastSavedSigRef = useRef<string>('');
   const lastValidationFailedSigRef = useRef<string>('');
+  const coverLetterImportRef = useRef<HTMLInputElement | null>(null);
+  const resumeImportRef = useRef<HTMLInputElement | null>(null);
 
   const methods = useForm<CoverLetterDraft>({
     defaultValues: EMPTY_COVER_LETTER_DRAFT,
@@ -189,6 +194,34 @@ const CoverLetterBuilderPageInner: React.FC<{
     setSaveState('saved');
   };
 
+  const handleImport = async (file: File, sourceType: 'cover_letter' | 'resume') => {
+    try {
+      setImportNotice(
+        sourceType === 'resume' ? 'Extracting details from resume…' : 'Importing cover letter…'
+      );
+      const imported = await importFile.mutateAsync({ file, sourceType });
+      const updated = await updateDraft.mutateAsync({
+        id,
+        payload: {
+          data: imported.data,
+        },
+      });
+      const normalized = normalizeCoverLetterDraft(updated);
+      initRef.current = true;
+      reset(normalized);
+      lastSavedSigRef.current = JSON.stringify(mapEditorDraftToUpdatePayload(normalized));
+      setLastSavedAt(updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined);
+      setSaveState('saved');
+      setImportNotice(
+        sourceType === 'resume'
+          ? 'Resume details applied. Review and adjust before exporting.'
+          : 'Imported cover letter sections applied to your draft.'
+      );
+    } catch (err: any) {
+      setImportNotice(err?.message || 'Import failed. Please try another file.');
+    }
+  };
+
   const doExport = async () => {
     const values = normalizeCoverLetterDraft(getValues());
     const exportJson = toCoverLetterExportJson(values);
@@ -255,6 +288,10 @@ const CoverLetterBuilderPageInner: React.FC<{
       onExport={handleExport}
       onCopyExportLink={copyExportLink}
       onPrint={handlePrint}
+      onImportCoverLetter={() => coverLetterImportRef.current?.click()}
+      onImportResume={() => resumeImportRef.current?.click()}
+      isImporting={importFile.isPending}
+      importNotice={importNotice}
       exportUrl={exportUrl}
       isSaving={updateDraft.isPending}
       isExporting={exportDraft.isPending}
@@ -294,6 +331,32 @@ const CoverLetterBuilderPageInner: React.FC<{
           cvPayment.startPaystackCheckout.error?.message ||
           null
         }
+      />
+      <input
+        ref={coverLetterImportRef}
+        type="file"
+        accept="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.pdf,.docx"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            void handleImport(file, 'cover_letter');
+          }
+          e.currentTarget.value = '';
+        }}
+      />
+      <input
+        ref={resumeImportRef}
+        type="file"
+        accept="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.pdf,.docx"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            void handleImport(file, 'resume');
+          }
+          e.currentTarget.value = '';
+        }}
       />
     </FormProvider>
   );

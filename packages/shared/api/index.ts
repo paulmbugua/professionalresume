@@ -36,6 +36,7 @@ export {
   signCoverLetterFile,
   aiGenerateCoverLetter,
   aiRewriteCoverLetter,
+  importCoverLetterFile,
 } from './coverLetterApi';
 
 // CV AI API surface
