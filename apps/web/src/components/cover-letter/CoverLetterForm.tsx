@@ -188,6 +188,7 @@ const CoverLetterForm: React.FC = () => {
             <select className={input} {...register('style.pageTheme')}>
               <option value="light">Light</option>
               <option value="warm">Warm</option>
+              <option value="dark">Dark</option>
             </select>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { toCoverLetterRendererJson } from '@cvpro/shared/cover-letter/renderers';
 import type {
   CoverLetterDraft,
   CoverLetterTemplate,
@@ -8,90 +9,12 @@ import type {
   CoverLetterRewritePayload,
 } from '@cvpro/shared/types';
 
-type CoverLetterExportJson = {
-  templateId?: string;
-  applicantName: string;
-  applicantEmail?: string;
-  applicantPhone?: string;
-  applicantLocation?: string;
-  recipientName?: string;
-  companyName?: string;
-  roleTitle?: string;
-  letterBody: string;
-  closingLine?: string;
-};
+type CoverLetterExportJson = ReturnType<typeof toCoverLetterRendererJson>;
 
 export function toCoverLetterExportJson(
   draft: Partial<CoverLetterDraft> | CoverLetterDraft | Record<string, any> | null | undefined,
 ): CoverLetterExportJson {
-  const source = (draft || {}) as any;
-  const letterBodyFromBodyParts = [
-    source?.letter?.greeting,
-    source?.body?.opening,
-    ...(((source?.body?.middleParagraphs as string[] | undefined) || []).filter(
-      (part) => typeof part === 'string',
-    ) as string[]),
-    source?.body?.closing,
-  ]
-    .filter((part) => typeof part === 'string' && part.trim().length > 0)
-    .join('\n\n');
-  const letterBody =
-    typeof source?.letterBody === 'string' ? source.letterBody : letterBodyFromBodyParts;
-
-  return {
-    ...(typeof source?.templateId === 'string' && source.templateId
-      ? { templateId: source.templateId }
-      : {}),
-    applicantName:
-      typeof source?.applicantName === 'string'
-        ? source.applicantName
-        : typeof source?.sender?.fullName === 'string'
-          ? source.sender.fullName
-          : '',
-    applicantEmail:
-      typeof source?.applicantEmail === 'string'
-        ? source.applicantEmail
-        : typeof source?.sender?.email === 'string'
-          ? source.sender.email
-          : '',
-    applicantPhone:
-      typeof source?.applicantPhone === 'string'
-        ? source.applicantPhone
-        : typeof source?.sender?.phone === 'string'
-          ? source.sender.phone
-          : '',
-    applicantLocation:
-      typeof source?.applicantLocation === 'string'
-        ? source.applicantLocation
-        : typeof source?.sender?.location === 'string'
-          ? source.sender.location
-          : '',
-    recipientName:
-      typeof source?.recipientName === 'string'
-        ? source.recipientName
-        : typeof source?.recipient?.name === 'string'
-          ? source.recipient.name
-          : '',
-    companyName:
-      typeof source?.companyName === 'string'
-        ? source.companyName
-        : typeof source?.recipient?.company === 'string'
-          ? source.recipient.company
-          : '',
-    roleTitle:
-      typeof source?.roleTitle === 'string'
-        ? source.roleTitle
-        : typeof source?.letter?.role === 'string'
-          ? source.letter.role
-          : '',
-    letterBody: typeof letterBody === 'string' ? letterBody : '',
-    closingLine:
-      typeof source?.closingLine === 'string'
-        ? source.closingLine
-        : typeof source?.letter?.signoff === 'string'
-          ? source.letter.signoff
-          : '',
-  };
+  return toCoverLetterRendererJson((draft || {}) as Record<string, any>);
 }
 
 function client(backendUrl: string, token?: string) {
@@ -179,6 +102,13 @@ export const createCoverLetterDraft = async (
       letterBody?: string;
       closingLine?: string;
     };
+    style?: {
+      fontFamily?: string;
+      fontSize?: number;
+      lineHeight?: number;
+      accentColor?: string;
+      pageTheme?: string;
+    };
   }
 ): Promise<CoverLetterDraft> => {
   try {
@@ -197,6 +127,13 @@ export const createCoverLetterDraft = async (
         roleTitle: string;
         letterBody: string;
         closingLine: string;
+      };
+      style?: {
+        fontFamily?: string;
+        fontSize?: number;
+        lineHeight?: number;
+        accentColor?: string;
+        pageTheme?: string;
       };
     } = {
       templateKey: payload.templateKey,
@@ -221,6 +158,7 @@ export const createCoverLetterDraft = async (
         closingLine: typeof payload.data.closingLine === 'string' ? payload.data.closingLine : '',
       };
     }
+    if (payload.style && typeof payload.style === 'object') safePayload.style = payload.style;
 
     const res = await api.post<CoverLetterDraft>('/api/cover-letters/drafts', safePayload);
     return res.data;
@@ -246,6 +184,13 @@ export const updateCoverLetterDraft = async (
       letterBody?: string;
       closingLine?: string;
     };
+    style?: {
+      fontFamily?: string;
+      fontSize?: number;
+      lineHeight?: number;
+      accentColor?: string;
+      pageTheme?: string;
+    };
   }
 ): Promise<CoverLetterDraft> => {
   try {
@@ -264,6 +209,13 @@ export const updateCoverLetterDraft = async (
         roleTitle?: string;
         letterBody?: string;
         closingLine?: string;
+      };
+      style?: {
+        fontFamily?: string;
+        fontSize?: number;
+        lineHeight?: number;
+        accentColor?: string;
+        pageTheme?: string;
       };
     } = {};
 
@@ -317,6 +269,7 @@ export const updateCoverLetterDraft = async (
 
     if (Object.values(sanitizedData).some((value) => value !== undefined))
       safe.data = sanitizedData;
+    if (payload.style && typeof payload.style === 'object') safe.style = payload.style;
 
     if (Object.keys(safe).length === 0) {
       const res = await api.get<CoverLetterDraft>(`/api/cover-letters/drafts/${id}`);

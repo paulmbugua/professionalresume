@@ -74,6 +74,13 @@ export function useCreateCoverLetterDraft({ backendUrl, token }: BaseArgs) {
         letterBody?: string;
         closingLine?: string;
       };
+      style?: {
+        fontFamily?: string;
+        fontSize?: number;
+        lineHeight?: number;
+        accentColor?: string;
+        pageTheme?: string;
+      };
     }) => {
       if (!token) throw new Error('Unauthorized');
       return createCoverLetterDraft(backendUrl, token, payload);
@@ -105,6 +112,13 @@ export function useSaveCoverLetterDraft({ backendUrl, token }: BaseArgs) {
           roleTitle?: string;
           letterBody?: string;
           closingLine?: string;
+        };
+        style?: {
+          fontFamily?: string;
+          fontSize?: number;
+          lineHeight?: number;
+          accentColor?: string;
+          pageTheme?: string;
         };
       };
     }) => {

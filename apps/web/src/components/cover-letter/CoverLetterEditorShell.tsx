@@ -16,6 +16,7 @@ type Props = {
   isSaving: boolean;
   isExporting?: boolean;
   lastSavedAt?: string;
+  saveState?: 'idle' | 'saving' | 'saved' | 'error';
 };
 
 const CoverLetterEditorShell: React.FC<Props> = ({
@@ -28,6 +29,7 @@ const CoverLetterEditorShell: React.FC<Props> = ({
   isSaving,
   isExporting,
   lastSavedAt,
+  saveState = 'idle',
 }) => {
   const { control, setValue } = useFormContext<CoverLetterDraft>();
   const live = useWatch({ control });
@@ -46,6 +48,25 @@ const CoverLetterEditorShell: React.FC<Props> = ({
             </p>
             <p className="text-xs text-gray-500">
               {lastSavedAt ? `Last saved ${lastSavedAt}` : 'Autosaving enabled'}
+            </p>
+            <p
+              className={`text-xs font-semibold ${
+                saveState === 'saved'
+                  ? 'text-emerald-600'
+                  : saveState === 'saving'
+                    ? 'text-blue-600'
+                    : saveState === 'error'
+                      ? 'text-rose-600'
+                      : 'text-gray-400'
+              }`}
+            >
+              {saveState === 'saved'
+                ? 'Saved'
+                : saveState === 'saving'
+                  ? 'Saving...'
+                  : saveState === 'error'
+                    ? 'Failed to save'
+                    : 'Unsaved changes'}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">

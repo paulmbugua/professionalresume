@@ -8,7 +8,7 @@ import {
 import { buildCvHtml, htmlToPdfBuffer } from '../services/cvRenderService.js';
 import { putDocObject, signDocGetUrl } from '../services/r2.js';
 import { createCoverLetterExportRecord } from '../services/cvService.js';
-import { normalizeCoverLetterTemplateId } from '../../../packages/shared/cover-letter/renderers/index.js';
+import { normalizeCoverLetterRenderModel } from '../../../packages/shared/cover-letter/renderers/renderModel.js';
 import {
   createCoverLetterSchema,
   coverLetterExportSchema,
@@ -26,73 +26,6 @@ function sanitizeObjectKey(input = '') {
     .replace(/\.\./g, '')
     .replace(/^\/+/, '')
     .replace(/[^\w./-]/g, '_');
-}
-
-function normalizeCoverLetterExportDraft(source = {}) {
-  const sender = source.sender || {};
-  const recipient = source.recipient || {};
-  const letter = source.letter || {};
-  const body = source.body || {};
-  const basics = source.basics || {};
-  const content = source.content || {};
-
-  const normalized = {
-    ...source,
-    templateId: normalizeCoverLetterTemplateId(
-      source.templateId || source.templateKey || 'classic-letter',
-    ),
-    sender: {
-      fullName:
-        sender.fullName || basics.fullName || source.applicantName || '',
-      email: sender.email || basics.email || source.applicantEmail || '',
-      phone: sender.phone || basics.phone || source.applicantPhone || '',
-      location: sender.location || basics.location || source.applicantLocation || '',
-    },
-    recipient: {
-      name: recipient.name || basics.hiringManager || source.recipientName || '',
-      title: recipient.title || '',
-      company: recipient.company || basics.companyName || source.companyName || '',
-      address:
-        recipient.address ||
-        recipient.addressLine1 ||
-        source.companyAddress ||
-        '',
-    },
-    letter: {
-      role: letter.role || basics.jobTitle || source.roleTitle || '',
-      date: letter.date || basics.date || source.date || '',
-      subject: letter.subject || content.subject || source.subject || '',
-      greeting: letter.greeting || content.greeting || source.greeting || '',
-      signoff:
-        letter.signoff ||
-        content.signature ||
-        source.closingLine ||
-        source.closing ||
-        'Sincerely,',
-    },
-    body: {
-      opening: body.opening || content.opening || '',
-      middleParagraphs: Array.isArray(body.middleParagraphs)
-        ? body.middleParagraphs
-        : Array.isArray(content.paragraphs)
-          ? content.paragraphs
-          : [],
-      closing: body.closing || content.closing || '',
-    },
-  };
-
-  if (
-    normalized.body.middleParagraphs.length === 0 &&
-    typeof source.letterBody === 'string' &&
-    source.letterBody.trim()
-  ) {
-    normalized.body.middleParagraphs = source.letterBody
-      .split(/\n{2,}/)
-      .map((p) => p.trim())
-      .filter(Boolean);
-  }
-
-  return normalized;
 }
 
 export async function listCoverLetters(req, res) {
@@ -171,9 +104,9 @@ export async function getCoverLetterPrintHtml(req, res) {
       exportDraft = draft;
     }
 
-    const normalizedDraft = normalizeCoverLetterExportDraft(exportDraft);
-    console.info('[coverLetter.printHtml] template', { templateId: normalizedDraft.templateId });
-    const html = buildCvHtml({ draft: normalizedDraft });
+    const renderModel = normalizeCoverLetterRenderModel(exportDraft);
+    console.info('[coverLetter.printHtml] template', { templateId: renderModel.templateId });
+    const html = buildCvHtml({ draft: renderModel });
     return res.json({ html });
   } catch (err) {
     console.error('getCoverLetterPrintHtml error', err);
@@ -205,7 +138,7 @@ export async function exportCoverLetter(req, res) {
       };
     }
 
-    const normalizedDraft = normalizeCoverLetterExportDraft(exportDraft);
+    const normalizedDraft = normalizeCoverLetterRenderModel(exportDraft);
     console.info('[coverLetter.export] renderer-selection', {
       templateId: normalizedDraft.templateId,
     });
