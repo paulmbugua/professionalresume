@@ -25,7 +25,7 @@ export type CoverLetterTemplateMeta = {
   description: string;
   tags: string[];
   component: React.FC<{ draft: CoverLetterDraft }>;
-  renderHtml: (draft: CoverLetterDraft) => string;
+  renderHtml: (draft?: Record<string, unknown>) => string;
 };
 
 export const coverLetterTemplateRegistry: CoverLetterTemplateMeta[] = [
@@ -36,7 +36,7 @@ export const coverLetterTemplateRegistry: CoverLetterTemplateMeta[] = [
     description: 'Traditional business-letter structure with balanced spacing and timeless typography.',
     tags: ['classic', 'traditional', 'business-letter'],
     component: ClassicLetter as React.FC<{ draft: CoverLetterDraft }>,
-    renderHtml: renderersById['classic-letter'] as (draft: CoverLetterDraft) => string,
+    renderHtml: renderersById['classic-letter'] as (draft?: Record<string, unknown>) => string,
   },
   {
     id: 'professional-blue-letterhead',
@@ -45,7 +45,7 @@ export const coverLetterTemplateRegistry: CoverLetterTemplateMeta[] = [
     description: 'Classic letterhead with a blue top rule and polished hierarchy.',
     tags: ['professional', 'letterhead', 'clean'],
     component: ProfessionalBlueLetterhead as React.FC<{ draft: CoverLetterDraft }>,
-    renderHtml: renderersById['professional-blue-letterhead'] as (draft: CoverLetterDraft) => string,
+    renderHtml: renderersById['professional-blue-letterhead'] as (draft?: Record<string, unknown>) => string,
   },
   {
     id: 'clean-modern-header',
@@ -54,7 +54,7 @@ export const coverLetterTemplateRegistry: CoverLetterTemplateMeta[] = [
     description: 'Minimal modern header with right-aligned contact details.',
     tags: ['modern', 'clean', 'minimal'],
     component: CleanModernHeader as React.FC<{ draft: CoverLetterDraft }>,
-    renderHtml: renderersById['clean-modern-header'] as (draft: CoverLetterDraft) => string,
+    renderHtml: renderersById['clean-modern-header'] as (draft?: Record<string, unknown>) => string,
   },
   {
     id: 'dark-header-corporate',
@@ -63,7 +63,7 @@ export const coverLetterTemplateRegistry: CoverLetterTemplateMeta[] = [
     description: 'Corporate presentation with a bold dark top band and confident visual weight.',
     tags: ['corporate', 'executive', 'header'],
     component: DarkHeaderCorporate as React.FC<{ draft: CoverLetterDraft }>,
-    renderHtml: renderersById['dark-header-corporate'] as (draft: CoverLetterDraft) => string,
+    renderHtml: renderersById['dark-header-corporate'] as (draft?: Record<string, unknown>) => string,
   },
   {
     id: 'minimal-wide-name-header',
@@ -72,7 +72,7 @@ export const coverLetterTemplateRegistry: CoverLetterTemplateMeta[] = [
     description: 'Wide uppercase name treatment for a premium minimal visual identity.',
     tags: ['minimal', 'name-forward', 'modern'],
     component: MinimalWideNameHeader as React.FC<{ draft: CoverLetterDraft }>,
-    renderHtml: renderersById['minimal-wide-name-header'] as (draft: CoverLetterDraft) => string,
+    renderHtml: renderersById['minimal-wide-name-header'] as (draft?: Record<string, unknown>) => string,
   },
   {
     id: 'plain-re-subject',
@@ -81,7 +81,7 @@ export const coverLetterTemplateRegistry: CoverLetterTemplateMeta[] = [
     description: 'Straightforward formal style emphasizing subject-line clarity.',
     tags: ['plain', 'subject', 'formal'],
     component: PlainReSubject as React.FC<{ draft: CoverLetterDraft }>,
-    renderHtml: renderersById['plain-re-subject'] as (draft: CoverLetterDraft) => string,
+    renderHtml: renderersById['plain-re-subject'] as (draft?: Record<string, unknown>) => string,
   },
   {
     id: 'premium-elegant-business',
@@ -90,7 +90,7 @@ export const coverLetterTemplateRegistry: CoverLetterTemplateMeta[] = [
     description: 'Elegant serif style with subtle premium accent rules.',
     tags: ['premium', 'elegant', 'serif'],
     component: PremiumElegantBusiness as React.FC<{ draft: CoverLetterDraft }>,
-    renderHtml: renderersById['premium-elegant-business'] as (draft: CoverLetterDraft) => string,
+    renderHtml: renderersById['premium-elegant-business'] as (draft?: Record<string, unknown>) => string,
   },
   {
     id: 'simple-everyday-formal',
@@ -99,7 +99,7 @@ export const coverLetterTemplateRegistry: CoverLetterTemplateMeta[] = [
     description: 'Familiar business-letter feel with approachable readability.',
     tags: ['simple', 'formal', 'readable'],
     component: SimpleEverydayFormal as React.FC<{ draft: CoverLetterDraft }>,
-    renderHtml: renderersById['simple-everyday-formal'] as (draft: CoverLetterDraft) => string,
+    renderHtml: renderersById['simple-everyday-formal'] as (draft?: Record<string, unknown>) => string,
   },
 ];
 
