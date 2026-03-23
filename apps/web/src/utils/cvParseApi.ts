@@ -15,7 +15,7 @@ export type ParsedCvResponse = {
 
 export async function parseUploadedCv(args: {
   backendUrl: string;
-  token: string;
+  token?: string;
   file: File;
   mode?: 'merge' | 'replace';
 }): Promise<ParsedCvResponse> {
@@ -26,9 +26,11 @@ export async function parseUploadedCv(args: {
   const api = axios.create({
     baseURL: args.backendUrl,
     withCredentials: true,
-    headers: {
-      Authorization: `Bearer ${args.token}`,
-    },
+    headers: args.token
+      ? {
+          Authorization: `Bearer ${args.token}`,
+        }
+      : undefined,
   });
 
   const res = await api.post<ParsedCvResponse>('/api/cv/parse', form, {

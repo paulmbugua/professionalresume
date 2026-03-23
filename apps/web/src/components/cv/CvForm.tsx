@@ -973,7 +973,7 @@ const CvForm: React.FC = () => {
   };
 
   const onExtractCv = async () => {
-    if (!backendUrl || !token || !cvFile) return;
+    if (!backendUrl || !cvFile) return;
 
     setParseState('loading');
     setParseError(null);
@@ -1459,8 +1459,6 @@ const CvForm: React.FC = () => {
           placeholder="Write a professional summary (supports <strong>, <em>, <u>, color span)"
         />
       </SectionCard>
-
-
 
       <SectionCard
         title="Skills"
