@@ -55,6 +55,15 @@ export const createCoverLetterSchema = Joi.object({
   })
     .default()
     .unknown(false),
+  style: Joi.object({
+    fontFamily: Joi.string().max(120).allow(''),
+    fontSize: Joi.number().min(10).max(24),
+    lineHeight: Joi.number().min(1.1).max(2.2),
+    accentColor: hexColor,
+    pageTheme: Joi.string().valid('light', 'warm', 'dark'),
+  })
+    .optional()
+    .unknown(false),
 });
 
 export const patchCoverLetterSchema = Joi.object({
@@ -71,6 +80,13 @@ export const patchCoverLetterSchema = Joi.object({
     letterBody: Joi.string().max(12000).allow(''),
     closingLine: Joi.string().max(200).allow(''),
   }).unknown(false),
+  style: Joi.object({
+    fontFamily: Joi.string().max(120).allow(''),
+    fontSize: Joi.number().min(10).max(24),
+    lineHeight: Joi.number().min(1.1).max(2.2),
+    accentColor: hexColor,
+    pageTheme: Joi.string().valid('light', 'warm', 'dark'),
+  }).unknown(false),
 }).min(1);
 
 export const coverLetterExportSchema = Joi.object({
@@ -79,6 +95,13 @@ export const coverLetterExportSchema = Joi.object({
     .try(
       Joi.object({
         templateId: Joi.string().optional(),
+        style: Joi.object({
+          fontFamily: Joi.string().max(120).allow(''),
+          fontSize: Joi.number().min(10).max(24),
+          lineHeight: Joi.number().min(1.1).max(2.2),
+          accentColor: hexColor,
+          pageTheme: Joi.string().valid('light', 'warm', 'dark'),
+        }).optional(),
         sender: Joi.object({
           fullName: Joi.string().max(120).allow(''),
           email: Joi.string().email().allow(''),
@@ -111,6 +134,13 @@ export const coverLetterExportSchema = Joi.object({
       }).unknown(false),
       Joi.object({
         templateId: Joi.string().optional(),
+        style: Joi.object({
+          fontFamily: Joi.string().max(120).allow(''),
+          fontSize: Joi.number().min(10).max(24),
+          lineHeight: Joi.number().min(1.1).max(2.2),
+          accentColor: hexColor,
+          pageTheme: Joi.string().valid('light', 'warm', 'dark'),
+        }).optional(),
         applicantName: Joi.string().max(120).allow('').required(),
         applicantEmail: Joi.string().email().allow(''),
         applicantPhone: Joi.string().max(40).allow(''),
@@ -120,6 +150,34 @@ export const coverLetterExportSchema = Joi.object({
         roleTitle: Joi.string().max(140).allow(''),
         letterBody: Joi.string().max(12000).allow('').required(),
         closingLine: Joi.string().max(200).allow(''),
+      }).unknown(false),
+      Joi.object({
+        templateId: Joi.string().optional(),
+        style: Joi.object({
+          fontFamily: Joi.string().max(120).allow(''),
+          fontSize: Joi.number().min(10).max(24),
+          lineHeight: Joi.number().min(1.1).max(2.2),
+          accentColor: hexColor,
+          pageTheme: Joi.string().valid('light', 'warm', 'dark'),
+        }).optional(),
+        applicantName: Joi.string().max(120).allow('').required(),
+        applicantHeadline: Joi.string().max(140).allow(''),
+        applicantEmail: Joi.string().email().allow(''),
+        applicantPhone: Joi.string().max(40).allow(''),
+        applicantLocation: Joi.string().max(120).allow(''),
+        recipientName: Joi.string().max(120).allow(''),
+        recipientTitle: Joi.string().max(120).allow(''),
+        companyName: Joi.string().max(140).allow(''),
+        companyAddress: Joi.string().max(400).allow(''),
+        roleTitle: Joi.string().max(140).allow(''),
+        date: Joi.string().allow(''),
+        subject: Joi.string().max(200).allow(''),
+        greeting: Joi.string().max(5000).allow(''),
+        opening: Joi.string().max(5000).allow(''),
+        paragraphs: Joi.array().items(Joi.string().max(5000).allow('')).max(8).default([]),
+        closingParagraph: Joi.string().max(5000).allow(''),
+        closingLine: Joi.string().max(200).allow(''),
+        signatureName: Joi.string().max(120).allow(''),
       }).unknown(false),
     )
     .optional(),

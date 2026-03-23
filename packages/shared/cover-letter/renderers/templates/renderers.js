@@ -1,18 +1,7 @@
-const LEGACY_TEMPLATE_ALIASES = {
-  'classic-cover-letter': 'classic-letter',
-  'modern-accent': 'clean-modern-header',
-};
-
-const LETTER_IDS = [
-  'classic-letter',
-  'professional-blue-letterhead',
-  'clean-modern-header',
-  'dark-header-corporate',
-  'minimal-wide-name-header',
-  'plain-re-subject',
-  'simple-everyday-formal',
-  'premium-elegant-business',
-];
+import {
+  normalizeCoverLetterRenderModel,
+  normalizeCoverLetterTemplateId,
+} from '../renderModel.js';
 
 const esc = (value) =>
   String(value ?? '')
@@ -21,75 +10,50 @@ const esc = (value) =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 
-export function normalizeCoverLetterTemplateId(templateId) {
-  const candidate = String(templateId || '').trim();
-  const mapped = LEGACY_TEMPLATE_ALIASES[candidate] || candidate;
-  return LETTER_IDS.includes(mapped) ? mapped : 'classic-letter';
-}
-
-function normalizeParagraphs(raw) {
-  if (Array.isArray(raw)) {
-    return raw.map((line) => String(line || '').trim()).filter(Boolean);
+function toneVars(pageTheme) {
+  if (pageTheme === 'dark') {
+    return {
+      pageBg: '#0f172a',
+      paperBg: '#111827',
+      textColor: '#e5e7eb',
+      mutedColor: '#cbd5e1',
+      dividerColor: 'rgba(148,163,184,.45)',
+    };
   }
 
-  return String(raw || '')
-    .split(/\n{2,}/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
-
-function normalizeCoverLetterDraft(draft = {}) {
-  const sender = draft.sender || {};
-  const recipient = draft.recipient || {};
-  const letter = draft.letter || {};
-  const body = draft.body || {};
-  const basics = draft.basics || {};
-  const content = draft.content || {};
-
-  const senderName = String(
-    sender.fullName || draft.senderName || draft.signatureName || basics.fullName || basics.name || ''
-  ).trim();
+  if (pageTheme === 'warm') {
+    return {
+      pageBg: '#f8f4ea',
+      paperBg: '#fffdf8',
+      textColor: '#3f2d1f',
+      mutedColor: '#6e5843',
+      dividerColor: 'rgba(110,88,67,.35)',
+    };
+  }
 
   return {
-    templateId: normalizeCoverLetterTemplateId(draft.templateId),
-    senderName,
-    senderTitle: String(sender.headline || draft.senderTitle || letter.role || basics.headline || '').trim(),
-    senderEmail: String(sender.email || draft.senderEmail || basics.email || '').trim(),
-    senderPhone: String(sender.phone || draft.senderPhone || basics.phone || '').trim(),
-    senderLocation: String(sender.location || draft.senderLocation || basics.location || '').trim(),
-    date: String(letter.date || basics.date || draft.date || '').trim(),
-    recipientName: String(recipient.name || basics.hiringManager || draft.recipientName || '').trim(),
-    recipientTitle: String(recipient.title || draft.recipientTitle || '').trim(),
-    companyName: String(recipient.company || basics.companyName || draft.companyName || '').trim(),
-    companyAddress: String(
-      recipient.address || recipient.addressLine1 || draft.companyAddress || ''
-    ).trim(),
-    greeting: String(letter.greeting || content.greeting || draft.greeting || '').trim() || 'Dear Hiring Manager,',
-    subject: String(letter.subject || content.subject || draft.subject || basics.jobTitle || '').trim(),
-    body: normalizeParagraphs(
-      body.middleParagraphs || content.paragraphs || content.body || draft.body
-    ),
-    opening: String(body.opening || content.opening || '').trim(),
-    closingParagraph: String(body.closing || content.closing || '').trim(),
-    closing: String(letter.signoff || content.signature || draft.closing || '').trim() || 'Sincerely,',
-    signatureName: senderName || 'Your Name',
+    pageBg: '#eef2ff',
+    paperBg: '#fff',
+    textColor: '#0f172a',
+    mutedColor: '#475569',
+    dividerColor: 'rgba(15,23,42,.16)',
   };
 }
 
-function metaLines(d) {
-  return [d.senderEmail, d.senderPhone, d.senderLocation].filter(Boolean).map(esc).join(' · ');
+function metaLines(c) {
+  return [c.applicantEmail, c.applicantPhone, c.applicantLocation].filter(Boolean).map(esc).join(' · ');
 }
 
-function recipientBlock(d) {
-  const rows = [d.recipientName, d.recipientTitle, d.companyName, d.companyAddress].filter(Boolean);
+function recipientBlock(c) {
+  const rows = [c.recipientName, c.recipientTitle, c.companyName, c.companyAddress].filter(Boolean);
   if (!rows.length) {
     return '<p class="cl-placeholder">Recipient details (name, title, company, address)</p>';
   }
   return `<p>${rows.map((row) => esc(row)).join('<br/>')}</p>`;
 }
 
-function bodyBlock(d) {
-  const paragraphs = [d.opening, ...d.body, d.closingParagraph].filter(Boolean);
+function bodyBlock(c) {
+  const paragraphs = [c.opening, ...c.paragraphs, c.closingParagraph].filter(Boolean);
   if (!paragraphs.length) {
     return '<div class="cl-body"><p class="cl-placeholder">Write 2–4 concise paragraphs that connect your results to the role.</p></div>';
   }
@@ -99,121 +63,135 @@ function bodyBlock(d) {
     .join('')}</div>`;
 }
 
-function doc(d, body, css, markerClass) {
+function doc(model, body, css, markerClass) {
+  const vars = toneVars(model.style.pageTheme);
   return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><style>
 @page{size:A4;margin:0}
-html,body{margin:0;padding:0;background:#eef2ff;color:#0f172a}
+html,body{margin:0;padding:0;background:var(--cl-page-bg);color:var(--cl-text)}
 *{box-sizing:border-box}
-body{font-family:Inter,'Segoe UI',Roboto,Arial,sans-serif;line-height:1.55;word-break:break-word;overflow-wrap:anywhere}
-.cl-page{width:210mm;min-height:297mm;margin:0 auto;background:#fff;padding:18mm 17mm 18mm 17mm;position:relative;overflow:hidden}
+body{font-family:var(--cl-font-family);line-height:var(--cl-line-height);font-size:var(--cl-font-size);word-break:break-word;overflow-wrap:anywhere}
+.cl-page{width:210mm;min-height:297mm;margin:0 auto;background:var(--cl-paper-bg);padding:18mm 17mm 18mm 17mm;position:relative;overflow:hidden}
 .cl-content{max-width:176mm}
-.cl-date,.cl-meta,.cl-subject{font-size:12px;color:#475569}
+.cl-date,.cl-meta,.cl-subject{font-size:calc(var(--cl-font-size) - 1px);color:var(--cl-muted)}
 .cl-recipient,.cl-greeting,.cl-body,.cl-closing{margin-top:5mm}
-.cl-body p{margin:0 0 4mm 0}
+.cl-body p{margin:0 0 calc(var(--cl-line-height) * 2.5mm) 0}
 .cl-signature{margin-top:2mm;font-weight:600}
 .cl-placeholder{color:#94a3b8;font-style:italic}
 .cl-header-name{margin:0;font-size:30px;line-height:1.05;font-weight:700;letter-spacing:.01em}
-.cl-header-title{margin:2mm 0 0;font-size:14px;color:#334155}
-.cl-divider{height:1px;background:rgba(15,23,42,.16);margin:5mm 0 0}
-@media print{html,body{background:#fff}.cl-page{margin:0;box-shadow:none;break-inside:avoid-page;page-break-inside:avoid}}
+.cl-header-title{margin:2mm 0 0;font-size:14px;color:var(--cl-muted)}
+.cl-divider{height:1px;background:var(--cl-divider-color);margin:5mm 0 0}
+@media print{html,body{background:var(--cl-paper-bg)}.cl-page{margin:0;box-shadow:none;break-inside:avoid-page;page-break-inside:avoid}}
+:root{
+  --cl-font-family:${esc(model.style.fontFamily)};
+  --cl-font-size:${model.style.fontSize}px;
+  --cl-line-height:${model.style.lineHeight};
+  --cl-accent:${esc(model.style.accentColor)};
+  --cl-page-bg:${vars.pageBg};
+  --cl-paper-bg:${vars.paperBg};
+  --cl-text:${vars.textColor};
+  --cl-muted:${vars.mutedColor};
+  --cl-divider-color:${vars.dividerColor};
+}
 ${css}
-</style></head><body data-template-id="${esc(d.templateId)}"><main class="cl-page ${markerClass}">${body}</main></body></html>`;
+</style></head><body data-template-id="${esc(model.templateId)}"><main class="cl-page ${markerClass}">${body}</main></body></html>`;
 }
 
-function renderCommon(d, extras = '') {
+function renderCommon(model, extras = '') {
+  const c = model.content;
   return `<div class="cl-content">
     <header class="cl-header">
-      <h1 class="cl-header-name">${esc(d.senderName || 'Your Name')}</h1>
-      <p class="cl-header-title">${esc(d.senderTitle || 'Professional Title')}</p>
-      <p class="cl-meta">${metaLines(d) || '<span class="cl-placeholder">email · phone · location</span>'}</p>
+      <h1 class="cl-header-name">${esc(c.applicantName || 'Your Name')}</h1>
+      <p class="cl-header-title">${esc(c.applicantHeadline || c.roleTitle || 'Professional Title')}</p>
+      <p class="cl-meta">${metaLines(c) || '<span class="cl-placeholder">email · phone · location</span>'}</p>
     </header>
     ${extras}
-    <p class="cl-date">${esc(d.date || 'Date')}</p>
-    <section class="cl-recipient">${recipientBlock(d)}</section>
-    ${d.subject ? `<p class="cl-subject"><strong>Re:</strong> ${esc(d.subject)}</p>` : ''}
-    <p class="cl-greeting">${esc(d.greeting)}</p>
-    ${bodyBlock(d)}
-    <section class="cl-closing"><p>${esc(d.closing)}</p><p class="cl-signature">${esc(d.signatureName)}</p></section>
+    <p class="cl-date">${esc(c.date || 'Date')}</p>
+    <section class="cl-recipient">${recipientBlock(c)}</section>
+    ${c.subject ? `<p class="cl-subject"><strong>Re:</strong> ${esc(c.subject)}</p>` : ''}
+    <p class="cl-greeting">${esc(c.greeting)}</p>
+    ${bodyBlock(c)}
+    <section class="cl-closing"><p>${esc(c.closingLine)}</p><p class="cl-signature">${esc(c.signatureName)}</p></section>
   </div>`;
 }
 
 export function renderClassicLetterHtml(draft = {}) {
-  const d = normalizeCoverLetterDraft({ ...draft, templateId: 'classic-letter' });
+  const model = normalizeCoverLetterRenderModel({ ...draft, templateId: 'classic-letter' });
   return doc(
-    d,
-    renderCommon(d),
-    '.classicLetter{background:#f8fafc}.classicLetter .cl-page,.classicLetter{font-family:Cambria,"Times New Roman",Georgia,serif}.classicLetter .cl-header-name{font-size:28px}.classicLetter .cl-header-title{font-size:13px;letter-spacing:.02em;text-transform:uppercase}',
-    'classicLetter'
+    model,
+    renderCommon(model),
+    '.classicLetter{background:var(--cl-page-bg)}.classicLetter .cl-page,.classicLetter{font-family:Cambria,"Times New Roman",Georgia,serif}.classicLetter .cl-header-name{font-size:28px}.classicLetter .cl-header-title{font-size:13px;letter-spacing:.02em;text-transform:uppercase}',
+    'classicLetter',
   );
 }
 
 export function renderProfessionalBlueLetterheadHtml(draft = {}) {
-  const d = normalizeCoverLetterDraft({ ...draft, templateId: 'professional-blue-letterhead' });
+  const model = normalizeCoverLetterRenderModel({ ...draft, templateId: 'professional-blue-letterhead' });
   return doc(
-    d,
-    renderCommon(d, '<div class="cl-divider"></div>'),
-    '.professionalBlueLetterhead{border-top:6mm solid #1d4ed8}.professionalBlueLetterhead .cl-header-title{color:#1e40af}',
-    'professionalBlueLetterhead'
+    model,
+    renderCommon(model, '<div class="cl-divider"></div>'),
+    '.professionalBlueLetterhead{border-top:6mm solid var(--cl-accent)}.professionalBlueLetterhead .cl-header-title{color:var(--cl-accent)}.professionalBlueLetterhead .cl-divider{background:color-mix(in srgb, var(--cl-accent) 40%, transparent)}',
+    'professionalBlueLetterhead',
   );
 }
 
 export function renderCleanModernHeaderHtml(draft = {}) {
-  const d = normalizeCoverLetterDraft({ ...draft, templateId: 'clean-modern-header' });
+  const model = normalizeCoverLetterRenderModel({ ...draft, templateId: 'clean-modern-header' });
   return doc(
-    d,
-    renderCommon(d),
-    '.cleanModernHeader .cl-header{display:grid;grid-template-columns:1fr auto;gap:8mm;align-items:end}.cleanModernHeader .cl-meta{text-align:right}',
-    'cleanModernHeader'
+    model,
+    renderCommon(model),
+    '.cleanModernHeader .cl-header{display:grid;grid-template-columns:1fr auto;gap:8mm;align-items:end}.cleanModernHeader .cl-meta{text-align:right}.cleanModernHeader .cl-header-name{color:var(--cl-accent)}',
+    'cleanModernHeader',
   );
 }
 
 export function renderDarkHeaderCorporateHtml(draft = {}) {
-  const d = normalizeCoverLetterDraft({ ...draft, templateId: 'dark-header-corporate' });
+  const model = normalizeCoverLetterRenderModel({ ...draft, templateId: 'dark-header-corporate' });
+  const c = model.content;
   return doc(
-    d,
-    `<div class="cl-corporate-header"><h1 class="cl-header-name">${esc(d.senderName || 'Your Name')}</h1><p class="cl-header-title">${esc(d.senderTitle || 'Professional Title')}</p><p class="cl-meta">${metaLines(d) || '<span class="cl-placeholder">email · phone · location</span>'}</p></div>${renderCommon({ ...d, senderName: '', senderTitle: '' })}`,
-    '.darkHeaderCorporate{padding-top:0}.darkHeaderCorporate .cl-corporate-header{margin:0 -17mm 5mm;background:#0f172a;color:#e2e8f0;padding:11mm 17mm}.darkHeaderCorporate .cl-corporate-header .cl-header-title,.darkHeaderCorporate .cl-corporate-header .cl-meta{color:#cbd5e1}.darkHeaderCorporate .cl-header{display:none}',
-    'darkHeaderCorporate'
+    model,
+    `<div class="cl-corporate-header"><h1 class="cl-header-name">${esc(c.applicantName || 'Your Name')}</h1><p class="cl-header-title">${esc(c.applicantHeadline || c.roleTitle || 'Professional Title')}</p><p class="cl-meta">${metaLines(c) || '<span class="cl-placeholder">email · phone · location</span>'}</p></div>${renderCommon({ ...model, content: { ...c, applicantName: '', applicantHeadline: '' } })}`,
+    '.darkHeaderCorporate{padding-top:0}.darkHeaderCorporate .cl-corporate-header{margin:0 -17mm 5mm;background:color-mix(in srgb, var(--cl-accent) 45%, #0f172a);color:#e2e8f0;padding:11mm 17mm}.darkHeaderCorporate .cl-corporate-header .cl-header-title,.darkHeaderCorporate .cl-corporate-header .cl-meta{color:#cbd5e1}.darkHeaderCorporate .cl-header{display:none}',
+    'darkHeaderCorporate',
   );
 }
 
 export function renderMinimalWideNameHeaderHtml(draft = {}) {
-  const d = normalizeCoverLetterDraft({ ...draft, templateId: 'minimal-wide-name-header' });
+  const model = normalizeCoverLetterRenderModel({ ...draft, templateId: 'minimal-wide-name-header' });
   return doc(
-    d,
-    renderCommon(d),
-    '.minimalWideNameHeader .cl-header-name{font-size:36px;letter-spacing:.06em;text-transform:uppercase;font-weight:500}',
-    'minimalWideNameHeader'
+    model,
+    renderCommon(model),
+    '.minimalWideNameHeader .cl-header-name{font-size:36px;letter-spacing:.06em;text-transform:uppercase;font-weight:500;color:var(--cl-accent)}',
+    'minimalWideNameHeader',
   );
 }
 
 export function renderPlainReSubjectHtml(draft = {}) {
-  const d = normalizeCoverLetterDraft({ ...draft, templateId: 'plain-re-subject' });
+  const model = normalizeCoverLetterRenderModel({ ...draft, templateId: 'plain-re-subject' });
   return doc(
-    d,
-    renderCommon({ ...d, subject: d.subject || 'Application for the advertised role' }),
-    '.plainReSubject .cl-page,.plainReSubject{font-family:Arial,Helvetica,sans-serif}.plainReSubject .cl-subject{font-weight:600;text-transform:none}',
-    'plainReSubject'
+    model,
+    renderCommon({ ...model, content: { ...model.content, subject: model.content.subject || 'Application for the advertised role' } }),
+    '.plainReSubject .cl-page,.plainReSubject{font-family:Arial,Helvetica,sans-serif}.plainReSubject .cl-subject{font-weight:600;text-transform:none;color:var(--cl-accent)}',
+    'plainReSubject',
   );
 }
 
 export function renderSimpleEverydayFormalHtml(draft = {}) {
-  const d = normalizeCoverLetterDraft({ ...draft, templateId: 'simple-everyday-formal' });
+  const model = normalizeCoverLetterRenderModel({ ...draft, templateId: 'simple-everyday-formal' });
   return doc(
-    d,
-    renderCommon(d),
+    model,
+    renderCommon(model),
     '.simpleEverydayFormal .cl-page,.simpleEverydayFormal{font-family:Calibri,"Segoe UI",Arial,sans-serif}.simpleEverydayFormal .cl-header-title{font-size:13px}',
-    'simpleEverydayFormal'
+    'simpleEverydayFormal',
   );
 }
 
 export function renderPremiumElegantBusinessHtml(draft = {}) {
-  const d = normalizeCoverLetterDraft({ ...draft, templateId: 'premium-elegant-business' });
+  const model = normalizeCoverLetterRenderModel({ ...draft, templateId: 'premium-elegant-business' });
   return doc(
-    d,
-    renderCommon(d, '<div class="cl-elegant-rule"></div>'),
-    '.premiumElegantBusiness .cl-page,.premiumElegantBusiness{font-family:Georgia,"Times New Roman",serif}.premiumElegantBusiness .cl-elegant-rule{height:2px;background:linear-gradient(90deg,#7c3aed,#c4b5fd);margin:4mm 0 0}.premiumElegantBusiness .cl-header-title{letter-spacing:.03em;text-transform:uppercase;font-size:12px}',
-    'premiumElegantBusiness'
+    model,
+    renderCommon(model, '<div class="cl-elegant-rule"></div>'),
+    '.premiumElegantBusiness .cl-page,.premiumElegantBusiness{font-family:Georgia,"Times New Roman",serif}.premiumElegantBusiness .cl-elegant-rule{height:2px;background:linear-gradient(90deg,var(--cl-accent),color-mix(in srgb, var(--cl-accent) 35%, #fff));margin:4mm 0 0}.premiumElegantBusiness .cl-header-title{letter-spacing:.03em;text-transform:uppercase;font-size:12px}',
+    'premiumElegantBusiness',
   );
 }
 
@@ -236,3 +214,5 @@ export const templateMarkersById = {
     'premiumElegantBusiness',
   ],
 };
+
+export { normalizeCoverLetterTemplateId };

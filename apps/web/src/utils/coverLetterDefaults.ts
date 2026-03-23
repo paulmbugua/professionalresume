@@ -1,5 +1,8 @@
 import type { CoverLetterDraft } from '@cvpro/shared/types';
-import { normalizeCoverLetterTemplateId } from '@cvpro/shared/cover-letter/renderers/index.js';
+import {
+  normalizeCoverLetterTemplateId,
+  normalizeCoverLetterRenderModel,
+} from '@cvpro/shared/cover-letter/renderers/index.js';
 
 export const EMPTY_COVER_LETTER_DRAFT: CoverLetterDraft = {
   id: '',
@@ -42,32 +45,49 @@ export const EMPTY_COVER_LETTER_DRAFT: CoverLetterDraft = {
 
 export const normalizeCoverLetterDraft = (
   raw?: Partial<CoverLetterDraft> | null
-): CoverLetterDraft => ({
-  ...EMPTY_COVER_LETTER_DRAFT,
-  ...(raw || {}),
-  templateId: normalizeCoverLetterTemplateId((raw?.templateId as any) || 'classic-letter') as CoverLetterDraft['templateId'],
-  sender: {
-    ...EMPTY_COVER_LETTER_DRAFT.sender,
-    ...(raw?.sender || {}),
-  },
-  recipient: {
-    ...EMPTY_COVER_LETTER_DRAFT.recipient,
-    ...(raw?.recipient || {}),
-  },
-  letter: {
-    ...EMPTY_COVER_LETTER_DRAFT.letter,
-    ...(raw?.letter || {}),
-  },
-  body: {
-    ...EMPTY_COVER_LETTER_DRAFT.body,
-    ...(raw?.body || {}),
-    middleParagraphs:
-      raw?.body?.middleParagraphs && raw.body.middleParagraphs.length > 0
-        ? raw.body.middleParagraphs
-        : [''],
-  },
-  style: {
-    ...EMPTY_COVER_LETTER_DRAFT.style,
-    ...(raw?.style || {}),
-  },
-});
+): CoverLetterDraft => {
+  const normalized = normalizeCoverLetterRenderModel((raw || {}) as Record<string, unknown>);
+  return {
+    ...EMPTY_COVER_LETTER_DRAFT,
+    ...(raw || {}),
+    templateId: normalizeCoverLetterTemplateId((raw?.templateId as any) || normalized.templateId) as CoverLetterDraft['templateId'],
+    sender: {
+      ...EMPTY_COVER_LETTER_DRAFT.sender,
+      ...(raw?.sender || {}),
+      fullName: normalized.content.applicantName,
+      email: normalized.content.applicantEmail,
+      phone: normalized.content.applicantPhone,
+      location: normalized.content.applicantLocation,
+    },
+    recipient: {
+      ...EMPTY_COVER_LETTER_DRAFT.recipient,
+      ...(raw?.recipient || {}),
+      name: normalized.content.recipientName,
+      title: normalized.content.recipientTitle,
+      company: normalized.content.companyName,
+      address: normalized.content.companyAddress,
+    },
+    letter: {
+      ...EMPTY_COVER_LETTER_DRAFT.letter,
+      ...(raw?.letter || {}),
+      role: normalized.content.roleTitle,
+      date: normalized.content.date,
+      subject: normalized.content.subject,
+      greeting: normalized.content.greeting,
+      signoff: normalized.content.closingLine,
+    },
+    body: {
+      ...EMPTY_COVER_LETTER_DRAFT.body,
+      ...(raw?.body || {}),
+      opening: normalized.content.opening,
+      middleParagraphs: normalized.content.paragraphs.length ? normalized.content.paragraphs : [''],
+      closing: normalized.content.closingParagraph,
+    },
+    style: {
+      ...EMPTY_COVER_LETTER_DRAFT.style,
+      ...(raw?.style || {}),
+      ...(raw?.design || {}),
+      ...normalized.style,
+    },
+  };
+};
