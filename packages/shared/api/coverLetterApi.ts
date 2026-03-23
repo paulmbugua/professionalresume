@@ -119,14 +119,22 @@ export const createCoverLetterDraft = async (
       title?: string;
       data?: {
         applicantName: string;
+        applicantTitle: string;
         applicantEmail: string;
         applicantPhone: string;
         applicantLocation: string;
         recipientName: string;
+        recipientTitle: string;
         companyName: string;
+        companyAddress: string;
         roleTitle: string;
+        dateText: string;
+        subjectLine: string;
+        greeting: string;
         letterBody: string;
+        closingParagraph: string;
         closingLine: string;
+        signatureName: string;
       };
       style?: {
         fontFamily?: string;
@@ -142,20 +150,23 @@ export const createCoverLetterDraft = async (
     if (typeof payload.title === 'string') safePayload.title = payload.title;
     if (payload.data && typeof payload.data === 'object') {
       safePayload.data = {
-        applicantName:
-          typeof payload.data.applicantName === 'string' ? payload.data.applicantName : '',
-        applicantEmail:
-          typeof payload.data.applicantEmail === 'string' ? payload.data.applicantEmail : '',
-        applicantPhone:
-          typeof payload.data.applicantPhone === 'string' ? payload.data.applicantPhone : '',
-        applicantLocation:
-          typeof payload.data.applicantLocation === 'string' ? payload.data.applicantLocation : '',
-        recipientName:
-          typeof payload.data.recipientName === 'string' ? payload.data.recipientName : '',
+        applicantName: typeof payload.data.applicantName === 'string' ? payload.data.applicantName : '',
+        applicantTitle: typeof payload.data.applicantTitle === 'string' ? payload.data.applicantTitle : '',
+        applicantEmail: typeof payload.data.applicantEmail === 'string' ? payload.data.applicantEmail : '',
+        applicantPhone: typeof payload.data.applicantPhone === 'string' ? payload.data.applicantPhone : '',
+        applicantLocation: typeof payload.data.applicantLocation === 'string' ? payload.data.applicantLocation : '',
+        recipientName: typeof payload.data.recipientName === 'string' ? payload.data.recipientName : '',
+        recipientTitle: typeof payload.data.recipientTitle === 'string' ? payload.data.recipientTitle : '',
         companyName: typeof payload.data.companyName === 'string' ? payload.data.companyName : '',
+        companyAddress: typeof payload.data.companyAddress === 'string' ? payload.data.companyAddress : '',
         roleTitle: typeof payload.data.roleTitle === 'string' ? payload.data.roleTitle : '',
+        dateText: typeof payload.data.dateText === 'string' ? payload.data.dateText : '',
+        subjectLine: typeof payload.data.subjectLine === 'string' ? payload.data.subjectLine : '',
+        greeting: typeof payload.data.greeting === 'string' ? payload.data.greeting : '',
         letterBody: typeof payload.data.letterBody === 'string' ? payload.data.letterBody : '',
+        closingParagraph: typeof payload.data.closingParagraph === 'string' ? payload.data.closingParagraph : '',
         closingLine: typeof payload.data.closingLine === 'string' ? payload.data.closingLine : '',
+        signatureName: typeof payload.data.signatureName === 'string' ? payload.data.signatureName : '',
       };
     }
     if (payload.style && typeof payload.style === 'object') safePayload.style = payload.style;
@@ -201,14 +212,22 @@ export const updateCoverLetterDraft = async (
       templateKey?: string;
       data?: {
         applicantName?: string;
+        applicantTitle?: string;
         applicantEmail?: string;
         applicantPhone?: string;
         applicantLocation?: string;
         recipientName?: string;
+        recipientTitle?: string;
         companyName?: string;
+        companyAddress?: string;
         roleTitle?: string;
+        dateText?: string;
+        subjectLine?: string;
+        greeting?: string;
         letterBody?: string;
+        closingParagraph?: string;
         closingLine?: string;
+        signatureName?: string;
       };
       style?: {
         fontFamily?: string;
@@ -228,43 +247,47 @@ export const updateCoverLetterDraft = async (
         ? payload.data
         : {
             applicantName: (payload as any)?.sender?.fullName,
+            applicantTitle: (payload as any)?.sender?.title,
             applicantEmail: (payload as any)?.sender?.email,
             applicantPhone: (payload as any)?.sender?.phone,
             applicantLocation: (payload as any)?.sender?.location,
             recipientName: (payload as any)?.recipient?.name,
+            recipientTitle: (payload as any)?.recipient?.title,
             companyName: (payload as any)?.recipient?.company,
+            companyAddress: (payload as any)?.recipient?.address,
             roleTitle: (payload as any)?.letter?.role,
+            dateText: (payload as any)?.letter?.date,
+            subjectLine: (payload as any)?.letter?.subject,
+            greeting: (payload as any)?.letter?.greeting,
             letterBody: [
-              (payload as any)?.letter?.greeting,
               (payload as any)?.body?.opening,
               ...(((payload as any)?.body?.middleParagraphs as string[] | undefined) || []),
-              (payload as any)?.body?.closing,
             ]
               .filter((part) => typeof part === 'string' && part.trim().length > 0)
               .join('\n\n'),
+            closingParagraph: (payload as any)?.body?.closing,
             closingLine: (payload as any)?.letter?.signoff,
+            signatureName: (payload as any)?.sender?.fullName,
           };
 
     const sanitizedData = {
-      applicantName:
-        typeof dataCandidate.applicantName === 'string' ? dataCandidate.applicantName : undefined,
-      applicantEmail:
-        typeof dataCandidate.applicantEmail === 'string' ? dataCandidate.applicantEmail : undefined,
-      applicantPhone:
-        typeof dataCandidate.applicantPhone === 'string' ? dataCandidate.applicantPhone : undefined,
-      applicantLocation:
-        typeof dataCandidate.applicantLocation === 'string'
-          ? dataCandidate.applicantLocation
-          : undefined,
-      recipientName:
-        typeof dataCandidate.recipientName === 'string' ? dataCandidate.recipientName : undefined,
-      companyName:
-        typeof dataCandidate.companyName === 'string' ? dataCandidate.companyName : undefined,
+      applicantName: typeof dataCandidate.applicantName === 'string' ? dataCandidate.applicantName : undefined,
+      applicantTitle: typeof dataCandidate.applicantTitle === 'string' ? dataCandidate.applicantTitle : undefined,
+      applicantEmail: typeof dataCandidate.applicantEmail === 'string' ? dataCandidate.applicantEmail : undefined,
+      applicantPhone: typeof dataCandidate.applicantPhone === 'string' ? dataCandidate.applicantPhone : undefined,
+      applicantLocation: typeof dataCandidate.applicantLocation === 'string' ? dataCandidate.applicantLocation : undefined,
+      recipientName: typeof dataCandidate.recipientName === 'string' ? dataCandidate.recipientName : undefined,
+      recipientTitle: typeof dataCandidate.recipientTitle === 'string' ? dataCandidate.recipientTitle : undefined,
+      companyName: typeof dataCandidate.companyName === 'string' ? dataCandidate.companyName : undefined,
+      companyAddress: typeof dataCandidate.companyAddress === 'string' ? dataCandidate.companyAddress : undefined,
       roleTitle: typeof dataCandidate.roleTitle === 'string' ? dataCandidate.roleTitle : undefined,
-      letterBody:
-        typeof dataCandidate.letterBody === 'string' ? dataCandidate.letterBody : undefined,
-      closingLine:
-        typeof dataCandidate.closingLine === 'string' ? dataCandidate.closingLine : undefined,
+      dateText: typeof dataCandidate.dateText === 'string' ? dataCandidate.dateText : undefined,
+      subjectLine: typeof dataCandidate.subjectLine === 'string' ? dataCandidate.subjectLine : undefined,
+      greeting: typeof dataCandidate.greeting === 'string' ? dataCandidate.greeting : undefined,
+      letterBody: typeof dataCandidate.letterBody === 'string' ? dataCandidate.letterBody : undefined,
+      closingParagraph: typeof dataCandidate.closingParagraph === 'string' ? dataCandidate.closingParagraph : undefined,
+      closingLine: typeof dataCandidate.closingLine === 'string' ? dataCandidate.closingLine : undefined,
+      signatureName: typeof dataCandidate.signatureName === 'string' ? dataCandidate.signatureName : undefined,
     };
 
     if (Object.values(sanitizedData).some((value) => value !== undefined))

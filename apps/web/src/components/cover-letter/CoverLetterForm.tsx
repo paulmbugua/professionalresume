@@ -21,6 +21,10 @@ const CoverLetterForm: React.FC = () => {
             <input className={input} {...register('sender.fullName')} />
           </div>
           <div>
+            <label className={label}>Professional Title</label>
+            <input className={input} {...register('sender.title' as any)} />
+          </div>
+          <div>
             <label className={label}>Email</label>
             <input className={input} {...register('sender.email')} />
           </div>

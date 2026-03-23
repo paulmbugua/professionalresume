@@ -29,14 +29,22 @@ function mapEditorDraftToUpdatePayload(values: CoverLetterDraft): {
   templateKey?: string;
   data?: {
     applicantName?: string;
+    applicantTitle?: string;
     applicantEmail?: string;
     applicantPhone?: string;
     applicantLocation?: string;
     recipientName?: string;
+    recipientTitle?: string;
     companyName?: string;
+    companyAddress?: string;
     roleTitle?: string;
+    dateText?: string;
+    subjectLine?: string;
+    greeting?: string;
     letterBody?: string;
+    closingParagraph?: string;
     closingLine?: string;
+    signatureName?: string;
   };
   style?: {
     fontFamily?: string;
@@ -52,21 +60,22 @@ function mapEditorDraftToUpdatePayload(values: CoverLetterDraft): {
     templateKey: normalized.templateId,
     data: {
       applicantName: normalized.sender.fullName,
+      applicantTitle: (normalized.sender as any).title || '',
       applicantEmail: normalized.sender.email,
       applicantPhone: normalized.sender.phone,
       applicantLocation: normalized.sender.location,
       recipientName: normalized.recipient.name,
+      recipientTitle: normalized.recipient.title,
       companyName: normalized.recipient.company,
+      companyAddress: normalized.recipient.address,
       roleTitle: normalized.letter.role,
-      letterBody: [
-        normalized.letter.greeting,
-        normalized.body.opening,
-        ...normalized.body.middleParagraphs,
-        normalized.body.closing,
-      ]
-        .filter(Boolean)
-        .join('\n\n'),
+      dateText: normalized.letter.date,
+      subjectLine: normalized.letter.subject,
+      greeting: normalized.letter.greeting,
+      letterBody: [normalized.body.opening, ...normalized.body.middleParagraphs].filter(Boolean).join('\n\n'),
+      closingParagraph: normalized.body.closing,
       closingLine: normalized.letter.signoff,
+      signatureName: normalized.sender.fullName,
     },
     style: {
       fontFamily: normalized.style.fontFamily,
