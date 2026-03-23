@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { FormProvider, useForm, useWatch } from 'react-hook-form';
 import debounce from 'lodash.debounce';
 import { useShopContext } from '@cvpro/shared/context';
+import { toCoverLetterExportJson } from '@cvpro/shared/api';
 import {
   useCoverLetterDraft,
   useSaveCoverLetterDraft,
@@ -157,16 +158,18 @@ const CoverLetterBuilderPageInner: React.FC<{ id: string; backendUrl: string; to
 
   const doExport = async () => {
     const values = normalizeCoverLetterDraft(getValues());
+    const exportJson = toCoverLetterExportJson(values);
     const exported = await exportDraft.mutateAsync({
       draftId: id,
-      coverLetterJson: values,
+      coverLetterJson: exportJson,
     });
     setExportUrl(exported.signedUrl || exported.url || undefined);
   };
 
   const doPrint = async () => {
     const values = normalizeCoverLetterDraft(getValues());
-    const payload = encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(values)))));
+    const printJson = toCoverLetterExportJson(values);
+    const payload = encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(printJson)))));
     window.open(`/cover-letter/print?payload=${payload}`, '_blank', 'noopener,noreferrer');
   };
 

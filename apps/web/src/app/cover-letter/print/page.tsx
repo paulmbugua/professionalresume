@@ -3,10 +3,10 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useShopContext } from '@cvpro/shared/context';
-import { getCoverLetterPrintHtml } from '@cvpro/shared/api';
+import { getCoverLetterPrintHtml, toCoverLetterExportJson } from '@cvpro/shared/api';
 import type { CoverLetterDraft } from '@cvpro/shared/types';
 
-function decodePayload(raw: string | null): CoverLetterDraft | null {
+function decodePayload(raw: string | null): CoverLetterDraft | Record<string, any> | null {
   if (!raw) return null;
   try {
     const binary = atob(decodeURIComponent(raw));
@@ -28,7 +28,9 @@ export default function CoverLetterPrintPage() {
       const payload = decodePayload(params?.get('payload') || null);
       if (!payload || !backendUrl || !token) return;
       try {
-        const res = await getCoverLetterPrintHtml(backendUrl, token, { coverLetterJson: payload });
+        const res = await getCoverLetterPrintHtml(backendUrl, token, {
+          coverLetterJson: toCoverLetterExportJson(payload),
+        });
         const html = (res.html || '').replace(
           '</head>',
           `<style>

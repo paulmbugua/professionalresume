@@ -8,6 +8,92 @@ import type {
   CoverLetterRewritePayload,
 } from '@cvpro/shared/types';
 
+type CoverLetterExportJson = {
+  templateId?: string;
+  applicantName: string;
+  applicantEmail?: string;
+  applicantPhone?: string;
+  applicantLocation?: string;
+  recipientName?: string;
+  companyName?: string;
+  roleTitle?: string;
+  letterBody: string;
+  closingLine?: string;
+};
+
+export function toCoverLetterExportJson(
+  draft: Partial<CoverLetterDraft> | CoverLetterDraft | Record<string, any> | null | undefined,
+): CoverLetterExportJson {
+  const source = (draft || {}) as any;
+  const letterBodyFromBodyParts = [
+    source?.letter?.greeting,
+    source?.body?.opening,
+    ...(((source?.body?.middleParagraphs as string[] | undefined) || []).filter(
+      (part) => typeof part === 'string',
+    ) as string[]),
+    source?.body?.closing,
+  ]
+    .filter((part) => typeof part === 'string' && part.trim().length > 0)
+    .join('\n\n');
+  const letterBody =
+    typeof source?.letterBody === 'string' ? source.letterBody : letterBodyFromBodyParts;
+
+  return {
+    ...(typeof source?.templateId === 'string' && source.templateId
+      ? { templateId: source.templateId }
+      : {}),
+    applicantName:
+      typeof source?.applicantName === 'string'
+        ? source.applicantName
+        : typeof source?.sender?.fullName === 'string'
+          ? source.sender.fullName
+          : '',
+    applicantEmail:
+      typeof source?.applicantEmail === 'string'
+        ? source.applicantEmail
+        : typeof source?.sender?.email === 'string'
+          ? source.sender.email
+          : '',
+    applicantPhone:
+      typeof source?.applicantPhone === 'string'
+        ? source.applicantPhone
+        : typeof source?.sender?.phone === 'string'
+          ? source.sender.phone
+          : '',
+    applicantLocation:
+      typeof source?.applicantLocation === 'string'
+        ? source.applicantLocation
+        : typeof source?.sender?.location === 'string'
+          ? source.sender.location
+          : '',
+    recipientName:
+      typeof source?.recipientName === 'string'
+        ? source.recipientName
+        : typeof source?.recipient?.name === 'string'
+          ? source.recipient.name
+          : '',
+    companyName:
+      typeof source?.companyName === 'string'
+        ? source.companyName
+        : typeof source?.recipient?.company === 'string'
+          ? source.recipient.company
+          : '',
+    roleTitle:
+      typeof source?.roleTitle === 'string'
+        ? source.roleTitle
+        : typeof source?.letter?.role === 'string'
+          ? source.letter.role
+          : '',
+    letterBody: typeof letterBody === 'string' ? letterBody : '',
+    closingLine:
+      typeof source?.closingLine === 'string'
+        ? source.closingLine
+        : typeof source?.letter?.signoff === 'string'
+          ? source.letter.signoff
+          : '',
+  };
+}
+
 function client(backendUrl: string, token?: string) {
   return axios.create({
     baseURL: backendUrl,
@@ -260,11 +346,17 @@ export const deleteCoverLetterDraft = async (
 export const getCoverLetterPrintHtml = async (
   backendUrl: string,
   token: string,
-  payload: { coverLetterJson: Partial<CoverLetterDraft> | CoverLetterDraft }
+  payload: { draftId?: string; coverLetterJson?: Partial<CoverLetterDraft> | Record<string, any> }
 ): Promise<{ html: string }> => {
   try {
     const api = client(backendUrl, token);
-    const res = await api.post<{ html: string }>('/api/cover-letters/print-html', payload);
+    const safePayload = {
+      ...(payload?.draftId ? { draftId: payload.draftId } : {}),
+      ...(payload?.coverLetterJson
+        ? { coverLetterJson: toCoverLetterExportJson(payload.coverLetterJson) }
+        : {}),
+    };
+    const res = await api.post<{ html: string }>('/api/cover-letters/print-html', safePayload);
     return res.data;
   } catch (err: any) {
     throw new Error(toMessage(err));
@@ -274,11 +366,17 @@ export const getCoverLetterPrintHtml = async (
 export const exportCoverLetterPdf = async (
   backendUrl: string,
   token: string,
-  payload: { draftId?: string; coverLetterJson?: Partial<CoverLetterDraft> }
+  payload: { draftId?: string; coverLetterJson?: Partial<CoverLetterDraft> | Record<string, any> }
 ): Promise<CoverLetterExportResponse> => {
   try {
     const api = client(backendUrl, token);
-    const res = await api.post<CoverLetterExportResponse>('/api/cover-letters/export', payload);
+    const safePayload = {
+      ...(payload?.draftId ? { draftId: payload.draftId } : {}),
+      ...(payload?.coverLetterJson
+        ? { coverLetterJson: toCoverLetterExportJson(payload.coverLetterJson) }
+        : {}),
+    };
+    const res = await api.post<CoverLetterExportResponse>('/api/cover-letters/export', safePayload);
     return res.data;
   } catch (err: any) {
     const status = err?.response?.status;

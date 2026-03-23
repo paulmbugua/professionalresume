@@ -139,7 +139,7 @@ export function useExportCoverLetter({ backendUrl, token }: BaseArgs) {
   return useMutation<
     CoverLetterExportResponse,
     Error,
-    { draftId?: string; coverLetterJson?: Partial<CoverLetterDraft> }
+    { draftId?: string; coverLetterJson?: Partial<CoverLetterDraft> | Record<string, any> }
   >({
     mutationFn: (payload) => {
       if (!token) throw new Error('Unauthorized');

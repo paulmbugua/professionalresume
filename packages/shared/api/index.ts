@@ -32,6 +32,7 @@ export {
   deleteCoverLetterDraft,
   getCoverLetterPrintHtml,
   exportCoverLetterPdf,
+  toCoverLetterExportJson,
   signCoverLetterFile,
   aiGenerateCoverLetter,
   aiRewriteCoverLetter,
