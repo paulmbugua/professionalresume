@@ -13,12 +13,21 @@ export type ParsedCvResponse = {
   };
 };
 
+const normalizeToken = (token?: string): string | undefined => {
+  const next = String(token || '').trim();
+  if (!next) return undefined;
+  const lowered = next.toLowerCase();
+  if (lowered === 'null' || lowered === 'undefined') return undefined;
+  return next;
+};
+
 export async function parseUploadedCv(args: {
   backendUrl: string;
   token?: string;
   file: File;
   mode?: 'merge' | 'replace';
 }): Promise<ParsedCvResponse> {
+  const safeToken = normalizeToken(args.token);
   const form = new FormData();
   form.append('file', args.file);
   form.append('mode', args.mode || 'merge');

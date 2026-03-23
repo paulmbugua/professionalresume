@@ -16,6 +16,14 @@ export type ImproveExperienceResult = {
   bullets: string[];
 };
 
+const normalizeToken = (token?: string): string | undefined => {
+  const next = String(token || '').trim();
+  if (!next) return undefined;
+  const lowered = next.toLowerCase();
+  if (lowered === 'null' || lowered === 'undefined') return undefined;
+  return next;
+};
+
 export async function improveExperienceEntry(params: {
   backendUrl: string;
   token?: string;
@@ -26,6 +34,7 @@ export async function improveExperienceEntry(params: {
   };
 }) {
   const { backendUrl, token, experience, wholeCvContext } = params;
+  const safeToken = normalizeToken(token);
 
   const { data } = await axios.post(
     `${backendUrl}/api/cv/improve-experience`,

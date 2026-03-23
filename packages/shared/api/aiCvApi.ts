@@ -1,13 +1,22 @@
 import axios from 'axios';
 import type { CvDraft } from '@cvpro/shared/types';
 
+const normalizeToken = (token?: string): string | undefined => {
+  const next = String(token || '').trim();
+  if (!next) return undefined;
+  const lowered = next.toLowerCase();
+  if (lowered === 'null' || lowered === 'undefined') return undefined;
+  return next;
+};
+
 function client(backendUrl: string, token?: string) {
+  const safeToken = normalizeToken(token);
   return axios.create({
     baseURL: backendUrl,
     withCredentials: true,
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(safeToken ? { Authorization: `Bearer ${safeToken}` } : {}),
     },
   });
 }
