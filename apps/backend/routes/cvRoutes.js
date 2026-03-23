@@ -54,7 +54,7 @@ r.get(
 r.put('/drafts/:id', requireAuth, updateDraft);
 r.patch('/drafts/:id', requireAuth, updateDraft);
 r.delete('/drafts/:id', requireAuth, deleteDraft);
-r.post('/improve-experience', authOptional, improveExperienceController);
+r.post('/improve-experience', requireAuth, improveExperienceController);
 r.post(
   '/export',
   requireAuth,

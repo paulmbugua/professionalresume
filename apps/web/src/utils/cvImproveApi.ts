@@ -43,9 +43,9 @@ export async function improveExperienceEntry(params: {
       wholeCvContext: wholeCvContext || {},
     },
     {
-      headers: safeToken
+      headers: token
         ? {
-            Authorization: `Bearer ${safeToken}`,
+            Authorization: `Bearer ${token}`,
           }
         : undefined,
     }
