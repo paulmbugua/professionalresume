@@ -10,8 +10,17 @@ import {
   renderSimpleEverydayFormalHtml,
   templateMarkersById,
 } from './templates/renderers.js';
+import {
+  normalizeCoverLetterRenderModel,
+  toCoverLetterExportJson as toCoverLetterRendererJson,
+} from './renderModel.js';
 
-export { normalizeCoverLetterTemplateId, templateMarkersById };
+export {
+  normalizeCoverLetterTemplateId,
+  templateMarkersById,
+  normalizeCoverLetterRenderModel,
+  toCoverLetterRendererJson,
+};
 
 export const renderersById = {
   'classic-letter': renderClassicLetterHtml,
