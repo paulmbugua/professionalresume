@@ -7,7 +7,19 @@ import { useCreateCoverLetterDraft } from '@cvpro/shared/hooks';
 
 import TemplateThumbnail from '../components/cv/templates/TemplateThumbnail';
 import { coverLetterTemplateRegistry } from '../templates/coverLetterRegistry';
-import { EMPTY_COVER_LETTER_DRAFT } from '../utils/coverLetterDefaults';
+
+function getDraftIdentifier(draft: unknown): string | null {
+  if (!draft || typeof draft !== 'object') return null;
+  const candidate = draft as Record<string, unknown>;
+  if (typeof candidate.id === 'string' && candidate.id.trim()) return candidate.id;
+  if (typeof candidate.draftId === 'string' && candidate.draftId.trim()) return candidate.draftId;
+  if (candidate.data && typeof candidate.data === 'object') {
+    const nested = candidate.data as Record<string, unknown>;
+    if (typeof nested.id === 'string' && nested.id.trim()) return nested.id;
+    if (typeof nested.draftId === 'string' && nested.draftId.trim()) return nested.draftId;
+  }
+  return null;
+}
 
 const CoverLetterTemplatesPage: React.FC = () => {
   const router = useRouter();
@@ -53,7 +65,13 @@ const CoverLetterTemplatesPage: React.FC = () => {
       },
     });
 
-    router.push(`/cover-letters/editor/${draft.id}`);
+    const draftId = getDraftIdentifier(draft);
+    if (draftId) {
+      router.push(`/cover-letters/editor/${draftId}`);
+      return;
+    }
+
+    router.push('/cover-letters');
   };
 
   return (
@@ -98,36 +116,33 @@ const CoverLetterTemplatesPage: React.FC = () => {
         <div className="mt-8 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
           {coverLetterTemplateRegistry.map((template) => {
             const previewHtml = template.renderHtml({
-              ...EMPTY_COVER_LETTER_DRAFT,
               templateId: template.id,
+              templateKey: template.id,
               title: template.name,
-              sender: {
-                ...EMPTY_COVER_LETTER_DRAFT.sender,
-                fullName: 'Jane Applicant',
-                email: 'jane@example.com',
-                phone: '(555) 010-2233',
-                location: 'New York, NY',
-              },
-              recipient: {
-                ...EMPTY_COVER_LETTER_DRAFT.recipient,
-                name: 'Hiring Manager',
-                title: 'Talent Acquisition',
-                company: 'CVPro Inc',
-              },
-              letter: {
-                ...EMPTY_COVER_LETTER_DRAFT.letter,
-                role: 'Product Designer',
-                subject: 'Application for Product Designer',
-                date: new Date().toLocaleDateString(),
-              },
-              body: {
-                opening: 'I am excited to apply for the Product Designer role at CVPro.',
-                middleParagraphs: [
-                  'I have designed and shipped user-focused experiences that improved conversion and retention.',
-                ],
-                closing:
-                  'I would welcome the opportunity to discuss how my background can support your product goals.',
-              },
+              applicantName: 'Jane Applicant',
+              applicantTitle: 'Senior Product Designer',
+              applicantEmail: 'jane@example.com',
+              applicantPhone: '(555) 010-2233',
+              applicantLocation: 'New York, NY',
+              recipientName: 'Alex Morgan',
+              recipientTitle: 'Talent Acquisition Manager',
+              companyName: 'CVPro Inc',
+              companyAddress: '123 Market Street, New York, NY',
+              roleTitle: 'Product Designer',
+              dateText: new Date().toLocaleDateString(),
+              subjectLine: 'Application for Product Designer',
+              greeting: 'Dear Hiring Manager,',
+              letterBody:
+                'I am excited to apply for the Product Designer role at CVPro.\n\nI have designed and shipped user-focused experiences that improved conversion and retention.',
+              closingParagraph:
+                'I would welcome the opportunity to discuss how my background can support your product goals.',
+              closingLine: 'Sincerely,',
+              signatureName: 'Jane Applicant',
+              fontFamily: 'Inter, system-ui, Arial, sans-serif',
+              fontSize: 12,
+              lineHeight: 1.55,
+              accentColor: '#2563eb',
+              pageTheme: 'light',
             });
 
             const isSelected = selectedTemplateId === template.id;
