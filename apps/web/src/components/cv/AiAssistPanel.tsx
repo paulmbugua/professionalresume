@@ -104,7 +104,9 @@ const AiAssistPanel: React.FC<Props> = ({ draft, setValue }) => {
     <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/5">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white">AI Assist</h3>
-        <span className="text-xs text-gray-400">CV suggestions</span>
+        <span className="text-xs text-gray-400">
+          {token ? 'CV suggestions' : 'Guest AI enabled ✨'}
+        </span>
       </div>
 
       <div className="space-y-4 text-sm text-gray-700 dark:text-white/80">

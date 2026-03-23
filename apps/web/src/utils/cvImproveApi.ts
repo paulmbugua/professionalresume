@@ -18,7 +18,7 @@ export type ImproveExperienceResult = {
 
 export async function improveExperienceEntry(params: {
   backendUrl: string;
-  token: string;
+  token?: string;
   experience: ImproveExperienceInput;
   wholeCvContext?: {
     summary?: string;
@@ -34,9 +34,11 @@ export async function improveExperienceEntry(params: {
       wholeCvContext: wholeCvContext || {},
     },
     {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      headers: token
+        ? {
+            Authorization: `Bearer ${token}`,
+          }
+        : undefined,
     }
   );
 
