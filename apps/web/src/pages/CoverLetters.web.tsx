@@ -74,8 +74,12 @@ const CoverLettersPage: React.FC = () => {
           </div>
         </div>
 
-        {isLoading ? <p className="mt-8 text-sm text-slate-500">Loading drafts…</p> : null}
-        {error ? <p className="mt-8 text-sm text-rose-500">{error.message}</p> : null}
+        {isLoading ? (
+          <p className="mt-8 text-sm text-slate-500 dark:text-slate-300">Loading drafts…</p>
+        ) : null}
+        {error ? (
+          <p className="mt-8 text-sm text-rose-600 dark:text-rose-300">{error.message}</p>
+        ) : null}
 
         {!isLoading && !error && drafts.length === 0 ? (
           <div className="mt-8 rounded-xl border border-dashed border-slate-300 p-8 text-center dark:border-white/20">
@@ -84,7 +88,7 @@ const CoverLettersPage: React.FC = () => {
               <Link href="/cover-letters/templates" className="text-sm font-semibold text-primary">
                 Explore Designs
               </Link>
-              <span className="text-slate-300">•</span>
+              <span className="text-slate-300 dark:text-slate-500">•</span>
               <Link href="/cover-letters/new" className="text-sm font-semibold text-primary">
                 Create your first cover letter
               </Link>
@@ -103,7 +107,8 @@ const CoverLettersPage: React.FC = () => {
                   {draft.title || 'Untitled Cover Letter'}
                 </h2>
                 <p className="mt-1 text-xs text-slate-500 dark:text-white/60">
-                  Updated {draft.updatedAt ? new Date(draft.updatedAt).toLocaleString() : 'just now'}
+                  Updated{' '}
+                  {draft.updatedAt ? new Date(draft.updatedAt).toLocaleString() : 'just now'}
                 </p>
                 <p className="mt-1 text-xs text-slate-500 dark:text-white/60">
                   Template: {draft.templateId || 'classic-letter'}
