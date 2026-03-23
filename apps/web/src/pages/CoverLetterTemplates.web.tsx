@@ -59,20 +59,20 @@ const CoverLetterTemplatesPage: React.FC = () => {
   return (
     <main className="min-h-screen bg-site pb-12 pt-8 text-slate-900 dark:text-white">
       <section className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
-        <div className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm dark:border-white/10 dark:bg-white/5 sm:p-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-300">
+        <div className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm dark:border-white/20 dark:bg-slate-900/80 sm:p-8">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-white/80">
             Cover letter templates
           </p>
           <h1 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">
             Explore designs for your cover letter
           </h1>
-          <p className="mt-3 max-w-3xl text-sm text-slate-600 dark:text-slate-300 sm:text-base">
+          <p className="mt-3 max-w-3xl text-sm text-slate-600 dark:text-white/80 sm:text-base">
             Select a layout, preview it, and launch directly into the dedicated cover-letter editor.
           </p>
         </div>
 
-        <div className="mt-6 rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-white/10 dark:bg-white/5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
+        <div className="mt-6 rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-white/20 dark:bg-slate-900/75">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-white/80">
             Selected template
           </p>
           <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
@@ -80,7 +80,7 @@ const CoverLetterTemplatesPage: React.FC = () => {
               <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
                 {selectedTemplate?.name}
               </h2>
-              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+              <p className="mt-1 text-sm text-slate-600 dark:text-white/80">
                 {selectedTemplate?.description}
               </p>
             </div>
@@ -135,10 +135,10 @@ const CoverLetterTemplatesPage: React.FC = () => {
             return (
               <article
                 key={template.id}
-                className={`rounded-2xl border bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg dark:bg-white/5 ${
+                className={`rounded-2xl border bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg dark:bg-slate-900/75 ${
                   isSelected
                     ? 'border-primary/60 ring-2 ring-primary/20 dark:border-primary/60'
-                    : 'border-slate-200 dark:border-white/10'
+                    : 'border-slate-200 dark:border-white/20'
                 }`}
               >
                 <button
@@ -153,17 +153,17 @@ const CoverLetterTemplatesPage: React.FC = () => {
                   <h3 className="text-base font-semibold text-slate-900 dark:text-white">
                     {template.name}
                   </h3>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">
+                  <p className="mt-1 text-xs text-slate-500 dark:text-white/80">
                     {template.description}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-1">
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:bg-white/10 dark:text-slate-200">
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-900/70 dark:text-white/80">
                       {template.category}
                     </span>
                     {template.tags.slice(0, 2).map((tag) => (
                       <span
                         key={tag}
-                        className="rounded-full border border-slate-200 px-2 py-0.5 text-[10px] text-slate-500 dark:border-white/15 dark:text-slate-300"
+                        className="rounded-full border border-slate-200 px-2 py-0.5 text-[10px] text-slate-500 dark:border-white/20 dark:text-white/80"
                       >
                         {tag}
                       </span>
@@ -175,7 +175,7 @@ const CoverLetterTemplatesPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setSelectedTemplateId(template.id)}
-                    className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                    className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 dark:border-white/20 dark:bg-slate-900/70 dark:text-white/85"
                   >
                     {isSelected ? 'Selected' : 'Select'}
                   </button>
