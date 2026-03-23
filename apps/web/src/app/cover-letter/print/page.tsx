@@ -6,6 +6,94 @@ import { useShopContext } from '@cvpro/shared/context';
 import { getCoverLetterPrintHtml, toCoverLetterExportJson } from '@cvpro/shared/api';
 import type { CoverLetterDraft } from '@cvpro/shared/types';
 
+function buildPrintReadyDocument(html: string) {
+  const printRouteEnhancements = `
+<style id="cover-letter-print-route-enhancements">
+  @page { size: A4; margin: 0; }
+
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body {
+    overflow: hidden;
+  }
+
+  .cl-page {
+    margin: 0 auto !important;
+    box-shadow: none !important;
+    width: 210mm !important;
+    min-height: 297mm !important;
+    overflow: visible !important;
+  }
+
+  @media print {
+    html, body {
+      overflow: visible !important;
+      background: #fff !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    .cl-page {
+      margin: 0 !important;
+      box-shadow: none !important;
+      width: 210mm !important;
+      min-height: 297mm !important;
+      break-inside: avoid-page;
+      page-break-inside: avoid;
+    }
+  }
+</style>
+<script>
+  (function () {
+    var heading = document.querySelector('.cl-header-name, h1');
+    var title = heading && heading.textContent ? heading.textContent.trim() : '';
+    if (title) document.title = title + ' - Cover Letter';
+
+    window.addEventListener('keydown', function (event) {
+      var isPrintShortcut = (event.ctrlKey || event.metaKey) && String(event.key || '').toLowerCase() === 'p';
+      if (!isPrintShortcut) return;
+      event.preventDefault();
+      window.print();
+    });
+
+    var printNow = function () {
+      window.requestAnimationFrame(function () {
+        window.print();
+      });
+    };
+
+    if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === 'function') {
+      document.fonts.ready.then(function () { setTimeout(printNow, 120); });
+    } else {
+      setTimeout(printNow, 120);
+    }
+  })();
+</script>`;
+
+  if (html.includes('id="cover-letter-print-route-enhancements"')) return html;
+  if (html.includes('</head>')) {
+    return html.replace('</head>', `${printRouteEnhancements}</head>`);
+  }
+
+  return `${printRouteEnhancements}${html}`;
+}
+
 function decodePayload(raw: string | null): CoverLetterDraft | Record<string, any> | null {
   if (!raw) return null;
   try {
@@ -31,19 +119,10 @@ export default function CoverLetterPrintPage() {
         const res = await getCoverLetterPrintHtml(backendUrl, token, {
           coverLetterJson: toCoverLetterExportJson(payload),
         });
-        const html = (res.html || '').replace(
-          '</head>',
-          `<style>
-            @media print {
-              nav,header,footer,.app-chrome,[data-app-chrome]{ display:none !important; }
-              body { margin:0 !important; background:#fff !important; }
-            }
-          </style></head>`,
-        );
+        const html = buildPrintReadyDocument(res.html || '');
         document.open();
         document.write(html);
         document.close();
-        setTimeout(() => window.print(), 120);
       } catch (e: any) {
         setError(e?.message || 'Failed to render print view');
       }

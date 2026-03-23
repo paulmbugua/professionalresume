@@ -67,9 +67,9 @@ function doc(model, body, css, markerClass) {
   const vars = toneVars(model.style.pageTheme);
   return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><style>
 @page{size:A4;margin:0}
-html,body{margin:0;padding:0;background:var(--cl-page-bg);color:var(--cl-text)}
+html,body{margin:0;padding:0;background:var(--cl-page-bg);color:var(--cl-text);-webkit-print-color-adjust:exact;print-color-adjust:exact}
 *{box-sizing:border-box}
-body{font-family:var(--cl-font-family);line-height:var(--cl-line-height);font-size:var(--cl-font-size);word-break:break-word;overflow-wrap:anywhere}
+body{font-family:var(--cl-font-family);line-height:var(--cl-line-height);font-size:var(--cl-font-size);word-break:break-word;overflow-wrap:anywhere;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .cl-page{width:210mm;min-height:297mm;margin:0 auto;background:var(--cl-paper-bg);padding:18mm 17mm 18mm 17mm;position:relative;overflow:hidden}
 .cl-content{max-width:176mm}
 .cl-date,.cl-meta,.cl-subject{font-size:calc(var(--cl-font-size) - 1px);color:var(--cl-muted)}
@@ -80,7 +80,7 @@ body{font-family:var(--cl-font-family);line-height:var(--cl-line-height);font-si
 .cl-header-name{margin:0;font-size:30px;line-height:1.05;font-weight:700;letter-spacing:.01em}
 .cl-header-title{margin:2mm 0 0;font-size:14px;color:var(--cl-muted)}
 .cl-divider{height:1px;background:var(--cl-divider-color);margin:5mm 0 0}
-@media print{html,body{background:var(--cl-paper-bg)}.cl-page{margin:0;box-shadow:none;break-inside:avoid-page;page-break-inside:avoid}}
+@media print{html,body,*{-webkit-print-color-adjust:exact;print-color-adjust:exact}html,body{background:var(--cl-paper-bg)}.cl-page{margin:0;box-shadow:none;break-inside:avoid-page;page-break-inside:avoid}}
 :root{
   --cl-font-family:${esc(model.style.fontFamily)};
   --cl-font-size:${model.style.fontSize}px;
