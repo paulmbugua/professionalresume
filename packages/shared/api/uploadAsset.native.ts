@@ -1,7 +1,7 @@
 // packages/shared/api/uploadAsset.native.ts
 export async function uploadAsset(
   backendUrl: string,
-  token: string,
+  token: string | undefined,
   uriOrFile: string | { uri?: string; name?: string; type?: string; mimeType?: string },
   type: 'image' | 'video' | 'doc'
 ): Promise<string> {
@@ -28,19 +28,16 @@ export async function uploadAsset(
   }
 
   const form = new FormData();
-  form.append(
-    'file',
-    {
-      uri,
-      name,
-      type: mimeType,
-    } as any
-  );
+  form.append('file', {
+    uri,
+    name,
+    type: mimeType,
+  } as any);
 
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${token}`,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       // DO NOT set Content-Type here: RN will set proper multipart boundaries
     },
     body: form,
@@ -58,11 +55,7 @@ export async function uploadAsset(
     // ignore
   }
 
-  const url: string | null =
-    parsed?.url ||
-    parsed?.secure_url ||
-    parsed?.data?.url ||
-    null;
+  const url: string | null = parsed?.url || parsed?.secure_url || parsed?.data?.url || null;
 
   if (!url || typeof url !== 'string') {
     throw new Error('Upload response missing url.');
@@ -71,4 +64,3 @@ export async function uploadAsset(
   // All your callers already handle "string or object", so returning string is safe
   return url;
 }
-

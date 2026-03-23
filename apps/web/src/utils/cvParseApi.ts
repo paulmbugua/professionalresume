@@ -35,9 +35,9 @@ export async function parseUploadedCv(args: {
   const api = axios.create({
     baseURL: args.backendUrl,
     withCredentials: true,
-    headers: args.token
+    headers: safeToken
       ? {
-          Authorization: `Bearer ${args.token}`,
+          Authorization: `Bearer ${safeToken}`,
         }
       : undefined,
   });

@@ -1,4 +1,5 @@
 export type UploadAssetKind = 'image' | 'video' | 'doc';
+const GUEST_UPLOAD_SESSION_KEY = 'cvpro:guest-upload-session-id';
 
 const allowedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
@@ -16,7 +17,7 @@ const inferImageExt = (mimeType: string, filename = '') => {
 
 export async function uploadAsset(
   backendUrl: string,
-  token: string,
+  token: string | undefined,
   uriOrFile: string | File,
   type: UploadAssetKind
 ): Promise<string> {
@@ -39,6 +40,25 @@ export async function uploadAsset(
     throw new Error('Unsupported image type. Use JPG, PNG, or WEBP.');
   }
   const ext = inferImageExt(mimeType, filename);
+  const safeToken = String(token || '').trim();
+  const guestSessionId =
+    !safeToken && typeof window !== 'undefined'
+      ? (() => {
+          try {
+            const existing = window.localStorage.getItem(GUEST_UPLOAD_SESSION_KEY);
+            if (existing) return existing;
+            const next = (
+              typeof crypto !== 'undefined' && 'randomUUID' in crypto
+                ? crypto.randomUUID()
+                : `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
+            ).replace(/[^a-zA-Z0-9_-]/g, '');
+            window.localStorage.setItem(GUEST_UPLOAD_SESSION_KEY, next);
+            return next;
+          } catch {
+            return `guest-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+          }
+        })()
+      : undefined;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120_000);
@@ -48,14 +68,15 @@ export async function uploadAsset(
     presignRes = await fetch(`${base}/api/uploads/presign`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
+        ...(safeToken ? { Authorization: `Bearer ${safeToken}` } : {}),
       },
       body: JSON.stringify({
         purpose: 'cv-photo',
         contentType: mimeType,
         ext,
         sizeBytes: (blobOrFile as Blob).size || undefined,
+        ...(guestSessionId ? { guestSessionId } : {}),
       }),
       signal: controller.signal,
     });
@@ -88,10 +109,14 @@ export async function uploadAsset(
   const confirmRes = await fetch(`${base}/api/uploads/confirm`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
+      ...(safeToken ? { Authorization: `Bearer ${safeToken}` } : {}),
     },
-    body: JSON.stringify({ key, publicUrl }),
+    body: JSON.stringify({
+      key,
+      publicUrl,
+      ...(guestSessionId ? { guestSessionId } : {}),
+    }),
   });
   if (!confirmRes.ok) {
     const text = await confirmRes.text().catch(() => '');
@@ -99,9 +124,5 @@ export async function uploadAsset(
   }
 
   const confirmJson = await confirmRes.json().catch(() => ({}));
-  return (
-    confirmJson?.publicUrl ||
-    confirmJson?.url ||
-    publicUrl
-  );
+  return confirmJson?.publicUrl || confirmJson?.url || publicUrl;
 }
