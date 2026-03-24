@@ -73,6 +73,45 @@ export const aiSuggestSkills = async (
   }
 };
 
+export type JobRequirementAssistResponse = {
+  targetRoleTitle: string;
+  targetYearsExperience: string;
+  keySkills: string[];
+  coreResponsibilities: string[];
+  preferredAchievements: string[];
+  toolsAndTechnologies: string[];
+  qualifications: string[];
+  tailoredHeadline: string;
+  tailoredSummary: string;
+  tailoredExperienceSuggestions: Array<{
+    entryHint: string;
+    focusArea: string;
+    bullets: string[];
+  }>;
+};
+
+export const aiJobRequirementAssist = async (
+  backendUrl: string,
+  token: string | undefined,
+  payload: { draft: CvDraft; jobAdvertText: string; regenerate?: boolean }
+): Promise<JobRequirementAssistResponse> => {
+  try {
+    const api = client(backendUrl, token);
+    const res = await api.post<JobRequirementAssistResponse>(
+      '/api/ai/cv/job-requirement-assist',
+      payload
+    );
+    return res.data;
+  } catch (err: any) {
+    console.error(
+      '🔴 [aiJobRequirementAssist] status/data:',
+      err.response?.status,
+      err.response?.data
+    );
+    throw new Error(toMessage(err));
+  }
+};
+
 export const aiGenerateCoverLetter = async (
   backendUrl: string,
   token: string,

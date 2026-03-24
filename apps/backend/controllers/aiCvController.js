@@ -2,9 +2,11 @@ import {
   aiSummarySchema,
   aiRewriteSchema,
   aiSuggestSkillsSchema,
+  aiJobRequirementAssistSchema,
 } from '../validators/cvValidators.js';
 import {
   generateSummary,
+  jobRequirementAssist,
   rewriteBullet,
   suggestSkills,
 } from '../services/aiCvService.js';
@@ -48,5 +50,19 @@ export async function aiSkills(req, res) {
   } catch (err) {
     console.error('aiSkills error', err);
     res.status(500).json({ error: 'Failed to suggest skills' });
+  }
+}
+
+export async function aiJobRequirement(req, res) {
+  try {
+    const { error, value } = aiJobRequirementAssistSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({ error: error.details?.[0]?.message || error.message });
+    }
+    const result = await jobRequirementAssist(value);
+    res.json(result);
+  } catch (err) {
+    console.error('aiJobRequirement error', err);
+    res.status(500).json({ error: 'Failed to analyze job requirements' });
   }
 }

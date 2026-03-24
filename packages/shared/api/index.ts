@@ -42,6 +42,7 @@ export {
 // CV AI API surface
 export {
   aiGenerateSummary,
+  aiJobRequirementAssist,
   aiRewriteBullet,
   aiSuggestSkills,
   aiRewriteCoverLetterStyle,
