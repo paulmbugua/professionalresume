@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useShopContext } from '@cvpro/shared/context';
 import { useCvPayment } from '@cvpro/shared/hooks';
+import { restorePendingPaymentReturn } from '../lib/cvGuestSession';
 
 const PaystackCallbackPage: React.FC = () => {
   const router = useRouter();
@@ -11,14 +12,16 @@ const PaystackCallbackPage: React.FC = () => {
   const { backendUrl, token } = useShopContext() as any;
   const [message, setMessage] = useState('Verifying your payment...');
   const reference = searchParams?.get('reference') || '';
-  const nextPath = searchParams?.get('next') || '/builder';
+  const nextPath = searchParams?.get('next') || '';
   const cvPayment = useCvPayment({ backendUrl, token });
+  const pendingReturn = useMemo(() => restorePendingPaymentReturn(), []);
 
   const safeNextPath = useMemo(() => {
-    if (!nextPath.startsWith('/')) return '/builder';
-    const separator = nextPath.includes('?') ? '&' : '?';
-    return `${nextPath}${separator}cvpay=success`;
-  }, [nextPath]);
+    const target = nextPath || pendingReturn?.returnTo || '/builder';
+    if (!target.startsWith('/')) return '/builder';
+    const separator = target.includes('?') ? '&' : '?';
+    return `${target}${separator}cvpay=success`;
+  }, [nextPath, pendingReturn?.returnTo]);
 
   useEffect(() => {
     const run = async () => {
@@ -29,6 +32,11 @@ const PaystackCallbackPage: React.FC = () => {
           setMessage('Payment verification is still pending. Please try again shortly.');
           return;
         }
+        console.info('[cv-payment-return] paystack verified; redirecting', {
+          nextPath,
+          fallbackReturnTo: pendingReturn?.returnTo || null,
+          safeNextPath,
+        });
         setMessage('Payment verified. Unlock successful. Redirecting...');
         setTimeout(() => {
           router.replace(safeNextPath);
@@ -38,7 +46,7 @@ const PaystackCallbackPage: React.FC = () => {
       }
     };
     void run();
-  }, [token, backendUrl, reference, safeNextPath]);
+  }, [token, backendUrl, reference, nextPath, pendingReturn?.returnTo, safeNextPath]);
 
   return (
     <div className="mx-auto flex min-h-[60vh] w-full max-w-screen-md items-center justify-center px-6 py-12 text-center">
