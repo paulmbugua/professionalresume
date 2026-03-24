@@ -65,6 +65,17 @@ function buildPrintReadyDocument(html: string) {
       box-shadow: none !important;
       width: 210mm !important;
       min-height: 297mm !important;
+      box-decoration-break: clone;
+      -webkit-box-decoration-break: clone;
+    }
+
+    .page > .inner,
+    .page > .content,
+    .page > aside,
+    .page > main,
+    .page > section {
+      box-decoration-break: clone;
+      -webkit-box-decoration-break: clone;
     }
 
     body[data-template-id="modern-sidebar"] .page,
