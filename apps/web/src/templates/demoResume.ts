@@ -120,6 +120,7 @@ export const hasAnyUserData = (draft?: Partial<CvDraft>) => {
         hasText(e.location) ||
         hasText(e.start) ||
         hasText(e.end) ||
+        hasText(e.description) ||
         e.bullets?.some((b) => hasText(b))
     )
   ) {
@@ -171,9 +172,14 @@ const hasImportedOrMeaningfulContent = (draft?: Partial<CvDraft>) => {
 
 export const getDraftSource = (draft?: Partial<CvDraft>): 'demo' | 'live' | 'saved' => {
   if (!draft) return 'demo';
-  if (draft.id && draft.id !== 'demo-cv' && hasImportedOrMeaningfulContent(draft)) return 'saved';
-  if (hasImportedOrMeaningfulContent(draft) && !isDraftMarkedDemoSeeded(draft)) return 'live';
-  return 'demo';
+  const hasMeaningfulContent = hasImportedOrMeaningfulContent(draft);
+  const isDemoSeeded = isDraftMarkedDemoSeeded(draft);
+  const isPersistedDraft = Boolean(draft.id && draft.id !== 'demo-cv');
+
+  if (isPersistedDraft && hasMeaningfulContent) return 'saved';
+  if (hasMeaningfulContent && !isDemoSeeded) return isPersistedDraft ? 'saved' : 'live';
+  if (isDemoSeeded) return 'demo';
+  return isPersistedDraft ? 'saved' : 'live';
 };
 
 const resolveSectionArray = <T>(demoValue: T[], userValue?: T[], preferDraft = false): T[] => {
