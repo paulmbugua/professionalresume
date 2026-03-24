@@ -48,10 +48,10 @@ const CoverLetterEditorShell: React.FC<Props> = ({
   );
 
   return (
-    <div className="mx-auto w-full max-w-screen-2xl px-4 pb-10 pt-4 text-slate-900 dark:text-white lg:px-8">
+    <div className="mx-auto w-full max-w-screen-2xl overflow-x-clip px-4 pb-10 pt-4 text-slate-900 dark:text-white lg:px-8">
       <div className="sticky top-2 z-40 mb-4 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur print:hidden dark:border-white/10 dark:bg-[#0B1220]/90">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-300">
               Cover Letter Builder
             </p>
@@ -78,9 +78,9 @@ const CoverLetterEditorShell: React.FC<Props> = ({
                     : 'Unsaved changes'}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 xl:w-auto xl:justify-end">
             <select
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 [color-scheme:light] dark:border-white/15 dark:bg-slate-900 dark:text-white dark:[color-scheme:dark]"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 sm:w-auto [color-scheme:light] dark:border-white/15 dark:bg-slate-900 dark:text-white dark:[color-scheme:dark]"
               value={previewDraft.templateId}
               onChange={(e) =>
                 setValue('templateId', e.target.value as CoverLetterDraft['templateId'], {
@@ -171,7 +171,7 @@ const CoverLetterEditorShell: React.FC<Props> = ({
                 <summary className="cursor-pointer list-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:bg-white/5 dark:text-slate-100">
                   {isImporting ? 'Importing…' : 'Import / AI Assist'}
                 </summary>
-                <div className="absolute right-0 z-50 mt-2 min-w-[220px] rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-white/10 dark:bg-slate-900">
+                <div className="absolute left-0 right-0 z-50 mt-2 min-w-[220px] rounded-xl border border-slate-200 bg-white p-2 shadow-xl sm:left-auto sm:right-0 dark:border-white/10 dark:bg-slate-900">
                   {onImportCoverLetter ? (
                     <button
                       type="button"
@@ -200,7 +200,7 @@ const CoverLetterEditorShell: React.FC<Props> = ({
         ) : null}
       </div>
 
-      <div className="mb-4 flex gap-2 lg:hidden print:hidden">
+      <div className="mb-4 flex gap-2 xl:hidden print:hidden">
         <button
           type="button"
           onClick={() => setActiveTab('edit')}
@@ -225,14 +225,14 @@ const CoverLetterEditorShell: React.FC<Props> = ({
         </button>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(320px,450px)_1fr] min-h-0">
+      <div className="grid min-h-0 gap-6 xl:grid-cols-[minmax(340px,470px)_minmax(0,1fr)]">
         <div
-          className={`${activeTab === 'preview' ? 'hidden' : 'block'} space-y-4 lg:block print:hidden`}
+          className={`${activeTab === 'preview' ? 'hidden' : 'block'} min-w-0 space-y-4 xl:block print:hidden`}
         >
           <CoverLetterForm />
         </div>
-        <div className={`${activeTab === 'edit' ? 'hidden' : 'block'} min-h-0 lg:block`}>
-          <div className="sticky top-24 h-[calc(100vh-8rem)] min-h-0">
+        <div className={`${activeTab === 'edit' ? 'hidden' : 'block'} min-h-0 min-w-0 xl:block`}>
+          <div className="h-[70vh] min-h-0 xl:sticky xl:top-24 xl:h-[calc(100vh-8rem)]">
             <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/95 p-3 shadow-sm dark:border-white/10 dark:bg-[#0B1220]/75">
               <div className="mb-2 flex items-center justify-between gap-2 px-1 text-[11px] font-medium text-slate-500 dark:text-slate-300">
                 <span>Live preview</span>

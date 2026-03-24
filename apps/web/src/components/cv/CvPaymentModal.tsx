@@ -42,8 +42,8 @@ const CvPaymentModal: React.FC<Props> = ({
     'border-primary bg-primary/10 text-primary dark:border-primary dark:bg-primary/15 dark:text-primary';
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 px-4">
-      <div className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-slate-950">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-3 sm:px-4">
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl sm:p-6 dark:border-white/10 dark:bg-slate-950">
         <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
           Unlock exports for $1 (one-time)
         </h3>
@@ -56,7 +56,7 @@ const CvPaymentModal: React.FC<Props> = ({
           Current action: {actionLabel}
         </p>
 
-        <div className="mt-4 grid grid-cols-2 gap-2">
+        <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
           <button
             type="button"
             onClick={() => setMethod('PAYSTACK')}
