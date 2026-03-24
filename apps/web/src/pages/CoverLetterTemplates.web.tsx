@@ -7,6 +7,7 @@ import { useCreateCoverLetterDraft } from '@cvpro/shared/hooks';
 
 import TemplateThumbnail from '../components/cv/templates/TemplateThumbnail';
 import { coverLetterTemplateRegistry } from '../templates/coverLetterRegistry';
+import { trackBuilderStarted, trackCoverLetterTemplateSelect } from '../lib/analytics/events';
 
 function getDraftIdentifier(draft: unknown): string | null {
   if (!draft || typeof draft !== 'object') return null;
@@ -41,6 +42,8 @@ const CoverLetterTemplatesPage: React.FC = () => {
   );
 
   const handleUseTemplate = async (templateId: string) => {
+    const selected = coverLetterTemplateRegistry.find((item) => item.id === templateId);
+    trackCoverLetterTemplateSelect({ template_id: templateId, template_name: selected?.name, source_page: 'cover_letters_templates' });
     const destination = `/cover-letters/templates?templateId=${encodeURIComponent(templateId)}`;
     if (!token) {
       router.push(`/login?returnTo=${encodeURIComponent(destination)}`);
@@ -67,6 +70,7 @@ const CoverLetterTemplatesPage: React.FC = () => {
 
     const draftId = getDraftIdentifier(draft);
     if (draftId) {
+      trackBuilderStarted({ source_page: 'cover_letters_templates', template_id: templateId, template_name: template?.name, product_type: 'cover_letter' });
       router.push(`/cover-letters/editor/${draftId}`);
       return;
     }

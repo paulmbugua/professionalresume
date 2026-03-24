@@ -33,6 +33,7 @@ import {
   setPendingBuilderAction,
   type PendingCvAction,
 } from '../lib/cvGuestSession';
+import { trackBeginCheckout, trackPurchase, trackResumeDownload } from '../lib/analytics/events';
 
 const EMPTY_DRAFT: CvDraft = normalizeDraft({
   id: '',
@@ -289,6 +290,7 @@ const CvBuilderPageInner: React.FC<{
     if (!token || !resolvedBackendUrl) return;
     const exported = await exportCv.mutateAsync({ draftId: id, cvJson: getValues() });
     setExportUrl(exported.signedUrl || exported.url || undefined);
+    trackResumeDownload({ source_page: 'cv_builder', template_id: draft.templateId });
   };
 
   const doPrint = async () => {
@@ -385,7 +387,9 @@ const CvBuilderPageInner: React.FC<{
         actionFromQuery,
         pendingStoredAction: peekPendingPaymentAction(),
       });
-      if (actionFromQuery === 'resume_export') await doExport();
+      if (actionFromQuery === 'resume_export') {
+        await doExport();
+      }
       if (actionFromQuery === 'resume_print') await doPrint();
       clearPendingPaymentReturnState();
       clearPaymentQuery();
@@ -438,17 +442,36 @@ const CvBuilderPageInner: React.FC<{
           pendingAction={cvPayment.pendingAction}
           onClose={cvPayment.cancelPayment}
           onPayWithMpesa={async (phone) => {
+            trackBeginCheckout({ currency: 'KES', value: 100, purchase_type: 'export_unlock', product_type: 'resume', source_page: 'cv_builder' });
             const res = await cvPayment.initMpesaMutation.mutateAsync(phone);
             setPaymentMessage(res.message || 'Waiting for M-Pesa confirmation');
           }}
           onConfirmMpesa={async (payload) => {
             const res = await cvPayment.confirmMpesaMutation.mutateAsync(payload);
             if (res.status === 'Pending') setPaymentMessage('Waiting for M-Pesa confirmation');
-            if (res.status === 'Completed')
+            if (res.status === 'Completed') {
+              trackPurchase({
+                transaction_id: `mpesa-${Date.now()}`,
+                currency: 'KES',
+                value: 100,
+                purchase_type: 'export_unlock',
+                product_type: 'resume',
+                source_page: 'cv_builder',
+                items: [{ item_id: 'cvpro-export-unlock', item_name: 'CVPro Export Unlock', price: 1, quantity: 1 }],
+              });
               setPaymentMessage('Unlock successful. Export unlocked.');
+            }
           }}
           onPayWithPaystack={async () => {
             const nextPath = `${window.location.pathname}?cv_action=${cvPayment.pendingAction}`;
+            trackBeginCheckout({
+              currency: 'USD',
+              value: 1,
+              purchase_type: 'export_unlock',
+              product_type: 'resume',
+              source_page: 'cv_builder',
+              items: [{ item_id: 'cvpro-export-unlock', item_name: 'CVPro Export Unlock', price: 1, quantity: 1 }],
+            });
             persistPaymentReturnState(cvPayment.pendingAction as 'resume_export' | 'resume_print');
             const order = await cvPayment.startPaystackCheckout.mutateAsync(nextPath);
             window.location.href = order.authorizationUrl;

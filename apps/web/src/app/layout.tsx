@@ -2,10 +2,37 @@ import type { Metadata } from 'next';
 import '../index.css';
 import Providers from './providers';
 import CvTopNav from '../components/cv/CvTopNav';
+import AnalyticsProvider from '../components/analytics/AnalyticsProvider';
+import {
+  buildOrganizationSchema,
+  buildPageMetadata,
+  buildSoftwareApplicationSchema,
+  buildWebsiteSchema,
+  getSiteUrl,
+} from '../lib/seo';
 
 export const metadata: Metadata = {
-  title: 'CVPro | Premium CV Builder',
-  description: 'Build premium, ATS-ready CVs with templates, live previews, and AI assistance.',
+  metadataBase: new URL(getSiteUrl()),
+  ...buildPageMetadata({
+    title: 'CVPro | ATS Resume & Cover Letter Builder',
+    description:
+      'Build ATS-friendly resumes and cover letters in minutes with expert templates, AI writing support, and one-click export.',
+    path: '/',
+    keywords: [
+      'resume builder',
+      'ATS resume templates',
+      'cover letter builder',
+      'CV builder',
+      'OneDollarCVPro',
+    ],
+  }),
+  applicationName: 'CVPro',
+  icons: {
+    icon: '/favicon.png',
+    shortcut: '/favicon.png',
+    apple: '/favicon.png',
+  },
+  manifest: '/site.webmanifest',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -20,13 +47,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     })();
   `;
 
+  const organizationLd = buildOrganizationSchema();
+  const websiteLd = buildWebsiteSchema();
+  const softwareLd = buildSoftwareApplicationSchema();
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationLd) }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteLd) }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareLd) }} />
       </head>
       <body className="app-body">
         <Providers>
+          <AnalyticsProvider />
           <div className="app-shell">
             <CvTopNav />
             <main>{children}</main>

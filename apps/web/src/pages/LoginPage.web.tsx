@@ -10,6 +10,7 @@ import useAuth from '@cvpro/shared/hooks/useAuth';
 import { useShopContext } from '@cvpro/shared/context';
 import CustomGoogleButtonLogin from '@/components/auth/CustomGoogleButtonLogin.web';
 import { getReturnToFromQuery } from '../lib/returnTo';
+import { trackLogin, trackSignUp } from '../lib/analytics/events';
 
 type AuthMode = 'Login' | 'Sign Up';
 type ResetMode = 'idle' | 'requesting' | 'verifying';
@@ -145,6 +146,7 @@ const LoginPage: React.FC = () => {
           return;
         }
         await loginWithEmail({ email: email.trim(), password });
+        trackLogin({ auth_method: 'email', source_page: computedReturnTo });
         router.replace(getReturnTo() || DEFAULT_RETURN_TO);
         return;
       }
@@ -164,6 +166,7 @@ const LoginPage: React.FC = () => {
         password,
       } as any);
 
+      trackSignUp({ auth_method: 'email', source_page: computedReturnTo });
       router.replace(getReturnTo() || DEFAULT_RETURN_TO);
     } catch (err: any) {
       setError(err?.message || 'Unable to authenticate.');
@@ -512,7 +515,10 @@ const LoginPage: React.FC = () => {
 
           <div className="flex justify-center">
             <CustomGoogleButtonLogin
-              onSuccess={handleGoogleLoginSuccess}
+              onSuccess={async (token) => {
+                await handleGoogleLoginSuccess(token);
+                trackLogin({ auth_method: 'google', source_page: computedReturnTo });
+              }}
               onFailure={handleGoogleLoginFailure}
               mode="consumer"
               returnTo={getReturnTo()}

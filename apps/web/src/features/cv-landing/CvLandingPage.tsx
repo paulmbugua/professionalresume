@@ -14,6 +14,7 @@ import { templateRegistryList } from '../../templates/registry';
 
 import type { AnyTemplate, LandingVariant } from './types';
 import { getLandingCopy, pickTemplatesById, useThumbHtml } from './utils';
+import { trackBuilderStarted, trackTemplateSelect } from '../../lib/analytics/events';
 import {
   CoverLettersPromoSection,
   DotsBg,
@@ -120,12 +121,14 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
   const [selectedTemplate, setSelectedTemplate] = React.useState<AnyTemplate | null>(null);
 
   const createNewResume = React.useCallback(() => {
+    trackBuilderStarted({ source_page: variant === 'home' ? 'landing_home' : 'templates_page', template_id: 'ats-minimal', product_type: 'resume' });
     router.push('/builder/new?templateId=ats-minimal');
-  }, [router]);
+  }, [router, variant]);
 
   const improveResume = React.useCallback(() => {
+    trackBuilderStarted({ source_page: variant === 'home' ? 'landing_home' : 'templates_page', template_id: 'ats-minimal', product_type: 'resume' });
     router.push('/builder/new?templateId=ats-minimal');
-  }, [router]);
+  }, [router, variant]);
 
   const createCoverLetter = React.useCallback(() => {
     if (!token) {
@@ -144,9 +147,10 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
   }, [router, token]);
 
   const openSpotlight = React.useCallback((template: AnyTemplate) => {
+    trackTemplateSelect({ template_id: template.id, template_name: template.name, source_page: variant === 'home' ? 'landing_home' : 'templates_page' });
     setSelectedTemplate(template);
     setSpotlightOpen(true);
-  }, []);
+  }, [variant]);
 
   const floatingTemplates = React.useMemo(
     () => pickTemplatesById(templates ?? [], FEATURED_TEMPLATE_IDS),
@@ -168,7 +172,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
     <div className="min-h-screen bg-site text-slate-900 transition-colors dark:text-white">
       <LandingKeyframes />
 
-      <section className="relative overflow-hidden bg-slate-50 dark:bg-slate-950">
+      <header className="relative overflow-hidden bg-slate-50 dark:bg-slate-950">
         <DotsBg isDark={isDark} />
 
         <div className="mx-auto w-full max-w-screen-2xl px-4 pb-8 pt-8 sm:pt-10 lg:px-8">
@@ -327,8 +331,9 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
             <LogoMarquee items={brandLogos} speedSec={26} />
           </div>
         </div>
-      </section>
+      </header>
 
+      <main>
       <section className="w-full bg-site pb-12 pt-2 dark:bg-slate-950">
         <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
           <div className="text-center">
@@ -417,6 +422,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
       <StepsSection onCta={createNewResume} />
       <FAQSection onCta={createNewResume} />
       <SiteFooter />
+      </main>
 
       <TemplateSpotlightModal
         isOpen={spotlightOpen}
@@ -424,6 +430,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
         onClose={() => setSpotlightOpen(false)}
         onContinue={(templateId: string) => {
           setSpotlightOpen(false);
+          trackBuilderStarted({ source_page: variant === 'home' ? 'landing_home' : 'templates_page', template_id: templateId, product_type: 'resume' });
           router.push(`/builder/new?templateId=${encodeURIComponent(templateId)}`);
         }}
       />

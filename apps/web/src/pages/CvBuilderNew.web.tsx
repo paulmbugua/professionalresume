@@ -7,6 +7,7 @@ import { useCreateCvDraft } from '@cvpro/shared/hooks';
 import { normalizeDraft } from '../utils/cvDefaults';
 import { demoResume } from '../templates/demoResume';
 import { persistGuestCvState } from '../lib/cvGuestSession';
+import { trackBuilderStarted, trackUploadCvCompleted, trackUploadCvStarted } from '../lib/analytics/events';
 
 const CvBuilderNew: React.FC = () => {
   const params = useSearchParams();
@@ -34,10 +35,12 @@ const CvBuilderNew: React.FC = () => {
     if (!token) {
       let importedData: any | undefined;
       if (importFromUpload && typeof window !== 'undefined') {
+        trackUploadCvStarted({ source_page: 'builder_new', upload_type: 'resume' });
         const raw = window.sessionStorage.getItem('cvpro:imported-draft');
         if (raw) {
           importedData = JSON.parse(raw);
           window.sessionStorage.removeItem('cvpro:imported-draft');
+          trackUploadCvCompleted({ source_page: 'builder_new', upload_type: 'resume' });
         }
       }
 
@@ -52,6 +55,7 @@ const CvBuilderNew: React.FC = () => {
       } as any);
 
       persistGuestCvState(guestDraft);
+      trackBuilderStarted({ source_page: importFromUpload ? 'upload_flow' : 'templates_page', template_id: templateId, product_type: 'resume' });
       setStatus('Opening guest builder...');
       const guestTarget = aiStart
         ? `/builder/guest?templateId=${encodeURIComponent(templateId)}&aiStart=1`
@@ -77,6 +81,7 @@ const CvBuilderNew: React.FC = () => {
       try {
         let importedData: any | undefined;
         if (importFromUpload && typeof window !== 'undefined') {
+        trackUploadCvStarted({ source_page: 'builder_new', upload_type: 'resume' });
           const raw = window.sessionStorage.getItem('cvpro:imported-draft');
           if (raw) {
             importedData = JSON.parse(raw);
@@ -102,6 +107,7 @@ const CvBuilderNew: React.FC = () => {
         console.log('[CvBuilderNew] created draft', { id: draft?.id });
         setStatus('Opening editor...');
 
+        trackBuilderStarted({ source_page: importFromUpload ? 'upload_flow' : 'templates_page', template_id: templateId, product_type: 'resume' });
         const editorTarget = aiStart ? `/builder/${draft.id}?aiStart=1` : `/builder/${draft.id}`;
         router.replace(editorTarget);
       } catch (e: any) {
