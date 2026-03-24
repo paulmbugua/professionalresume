@@ -80,7 +80,7 @@ const CoverLetterEditorShell: React.FC<Props> = ({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <select
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-white/10 dark:bg-white/5 dark:text-slate-100"
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 [color-scheme:light] dark:border-white/15 dark:bg-slate-900 dark:text-white dark:[color-scheme:dark]"
               value={previewDraft.templateId}
               onChange={(e) =>
                 setValue('templateId', e.target.value as CoverLetterDraft['templateId'], {
@@ -89,7 +89,11 @@ const CoverLetterEditorShell: React.FC<Props> = ({
               }
             >
               {coverLetterTemplateRegistry.map((template) => (
-                <option key={template.id} value={template.id}>
+                <option
+                  key={template.id}
+                  value={template.id}
+                  className="bg-white text-slate-900 dark:bg-slate-900 dark:text-white"
+                >
                   {template.name}
                 </option>
               ))}
