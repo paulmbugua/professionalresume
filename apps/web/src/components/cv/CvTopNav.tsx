@@ -21,6 +21,7 @@ const CvTopNav: React.FC = () => {
   const pathname = usePathname();
   const isDark = theme === 'dark';
   const themeLabel = isDark ? 'Switch to light theme' : 'Switch to dark theme';
+
   const navLinks = [
     {
       href: '/builder/new?templateId=ats-minimal',
@@ -55,8 +56,9 @@ const CvTopNav: React.FC = () => {
 
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200/90 bg-white/80 shadow-[0_1px_0_rgba(15,23,42,0.02)] backdrop-blur-xl dark:border-white/10 dark:bg-darkBg/85">
-      <div className="mx-auto flex min-h-16 w-full max-w-screen-2xl items-center justify-between gap-3 px-4 lg:px-8">
-        <div className="flex min-w-0 items-center gap-6">
+      <div className="mx-auto flex min-h-16 w-full max-w-screen-2xl items-center gap-3 px-4 lg:px-8">
+        {/* Left: Logo */}
+        <div className="flex min-w-0 shrink-0 items-center">
           <Link
             href="/"
             aria-label="OneDollarCVPro home"
@@ -70,17 +72,18 @@ const CvTopNav: React.FC = () => {
               className="object-contain object-left"
             />
           </Link>
+        </div>
 
-          <nav className="hidden items-center gap-4 text-sm font-medium xl:flex">
+        {/* Right cluster: Desktop nav links close to theme/profile icons */}
+        <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
+          <nav className="hidden items-center justify-end gap-6 pr-1 text-sm font-medium xl:flex">
             {navLinks.map((link) => (
               <Link key={link.href} href={link.href} className={linkClass(link.active)}>
                 {link.label}
               </Link>
             ))}
           </nav>
-        </div>
 
-        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
           <button
             type="button"
             onClick={toggleTheme}
@@ -90,6 +93,7 @@ const CvTopNav: React.FC = () => {
           >
             {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
+
           <Link
             href="/profile"
             aria-label="Profile"
