@@ -333,7 +333,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
         <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
           <div className="text-center">
             <h2 className="text-xl font-extrabold text-slate-900 dark:text-white sm:text-2xl">
-              CVPro, as told by our users
+              OneDollarCvPro, as told by our users
             </h2>
           </div>
         </div>
