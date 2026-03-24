@@ -19,7 +19,12 @@ import CvPaymentModal from '../components/cv/CvPaymentModal';
 import { demoResume } from '../templates/demoResume';
 import {
   clearGuestCvState,
+  clearPendingPaymentReturnState,
+  peekPendingPaymentAction,
+  persistPendingCvBuilderState,
+  persistPendingPaymentReturn,
   restoreGuestCvState,
+  restorePendingCvBuilderState,
   clearPendingBuilderAction,
   consumeBuilderAuthReason,
   consumePendingBuilderAction,
@@ -135,15 +140,38 @@ const CvBuilderPageInner: React.FC<{
   const initRef = useRef(true);
   const hydratedDraftIdRef = useRef<string | null>(null);
   const lastSavedSigRef = useRef<string>('');
+  const restoredPaymentStateRef = useRef(false);
 
   const methods = useForm<CvDraft>({ defaultValues: EMPTY_DRAFT, mode: 'onChange' });
   const { reset, getValues, control, setValue } = methods;
   const formValues = useWatch({ control });
+  const paymentRestoreSnapshot = useMemo(() => {
+    if (isGuest) return null;
+    const pending = restorePendingCvBuilderState();
+    if (!pending) return null;
+    if (pending.draftId !== id) return null;
+    return normalizeDraft(pending.snapshot);
+  }, [id, isGuest]);
 
   useEffect(() => {
     const reason = consumeBuilderAuthReason();
     if (reason) setAuthHint(reason);
   }, []);
+
+  useEffect(() => {
+    if (isGuest || !paymentRestoreSnapshot || restoredPaymentStateRef.current) return;
+
+    restoredPaymentStateRef.current = true;
+    hydratedDraftIdRef.current = id;
+    initRef.current = true;
+    reset(paymentRestoreSnapshot);
+    lastSavedSigRef.current = JSON.stringify(paymentRestoreSnapshot);
+    setLastSavedAt('Restored after payment');
+    console.info('[cv-payment-return] restored builder snapshot', {
+      draftId: id,
+      templateId: paymentRestoreSnapshot.templateId,
+    });
+  }, [id, isGuest, paymentRestoreSnapshot, reset]);
 
   useEffect(() => {
     if (!isGuest || data) return;
@@ -267,12 +295,33 @@ const CvBuilderPageInner: React.FC<{
     window.open(`/print/${id}`, '_blank', 'noopener,noreferrer');
   };
 
+  const persistPaymentReturnState = (resumeAction: 'resume_export' | 'resume_print') => {
+    const snapshot = normalizeDraft(getValues());
+    const returnTo = `${window.location.pathname}?cv_action=${resumeAction}`;
+    persistPendingPaymentReturn({
+      returnTo,
+      source: 'cv_builder',
+      createdAt: new Date().toISOString(),
+    });
+    persistPendingCvBuilderState({
+      draftId: id,
+      templateId: snapshot.templateId || forcedTemplateId || 'ats-minimal',
+      pendingAction: resumeAction,
+      snapshot,
+      source: 'cv_builder',
+      createdAt: new Date().toISOString(),
+    });
+  };
+
   const handleExport = async () => {
     if (isGuest) {
       const canContinue = await ensureAuthForBuilderAction('export');
       if (!canContinue) return;
     }
 
+    if (!cvPayment.entitlement.data?.eligible) {
+      persistPaymentReturnState('resume_export');
+    }
     await cvPayment.ensurePaidBeforeResumeExport(doExport);
   };
 
@@ -282,6 +331,9 @@ const CvBuilderPageInner: React.FC<{
       if (!canContinue) return;
     }
 
+    if (!cvPayment.entitlement.data?.eligible) {
+      persistPaymentReturnState('resume_print');
+    }
     await cvPayment.ensurePaidBeforeResumePrint(doPrint);
   };
 
@@ -329,8 +381,13 @@ const CvBuilderPageInner: React.FC<{
   useEffect(() => {
     if (!paymentSuccessFromQuery || !actionFromQuery || isGuest) return;
     const run = async () => {
+      console.info('[cv-payment-return] consuming pending action', {
+        actionFromQuery,
+        pendingStoredAction: peekPendingPaymentAction(),
+      });
       if (actionFromQuery === 'resume_export') await doExport();
       if (actionFromQuery === 'resume_print') await doPrint();
+      clearPendingPaymentReturnState();
       clearPaymentQuery();
     };
     void run();
@@ -392,6 +449,7 @@ const CvBuilderPageInner: React.FC<{
           }}
           onPayWithPaystack={async () => {
             const nextPath = `${window.location.pathname}?cv_action=${cvPayment.pendingAction}`;
+            persistPaymentReturnState(cvPayment.pendingAction as 'resume_export' | 'resume_print');
             const order = await cvPayment.startPaystackCheckout.mutateAsync(nextPath);
             window.location.href = order.authorizationUrl;
           }}
