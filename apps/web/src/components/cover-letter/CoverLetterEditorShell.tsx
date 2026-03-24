@@ -5,6 +5,7 @@ import CoverLetterForm from './CoverLetterForm';
 import CoverLetterPreview from './CoverLetterPreview';
 import { normalizeCoverLetterDraft } from '../../utils/coverLetterDefaults';
 import { coverLetterTemplateRegistry } from '../../templates/coverLetterRegistry';
+import { trackAiAssistUsed } from '../../lib/analytics/events';
 
 type Props = {
   draft: CoverLetterDraft;
@@ -135,26 +136,28 @@ const CoverLetterEditorShell: React.FC<Props> = ({
             <button
               type="button"
               className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:border-primary dark:hover:text-primary"
-              onClick={() =>
+              onClick={() => {
+                trackAiAssistUsed({ source_page: 'cover_letter_builder', feature: 'improve_opening' });
                 setValue(
                   'body.opening',
                   `I am excited to apply for the ${previewDraft.letter.role || 'role'} at ${previewDraft.recipient.company || 'your company'}.\n\n${previewDraft.body.opening}`.trim(),
                   { shouldDirty: true }
                 )
-              }
+              }}
             >
               AI: Improve opening
             </button>
             <button
               type="button"
               className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:border-primary dark:hover:text-primary"
-              onClick={() =>
+              onClick={() => {
+                trackAiAssistUsed({ source_page: 'cover_letter_builder', feature: 'stronger_close' });
                 setValue(
                   'body.closing',
                   `${previewDraft.body.closing}\n\nThank you for your consideration.`.trim(),
                   { shouldDirty: true }
                 )
-              }
+              }}
             >
               AI: Stronger close
             </button>

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useShopContext } from '@cvpro/shared/context';
 import { useCvPayment } from '@cvpro/shared/hooks';
 import { restorePendingPaymentReturn } from '../lib/cvGuestSession';
+import { trackPurchase } from '../lib/analytics/events';
 
 const PaystackCallbackPage: React.FC = () => {
   const router = useRouter();
@@ -36,6 +37,16 @@ const PaystackCallbackPage: React.FC = () => {
           nextPath,
           fallbackReturnTo: pendingReturn?.returnTo || null,
           safeNextPath,
+        });
+        trackPurchase({
+          transaction_id: reference,
+          currency: 'USD',
+          value: 1,
+          purchase_type: 'export_unlock',
+          plan_name: 'one_time_unlock',
+          product_type: pendingReturn?.source === 'cover_letters' ? 'cover_letter' : 'resume',
+          source_page: pendingReturn?.source || 'paystack_callback',
+          items: [{ item_id: 'cvpro-export-unlock', item_name: 'CVPro Export Unlock', price: 1, quantity: 1 }],
         });
         setMessage('Payment verified. Unlock successful. Redirecting...');
         setTimeout(() => {

@@ -18,6 +18,13 @@ import CoverLetterEditorShell from '../components/cover-letter/CoverLetterEditor
 import CvPaymentModal from '../components/cv/CvPaymentModal';
 import { EMPTY_COVER_LETTER_DRAFT, normalizeCoverLetterDraft } from '../utils/coverLetterDefaults';
 import { getReturnToFromQuery } from '../lib/returnTo';
+import {
+  trackBeginCheckout,
+  trackCoverLetterDownload,
+  trackPurchase,
+  trackUploadCvCompleted,
+  trackUploadCvStarted,
+} from '../lib/analytics/events';
 
 function pickParam(v: unknown): string | undefined {
   if (typeof v === 'string') return v;
@@ -235,6 +242,7 @@ const CoverLetterBuilderPageInner: React.FC<{
       coverLetterJson: exportJson,
     });
     setExportUrl(exported.signedUrl || exported.url || undefined);
+    trackCoverLetterDownload({ source_page: 'cover_letter_builder', template_id: draft.templateId });
   };
 
   const doPrint = async () => {
@@ -269,7 +277,9 @@ const CoverLetterBuilderPageInner: React.FC<{
   useEffect(() => {
     if (!paymentSuccessFromQuery || !actionFromQuery) return;
     const run = async () => {
-      if (actionFromQuery === 'cover_letter_export') await doExport();
+      if (actionFromQuery === 'cover_letter_export') {
+        await doExport();
+      }
       if (actionFromQuery === 'cover_letter_print') await doPrint();
       clearPaymentQuery();
     };
@@ -313,16 +323,29 @@ const CoverLetterBuilderPageInner: React.FC<{
         pendingAction={cvPayment.pendingAction}
         onClose={cvPayment.cancelPayment}
         onPayWithMpesa={async (phone) => {
+          trackBeginCheckout({ currency: 'KES', value: 100, purchase_type: 'export_unlock', product_type: 'cover_letter', source_page: 'cover_letter_builder' });
           const res = await cvPayment.initMpesaMutation.mutateAsync(phone);
           setPaymentMessage(res.message || 'Waiting for M-Pesa confirmation');
         }}
         onConfirmMpesa={async (payload) => {
           const res = await cvPayment.confirmMpesaMutation.mutateAsync(payload);
           if (res.status === 'Pending') setPaymentMessage('Waiting for M-Pesa confirmation');
-          if (res.status === 'Completed') setPaymentMessage('Unlock successful. Export unlocked.');
+          if (res.status === 'Completed') {
+            trackPurchase({
+              transaction_id: `mpesa-cover-${Date.now()}`,
+              currency: 'KES',
+              value: 100,
+              purchase_type: 'export_unlock',
+              product_type: 'cover_letter',
+              source_page: 'cover_letter_builder',
+              items: [{ item_id: 'cvpro-export-unlock', item_name: 'CVPro Export Unlock', price: 1, quantity: 1 }],
+            });
+            setPaymentMessage('Unlock successful. Export unlocked.');
+          }
         }}
         onPayWithPaystack={async () => {
           const nextPath = `${window.location.pathname}?cv_action=${cvPayment.pendingAction}`;
+          trackBeginCheckout({ currency: 'USD', value: 1, purchase_type: 'export_unlock', product_type: 'cover_letter', source_page: 'cover_letter_builder', items: [{ item_id: 'cvpro-export-unlock', item_name: 'CVPro Export Unlock', price: 1, quantity: 1 }] });
           const order = await cvPayment.startPaystackCheckout.mutateAsync(nextPath);
           window.location.href = order.authorizationUrl;
         }}
@@ -345,7 +368,10 @@ const CoverLetterBuilderPageInner: React.FC<{
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file) {
-            void handleImport(file, 'cover_letter');
+            trackUploadCvStarted({ source_page: 'cover_letter_builder', upload_type: 'cover_letter' });
+            void handleImport(file, 'cover_letter').finally(() =>
+              trackUploadCvCompleted({ source_page: 'cover_letter_builder', upload_type: 'cover_letter' })
+            );
           }
           e.currentTarget.value = '';
         }}
@@ -358,7 +384,10 @@ const CoverLetterBuilderPageInner: React.FC<{
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file) {
-            void handleImport(file, 'resume');
+            trackUploadCvStarted({ source_page: 'cover_letter_builder', upload_type: 'resume' });
+            void handleImport(file, 'resume').finally(() =>
+              trackUploadCvCompleted({ source_page: 'cover_letter_builder', upload_type: 'resume' })
+            );
           }
           e.currentTarget.value = '';
         }}
