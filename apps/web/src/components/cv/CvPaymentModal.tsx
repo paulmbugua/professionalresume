@@ -64,7 +64,7 @@ const CvPaymentModal: React.FC<Props> = ({
               method === 'PAYSTACK' ? activeMethodClass : inactiveMethodClass
             }`}
           >
-            Paystack
+            Paystack (Card)
           </button>
 
           <button
@@ -125,7 +125,7 @@ const CvPaymentModal: React.FC<Props> = ({
             disabled={Boolean(isLoadingPaystack)}
             className="mt-4 w-full rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
           >
-            {isLoadingPaystack ? 'Redirecting…' : 'Continue to Paystack checkout'}
+            {isLoadingPaystack ? 'Redirecting…' : 'Continue to card checkout'}
           </button>
         )}
 

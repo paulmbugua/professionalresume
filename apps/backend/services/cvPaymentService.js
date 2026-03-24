@@ -484,20 +484,33 @@ export async function createCvPaystackOrder({ userId, callbackUrl }) {
   });
 
   try {
+    const initializePayload = {
+      amount: CVPRO_EXPORT_PRICE_KES * 100,
+      email: await getUserEmail(userId),
+      currency: 'KES',
+      callback_url: callbackUrl,
+      channels: ['card'],
+      metadata: {
+        cvPaymentId: payment.id,
+        cvTransactionId: payment.transaction_id,
+        kind: CV_EXPORT_PURCHASE_KIND,
+        sourceProduct: 'cvpro',
+        restrictedChannels: ['card'],
+      },
+    };
+
+    console.log('[cv/paystack/init] creating hosted checkout order', {
+      paymentId: payment.id,
+      userId: Number(userId),
+      amountMinor: initializePayload.amount,
+      currency: initializePayload.currency,
+      callbackUrl,
+      channels: initializePayload.channels,
+    });
+
     const response = await axios.post(
       'https://api.paystack.co/transaction/initialize',
-      {
-        amount: CVPRO_EXPORT_PRICE_KES * 100,
-        email: await getUserEmail(userId),
-        currency: 'KES',
-        callback_url: callbackUrl,
-        metadata: {
-          cvPaymentId: payment.id,
-          cvTransactionId: payment.transaction_id,
-          kind: CV_EXPORT_PURCHASE_KIND,
-          sourceProduct: 'cvpro',
-        },
-      },
+      initializePayload,
       {
         headers: {
           Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
@@ -512,6 +525,13 @@ export async function createCvPaystackOrder({ userId, callbackUrl }) {
       throw new Error('Invalid Paystack initialize response');
     }
 
+    console.log('[cv/paystack/init] hosted checkout url generated', {
+      paymentId: payment.id,
+      reference,
+      hasAuthorizationUrl: Boolean(authorizationUrl),
+      channels: initializePayload.channels,
+    });
+
     await pool.query(
       `UPDATE cv_payments
        SET provider_reference=$2, metadata = metadata || $3::jsonb, updated_at=NOW()
@@ -525,6 +545,18 @@ export async function createCvPaystackOrder({ userId, callbackUrl }) {
       authorizationUrl,
     };
   } catch (error) {
+    console.error('[cv/paystack/init] failed', {
+      paymentId: payment.id,
+      userId: Number(userId),
+      callbackUrl,
+      channels: ['card'],
+      status: error?.response?.status,
+      providerMessage:
+        error?.response?.data?.message ||
+        error?.response?.data?.data?.message ||
+        error?.message,
+    });
+
     await pool.query(
       `UPDATE cv_payments SET status='Failed', metadata=metadata || $2::jsonb, updated_at=NOW() WHERE id=$1`,
       [payment.id, JSON.stringify({ providerError: error?.response?.data || error.message })],
