@@ -78,8 +78,8 @@ const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, on
       />
 
       {/* Panel */}
-      <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-6">
-        <div className="relative h-[92vh] w-full max-w-7xl overflow-hidden rounded-2xl border border-white/10 bg-white shadow-2xl dark:bg-[#0B0F19]">
+      <div className="absolute inset-0 flex items-center justify-center p-2 sm:p-4 lg:p-6">
+        <div className="relative flex h-[94vh] w-full max-w-7xl min-h-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-white shadow-2xl dark:bg-[#0B0F19]">
           {/* Header */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 bg-white/70 px-4 py-3 backdrop-blur dark:border-white/10 dark:bg-white/5">
             <div className="min-w-0">
@@ -96,9 +96,9 @@ const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, on
               ) : null}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               {/* Zoom controls */}
-              <div className="hidden sm:flex items-center gap-2 rounded-full border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-white/70">
+              <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-white/70">
                 <button
                   type="button"
                   onClick={() => setScale((s) => clamp(Number((s - 0.1).toFixed(2)), 0.7, 1.3))}
@@ -136,11 +136,14 @@ const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, on
           </div>
 
           {/* Content */}
-          <div className="grid h-[calc(92vh-56px-34px)] min-h-0 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px]">
             {/* Big preview */}
             <div className="h-full min-h-0 overflow-auto bg-gradient-to-b from-gray-50 to-white p-3 sm:p-4 dark:from-black/20 dark:to-black/10">
-              <div className="inline-block origin-top-left pb-10" style={{ transform: `scale(${scale})` }}>
-                <div className="min-w-[860px]">
+              <div
+                className="inline-block origin-top-left pb-10"
+                style={{ transform: `scale(${scale})` }}
+              >
+                <div className="w-[min(860px,calc(100vw-2.25rem))] sm:w-[860px]">
                   <div className="overflow-hidden rounded-2xl bg-white shadow-[0_20px_60px_-40px_rgba(15,23,42,0.35)]">
                     {previewHtml ? (
                       <iframe
@@ -150,7 +153,12 @@ const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, on
                         // ✅ no autosize, no infinite scroll: lock to one page height
                         scrolling="no"
                         className="w-full"
-                        style={{ height: ONE_PAGE_HEIGHT_PX, width: '100%', border: 0, background: '#fff' }}
+                        style={{
+                          height: ONE_PAGE_HEIGHT_PX,
+                          width: '100%',
+                          border: 0,
+                          background: '#fff',
+                        }}
                       />
                     ) : TemplateComponent ? (
                       <TemplateComponent draft={previewDraft} />
@@ -165,15 +173,15 @@ const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, on
             </div>
 
             {/* Side panel */}
-            <div className="hidden h-full border-l border-gray-200 bg-white/80 p-4 backdrop-blur dark:border-white/10 dark:bg-white/5 lg:block">
+            <div className="hidden h-full border-l border-gray-200 bg-white/80 p-4 backdrop-blur dark:border-white/10 dark:bg-white/5 xl:block">
               <div className="space-y-4">
                 <div className="rounded-2xl border border-gray-200 bg-white p-4 text-sm shadow-sm dark:border-white/10 dark:bg-white/5">
                   <p className="text-xs font-semibold uppercase tracking-[0.25em] text-gray-400">
                     What you’re seeing
                   </p>
                   <p className="mt-2 text-sm text-gray-700 dark:text-white/80">
-                    This is a one-page preview using our demo resume. When you continue, you’ll start editing and
-                    your details will replace the demo content in real time.
+                    This is a one-page preview using our demo resume. When you continue, you’ll
+                    start editing and your details will replace the demo content in real time.
                   </p>
                 </div>
 

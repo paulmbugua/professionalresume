@@ -90,7 +90,6 @@ const CvEditorShell: React.FC<Props> = ({
     });
   }, [previewDraft.title, templateDisplayName, setValue]);
 
-
   useEffect(() => {
     if (!autoFocusAi) return;
     setActiveTab('edit');
@@ -122,9 +121,9 @@ const CvEditorShell: React.FC<Props> = ({
   const { resumeSource } = resolvePreviewDraft(previewDraft);
 
   return (
-    <div className="mx-auto w-full max-w-screen-2xl px-4 pb-12 pt-6 lg:px-8">
+    <div className="mx-auto w-full max-w-screen-2xl overflow-x-clip px-4 pb-12 pt-4 sm:pt-6 lg:px-8">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4 print:hidden">
-        <div className="w-full max-w-xl">
+        <div className="w-full min-w-0 max-w-xl">
           <p className="text-xs uppercase tracking-[0.24em] text-gray-400">CV Builder</p>
           <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">
             {templateHeaderTitle}
@@ -135,11 +134,11 @@ const CvEditorShell: React.FC<Props> = ({
           <TemplateFillSlider />
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
           <button
             type="button"
             onClick={() => setIsDesignOpen(true)}
-            className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:border-primary hover:text-primary dark:border-white/10 dark:bg-white/5 dark:text-white"
+            className="col-span-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:border-primary hover:text-primary sm:col-span-1 dark:border-white/10 dark:bg-white/5 dark:text-white"
           >
             Design & Style
           </button>
@@ -182,7 +181,7 @@ const CvEditorShell: React.FC<Props> = ({
         </div>
       )}
 
-      <div className="mb-4 flex gap-2 lg:hidden print:hidden">
+      <div className="mb-4 flex gap-2 xl:hidden print:hidden">
         <button
           type="button"
           onClick={() => setActiveTab('edit')}
@@ -207,9 +206,9 @@ const CvEditorShell: React.FC<Props> = ({
         </button>
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-[minmax(320px,420px)_1fr] min-h-0">
+      <div className="grid min-h-0 gap-6 xl:grid-cols-[minmax(340px,460px)_minmax(0,1fr)] xl:gap-8">
         <div
-          className={`${activeTab === 'preview' ? 'hidden' : 'block'} space-y-6 lg:block print:hidden`}
+          className={`${activeTab === 'preview' ? 'hidden' : 'block'} min-w-0 space-y-6 xl:block print:hidden`}
         >
           <CvForm />
 
@@ -224,9 +223,9 @@ const CvEditorShell: React.FC<Props> = ({
           </div>
         </div>
 
-        <div className={`${activeTab === 'edit' ? 'hidden' : 'block'} lg:block min-h-0`}>
-          <div className="sticky top-6 h-[calc(100vh-3rem)] min-h-0">
-            <div className="flex h-full min-h-0 flex-col rounded-2xl border border-gray-200 bg-white/70 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5 print:border-none print:bg-transparent print:p-0">
+        <div className={`${activeTab === 'edit' ? 'hidden' : 'block'} min-h-0 min-w-0 xl:block`}>
+          <div className="h-[70vh] min-h-0 xl:sticky xl:top-6 xl:h-[calc(100vh-6rem)]">
+            <div className="flex h-full min-h-0 flex-col rounded-2xl border border-gray-200 bg-white/70 p-3 shadow-sm backdrop-blur sm:p-4 dark:border-white/10 dark:bg-white/5 print:border-none print:bg-transparent print:p-0">
               <TemplateErrorBoundary>
                 <div className="flex-1 min-h-0 overflow-hidden">
                   <CvPreview draft={previewDraft} showLiveBadge resumeSourceHint={resumeSource} />
@@ -250,7 +249,7 @@ const CvEditorShell: React.FC<Props> = ({
             className="absolute inset-0 bg-black/40 backdrop-blur-[1px]"
             onClick={() => setIsDesignOpen(false)}
           />
-          <div className="absolute inset-y-0 right-0 flex w-full max-w-xl">
+          <div className="absolute inset-y-0 right-0 flex w-full max-w-xl sm:max-w-2xl">
             <div className="ml-auto h-full w-full border-l border-gray-200 bg-white shadow-2xl dark:border-white/10 dark:bg-gray-950">
               <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-white/10">
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
@@ -264,7 +263,7 @@ const CvEditorShell: React.FC<Props> = ({
                   Close
                 </button>
               </div>
-              <div className="h-[calc(100%-56px)] overflow-y-auto p-4">
+              <div className="h-[calc(100%-56px)] overflow-y-auto p-3 sm:p-4">
                 <DesignFormattingPanel />
               </div>
             </div>
