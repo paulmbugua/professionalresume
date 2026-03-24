@@ -86,3 +86,74 @@ ${JSON.stringify(
     : [];
   return suggestions;
 }
+
+export async function jobRequirementAssist({ draft, jobAdvertText, regenerate = false }) {
+  const system =
+    'You are a CV tailoring assistant. Extract role targets from a job advert and produce CV-ready suggestions. Respond with JSON only.';
+  const user = `Analyze this job advert and the current CV context.
+
+Requirements:
+- Return JSON with keys:
+  targetRoleTitle (string)
+  targetYearsExperience (string)
+  keySkills (string[])
+  coreResponsibilities (string[])
+  preferredAchievements (string[])
+  toolsAndTechnologies (string[])
+  qualifications (string[])
+  tailoredHeadline (string)
+  tailoredSummary (string)
+  tailoredExperienceSuggestions (array of objects with: entryHint, focusArea, bullets[])
+- Keep arrays concise (max 8 each), highly relevant, and ATS-friendly.
+- Bullets must be resume-ready, impact-oriented, realistic, and not copy-paste from advert.
+- If regenerate=true, provide alternative phrasing while staying accurate.
+
+regenerate=${regenerate ? 'true' : 'false'}
+
+Job advert text:
+${jobAdvertText}
+
+Current CV context:
+${JSON.stringify(
+  {
+    basics: draft?.basics,
+    summary: draft?.summary,
+    skills: draft?.skills,
+    experience: draft?.experience,
+    certifications: draft?.certifications,
+    projects: draft?.projects,
+  },
+  null,
+  2
+)}`;
+
+  const data = await requestJson({ system, user });
+
+  const toList = (v) =>
+    Array.isArray(v)
+      ? v.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 8)
+      : [];
+  const tailoredExperienceSuggestions = Array.isArray(data.tailoredExperienceSuggestions)
+    ? data.tailoredExperienceSuggestions
+        .map((item) => ({
+          entryHint: String(item?.entryHint || '').trim(),
+          focusArea: String(item?.focusArea || '').trim(),
+          bullets: toList(item?.bullets),
+        }))
+        .filter((item) => item.entryHint || item.focusArea || item.bullets.length)
+        .slice(0, 8)
+    : [];
+
+  return {
+    targetRoleTitle: String(data.targetRoleTitle || '').trim(),
+    targetYearsExperience: String(data.targetYearsExperience || '').trim(),
+    keySkills: toList(data.keySkills),
+    coreResponsibilities: toList(data.coreResponsibilities),
+    preferredAchievements: toList(data.preferredAchievements),
+    toolsAndTechnologies: toList(data.toolsAndTechnologies),
+    qualifications: toList(data.qualifications),
+    tailoredHeadline: String(data.tailoredHeadline || '').trim(),
+    tailoredSummary: String(data.tailoredSummary || '').trim(),
+    tailoredExperienceSuggestions,
+  };
+}

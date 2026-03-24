@@ -176,6 +176,12 @@ export const aiSuggestSkillsSchema = Joi.object({
   draft: Joi.object().required(),
 });
 
+export const aiJobRequirementAssistSchema = Joi.object({
+  draft: Joi.object().required(),
+  jobAdvertText: Joi.string().trim().min(40).required(),
+  regenerate: Joi.boolean().optional().default(false),
+});
+
 const coverLetterStyleSchema = Joi.string()
   .valid('professional', 'concise', 'confident', 'ats-friendly')
   .required();

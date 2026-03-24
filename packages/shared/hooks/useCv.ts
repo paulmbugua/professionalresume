@@ -11,6 +11,7 @@ import {
   exportCvPdf,
   getCoverLetterEntitlement,
   aiGenerateSummary,
+  aiJobRequirementAssist,
   aiRewriteBullet,
   aiSuggestSkills,
   aiGenerateLegacyCoverLetter,
@@ -135,6 +136,12 @@ export function useAiCvAssist({ backendUrl, token }: BaseArgs) {
     },
   });
 
+  const jobRequirementAssistMutation = useMutation({
+    mutationFn: (payload: { draft: CvDraft; jobAdvertText: string; regenerate?: boolean }) => {
+      return aiJobRequirementAssist(backendUrl, token, payload);
+    },
+  });
+
   const generateCoverLetterMutation = useMutation({
     mutationFn: (payload: {
       jobTitle: string;
@@ -184,6 +191,7 @@ export function useAiCvAssist({ backendUrl, token }: BaseArgs) {
       generateSummary: summaryMutation,
       rewriteBullet: rewriteMutation,
       suggestSkills: skillsMutation,
+      jobRequirementAssist: jobRequirementAssistMutation,
       generateCoverLetter: generateCoverLetterMutation,
       rewriteCoverLetterStyle: rewriteCoverLetterStyleMutation,
       improveCoverLetterParagraph: improveCoverLetterParagraphMutation,
@@ -194,6 +202,7 @@ export function useAiCvAssist({ backendUrl, token }: BaseArgs) {
       summaryMutation,
       rewriteMutation,
       skillsMutation,
+      jobRequirementAssistMutation,
       generateCoverLetterMutation,
       rewriteCoverLetterStyleMutation,
       improveCoverLetterParagraphMutation,
