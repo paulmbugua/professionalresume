@@ -124,19 +124,6 @@ const normalizeExperienceItems = (items: any[] = []) =>
     bullets: Array.isArray(item?.bullets) ? item.bullets.filter(Boolean) : [],
   }));
 
-const experienceSignature = (items: any[] = []) =>
-  JSON.stringify(
-    normalizeExperienceItems(items).map((item) => ({
-      company: item.company,
-      role: item.role,
-      start: item.start,
-      end: item.end,
-      location: item.location,
-      description: item.description,
-      bullets: item.bullets,
-    }))
-  );
-
 const BulletsField: React.FC<{
   name: `experience.${number}.bullets` | `projects.${number}.bullets`;
 }> = ({ name }) => (
@@ -147,11 +134,15 @@ const BulletsField: React.FC<{
         {...field}
         value={(field.value || []).join('\n')}
         onChange={(e) => {
+          field.onChange(e.target.value.split('\n'));
+        }}
+        onBlur={(e) => {
           const next = e.target.value
             .split('\n')
             .map((line) => line.trim())
             .filter(Boolean);
           field.onChange(next);
+          field.onBlur();
         }}
         placeholder="Add bullets (one per line)"
       />
@@ -170,11 +161,15 @@ const CsvListField: React.FC<{ name: 'extras.languages' | 'extras.interests'; la
         {...field}
         value={(field.value || []).join(', ')}
         onChange={(e) => {
+          field.onChange(e.target.value.split(','));
+        }}
+        onBlur={(e) => {
           const next = e.target.value
             .split(',')
             .map((item) => item.trim())
             .filter(Boolean);
           field.onChange(next);
+          field.onBlur();
         }}
         placeholder={`${label} (comma separated)`}
       />
@@ -332,7 +327,6 @@ const CvForm: React.FC = () => {
   } | null>(null);
   const [hasAppliedUpload, setHasAppliedUpload] = useState(false);
   const [importUndoSnapshot, setImportUndoSnapshot] = useState<CvDraft | null>(null);
-  const [experienceRenderKey, setExperienceRenderKey] = useState(0);
   const [improvingExperienceIndex, setImprovingExperienceIndex] = useState<number | null>(null);
   const [improvingAllExperience, setImprovingAllExperience] = useState(false);
   const [experienceAiError, setExperienceAiError] = useState<string | null>(null);
@@ -341,7 +335,6 @@ const CvForm: React.FC = () => {
   const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   const didAutoPreloadRef = useRef(false);
-  const lastExperienceSyncSigRef = useRef('');
 
   const basics = useWatch({ control, name: 'basics' });
   const templateId = useWatch({ control, name: 'templateId' });
@@ -402,35 +395,6 @@ const CvForm: React.FC = () => {
       })),
     });
   }, [experience, experienceField.fields]);
-
-  useEffect(() => {
-    const watchedNormalized = normalizeExperienceItems(experience as any[]);
-    const watchedSig = experienceSignature(watchedNormalized);
-    const fieldSig = experienceSignature(experienceField.fields as any[]);
-
-    if (!hasAppliedUpload) return;
-    if (!watchedNormalized.length) return;
-    if (watchedSig === fieldSig) return;
-    if (lastExperienceSyncSigRef.current === watchedSig) return;
-
-    lastExperienceSyncSigRef.current = watchedSig;
-
-    debugCvImport('EXPERIENCE_SYNC_MISMATCH', {
-      watchedSig,
-      fieldSig,
-      watchedNormalized,
-      fieldFields: experienceField.fields,
-    });
-
-    experienceField.replace(watchedNormalized as any);
-    setExperienceRenderKey((k) => k + 1);
-
-    requestAnimationFrame(() => {
-      debugCvImport('EXPERIENCE_SYNC_AFTER_REPLACE', {
-        getValuesExperience: normalizeExperienceItems(getValues('experience') as any[]),
-      });
-    });
-  }, [experience, experienceField.fields, hasAppliedUpload, experienceField, getValues]);
 
   const statuses = useMemo(() => {
     const basicsDone =
@@ -643,7 +607,6 @@ const CvForm: React.FC = () => {
     educationField.replace((demoResume.education as any) || []);
     projectsField.replace((demoResume.projects as any) || []);
     certificationsField.replace((demoResume.certifications as any) || []);
-    setExperienceRenderKey((k) => k + 1);
   };
 
   useEffect(() => {
@@ -689,7 +652,6 @@ const CvForm: React.FC = () => {
     educationField.replace([] as any);
     projectsField.replace([] as any);
     certificationsField.replace([] as any);
-    setExperienceRenderKey((k) => k + 1);
 
     setValue('extras', { languages: [], interests: [] } as any, { shouldDirty: true });
 
@@ -708,6 +670,8 @@ const CvForm: React.FC = () => {
   };
 
   const clearSection = (key: CvSectionKey | 'basics') => {
+    setValue('meta.isDemoSeeded' as any, false, { shouldDirty: true, shouldTouch: false });
+
     if (key === 'basics') {
       setValue('basics.name', '', { shouldDirty: true, shouldTouch: true });
       setValue('basics.headline', '', { shouldDirty: true, shouldTouch: true });
@@ -730,7 +694,6 @@ const CvForm: React.FC = () => {
       case 'experience':
         experienceField.replace([] as any);
         setValue('experience', [] as any, { shouldDirty: true, shouldTouch: true });
-        setExperienceRenderKey((k) => k + 1);
         break;
       case 'education':
         educationField.replace([] as any);
@@ -939,7 +902,6 @@ const CvForm: React.FC = () => {
       educationField.replace((nextDraft.education || []) as any);
       projectsField.replace((nextDraft.projects || []) as any);
       certificationsField.replace((nextDraft.certifications || []) as any);
-      setExperienceRenderKey((k) => k + 1);
 
       debugCvImport('POST_RESET_EXPERIENCE_VALUES', {
         watched: normalizeExperienceItems(getValues('experience') as any[]),
@@ -1304,7 +1266,6 @@ const CvForm: React.FC = () => {
                       reset(importUndoSnapshot);
                       setHasAppliedUpload(Boolean(importUndoSnapshot.meta?.hasImportedCv));
                       setImportUndoSnapshot(null);
-                      setExperienceRenderKey((k) => k + 1);
                     }
                   }}
                   className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 disabled:opacity-50"
@@ -1523,7 +1484,7 @@ const CvForm: React.FC = () => {
           </div>
         }
       >
-        <div key={`experience-render-${experienceRenderKey}`} className="space-y-4">
+          <div className="space-y-4">
           <div className="mb-3 flex items-center justify-between gap-3">
             <p className="text-xs text-gray-500 dark:text-white/60">
               Add roles you want included. Remove the rest. You can improve duties with AI.
@@ -1623,7 +1584,6 @@ const CvForm: React.FC = () => {
                 type="button"
                 onClick={() => {
                   experienceField.remove(index);
-                  setExperienceRenderKey((k) => k + 1);
                 }}
                 className="mt-2 text-xs text-gray-400 hover:text-rose-500"
               >
