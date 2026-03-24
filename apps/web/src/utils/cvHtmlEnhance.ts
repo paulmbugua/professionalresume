@@ -109,7 +109,17 @@ ul{break-inside:auto;page-break-inside:auto}
 li{break-inside:avoid;page-break-inside:avoid}
 @media print{
   html,body{background-color:#fff !important;overflow:visible !important}
-  .page{margin:0 !important;box-shadow:none !important;overflow:visible !important}
+  .page{
+    margin:0 !important;
+    box-shadow:none !important;
+    overflow:visible !important;
+    box-decoration-break:clone;
+    -webkit-box-decoration-break:clone;
+  }
+  .page>.inner,.page>.content,.page>aside,.page>main,.page>section{
+    box-decoration-break:clone;
+    -webkit-box-decoration-break:clone;
+  }
 }
 ${sidebarPagedBackgroundCss}
 ${onePageClampCss}
