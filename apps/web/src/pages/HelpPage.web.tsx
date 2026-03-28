@@ -1,166 +1,191 @@
-'use client';
-
-// apps/web/src/pages/HelpPage.web.tsx
-import React, { useEffect } from 'react';
+import React from 'react';
 import Link from 'next/link';
 
-const HelpPage: React.FC = () => {
-  useEffect(() => {
-    document.title = 'Help, FAQ & Support — Daybreak Learn';
-  }, []);
+const lastUpdated = 'March 28, 2026';
 
+const helpGroups = [
+  {
+    id: 'getting-started',
+    title: 'Getting started',
+    items: [
+      'Create an account and sign in to access the builder.',
+      'Choose a template that matches your role and experience level.',
+      'Start with your core details and fill sections in order for best results.',
+    ],
+  },
+  {
+    id: 'creating-resume',
+    title: 'Creating a resume/CV',
+    items: [
+      'Use the CV builder to add work history, education, and key skills.',
+      'Keep bullet points concise and achievement-focused for ATS readability.',
+      'Use AI assistance to refine phrasing while keeping your details accurate.',
+    ],
+  },
+  {
+    id: 'cover-letters',
+    title: 'Cover letters',
+    items: [
+      'Generate role-specific cover letters and tailor tone per application.',
+      'Edit generated text before sending so it reflects your real experience.',
+      'Save multiple versions for different jobs.',
+    ],
+  },
+  {
+    id: 'downloads-printing',
+    title: 'Downloads and printing',
+    items: [
+      'Preview before exporting to confirm formatting and spacing.',
+      'Use download/print options available in your account after purchase.',
+      'If export fails, refresh and retry from your latest saved draft.',
+    ],
+  },
+  {
+    id: 'payments',
+    title: 'Payments',
+    items: [
+      'CVPro is built around affordable $1 resume/CV unlocking for fast job applications.',
+      'Ensure checkout details are correct before confirming payment.',
+      'Keep your receipt/reference handy in case support follow-up is required.',
+    ],
+  },
+  {
+    id: 'account-login',
+    title: 'Account and login issues',
+    items: [
+      'Check that you are signing in with the same email used during purchase.',
+      'Use password reset from the login page if needed.',
+      'If you cannot access your account, contact support with your registered email.',
+    ],
+  },
+  {
+    id: 'technical-troubleshooting',
+    title: 'Technical troubleshooting',
+    items: [
+      'Try the latest version of Chrome, Safari, Edge, or Firefox.',
+      'Disable browser extensions that block scripts or storage.',
+      'Clear cache and retry if pages fail to save or load correctly.',
+    ],
+  },
+];
+
+const faqItems = [
+  {
+    question: 'How quickly can I create a resume on CVPro?',
+    answer:
+      'Most users can create or significantly improve a resume in minutes using templates and guided AI assistance.',
+  },
+  {
+    question: 'Can I edit my resume after paying?',
+    answer:
+      'Yes. You can continue editing your drafts and export updated versions from your account based on your available access.',
+  },
+  {
+    question: 'Does CVPro support both resume and CV formats?',
+    answer:
+      'Yes. CVPro supports professional resume/CV creation with flexible sections so you can tailor output by job market and role.',
+  },
+  {
+    question: 'What if my download does not work after payment?',
+    answer:
+      'Email support@onedollarcvpro.com with your account email and payment reference. We will verify access and help restore export functionality promptly.',
+  },
+  {
+    question: 'How do I report a bug or share product feedback?',
+    answer:
+      'Use our Complaints & Feedback page or email support directly. Include browser/device details and screenshots for faster investigation.',
+  },
+];
+
+export default function HelpPage() {
   return (
-    <main className="max-w-3xl mx-auto px-4 py-10 text-sm leading-6">
-      <h1 className="text-2xl font-bold">Help, FAQ & Contact Support</h1>
-      <p className="text-gray-500">New here? Start with the quick guide below.</p>
-
-      {/* Quick links */}
-      <div className="mt-4 flex flex-wrap gap-2 text-xs">
-        <a href="#quickstart" className="underline text-primary">Quick Start</a>
-        <a href="#ai-tutor" className="underline text-primary">AI Tutor Studio</a>
-        <a href="#payments" className="underline text-primary">Payments & Tokens</a>
-        <a href="#troubleshooting" className="underline text-primary">Troubleshooting</a>
-        <a href="#tutors" className="underline text-primary">For Tutors</a>
-        <a href="#orgs" className="underline text-primary">For Organizations</a>
-        <a href="#contact" className="underline text-primary">Contact Support</a>
-      </div>
-
-      {/* QUICK START */}
-      <section id="quickstart" className="mt-8 space-y-4">
-        <h2 className="text-lg font-semibold">Quick Start</h2>
-        <ol className="list-decimal pl-5 space-y-2">
-          <li>
-            <strong>Create your account</strong> → <Link href="/login" className="text-primary underline">Login / Sign up</Link>.
-          </li>
-          <li>
-            <strong>Complete your profile</strong> → add your learning goals on{' '}
-            <Link href="/profile/me" className="text-primary underline">My Profile</Link>.
-          </li>
-          <li>
-            <strong>Find a tutor</strong> → browse and book on{' '}
-            <Link href="/find-tutor" className="text-primary underline">Find Tutors</Link>.
-          </li>
-          <li>
-            <strong>Join your session</strong> → we’ll send the meeting link; use any device.
-          </li>
-          <li>
-            Prefer self-paced? Try the{' '}
-            <Link href="/robot-teach" className="text-primary underline">AI Tutor Studio</Link> for free lessons & quizzes.
-          </li>
-        </ol>
-      </section>
-
-      {/* AI TUTOR STUDIO */}
-      <section id="ai-tutor" className="mt-8 space-y-3">
-        <h2 className="text-lg font-semibold">AI Tutor Studio</h2>
-        <ul className="list-disc pl-5 space-y-2">
-          <li>Pick a topic or enter your own. We generate audio lessons, slides, and captions.</li>
-          <li>Take a quiz; score ≥ <strong>70%</strong> to unlock a certificate (optional fee applies only if you choose to generate it).</li>
-          <li>If your organization gave you an assignment link, just follow it and start.</li>
-        </ul>
-        <p className="text-xs text-gray-500">
-          See also: <Link href="/payment-flow" className="underline text-primary">How Payments Work</Link> •{' '}
-          <Link href="/refunds" className="underline text-primary">Refund & Cancellation Policy</Link>
-        </p>
-      </section>
-
-      {/* PAYMENTS */}
-      <section id="payments" className="mt-8 space-y-3">
-        <h2 className="text-lg font-semibold">Payments & Tokens</h2>
-        <ul className="list-disc pl-5 space-y-2">
-          <li><strong>Tokens</strong> are store credit used for tutoring and catalog purchases.</li>
-          <li>Some prices may appear in USD or KES; taxes/fees show at checkout.</li>
-          <li>Certificates are charged only when you choose to generate them.</li>
-        </ul>
-        <p className="text-xs text-gray-500">
-          Policies: <Link href="/terms" className="underline text-primary">Terms of Service</Link> •{' '}
-          <Link href="/privacy-policy" className="underline text-primary">Privacy Policy</Link> •{' '}
-          <Link href="/refunds" className="underline text-primary">Refunds</Link>
-        </p>
-      </section>
-
-      {/* TROUBLESHOOTING */}
-      <section id="troubleshooting" className="mt-8 space-y-4">
-        <h2 className="text-lg font-semibold">Troubleshooting</h2>
-        <details className="rounded-md p-4 bg-gray-50 dark:bg-[#121927]">
-          <summary className="font-medium cursor-pointer">I can’t log in</summary>
-          <ul className="list-disc pl-5 mt-2 space-y-1">
-            <li>Reset your password from the login page.</li>
-            <li>Check spam for verification or reset emails.</li>
-            <li>If the issue persists, contact us (see “Contact Support”).</li>
-          </ul>
-        </details>
-
-        <details className="rounded-md p-4 bg-gray-50 dark:bg-[#121927]">
-          <summary className="font-medium cursor-pointer">Audio/video issues in live sessions</summary>
-          <ul className="list-disc pl-5 mt-2 space-y-1">
-            <li>Restart the browser or Zoom app; check mic/camera permissions.</li>
-            <li>Use a stable connection (Wi-Fi {'>'} mobile data when possible).</li>
-
-          </ul>
-        </details>
-
-        <details className="rounded-md p-4 bg-gray-50 dark:bg-[#121927]">
-          <summary className="font-medium cursor-pointer">AI quiz doesn’t load / certificate locked</summary>
-          <ul className="list-disc pl-5 mt-2 space-y-1">
-            <li>Make sure you completed the lesson first, then generate the quiz.</li>
-            <li>Score at least 70% to unlock certificates. For org assignments, timers/locks may apply.</li>
-          </ul>
-        </details>
-      </section>
-
-      {/* TUTORS */}
-      <section id="tutors" className="mt-8 space-y-3">
-        <h2 className="text-lg font-semibold">For Tutors</h2>
-        <ul className="list-disc pl-5 space-y-2">
-          <li>Get started at <Link href="/become-tutor" className="underline text-primary">Become a Tutor</Link>.</li>
-          <li>List services accurately and deliver professionally; payouts happen after completion and verification.</li>
-          <li>See <Link href="/terms" className="underline text-primary">Terms</Link> and <Link href="/anti-spam-policy" className="underline text-primary">Anti-Spam Policy</Link>.</li>
-        </ul>
-      </section>
-
-      {/* ORGS */}
-      <section id="orgs" className="mt-8 space-y-3">
-        <h2 className="text-lg font-semibold">For Organizations</h2>
-        <ul className="list-disc pl-5 space-y-2">
-          <li>Log in to your org portal: <Link href="/org/login" className="underline text-primary">Institution Login</Link>.</li>
-          <li>Provision seats and manage assignments. See{' '}
-            <Link href="/fulfillment" className="underline text-primary">Fulfillment & Delivery</Link> and MSAs/order forms.
-          </li>
-        </ul>
-      </section>
-
-      {/* CONTACT */}
-      <section id="contact" className="mt-10 space-y-3">
-        <h2 className="text-lg font-semibold">Contact Support</h2>
-
-        <div className="rounded-md p-4 bg-gray-50 dark:bg-[#121927]">
-          <p className="font-medium">EKAZICONNECT SOLUTIONS LTD</p>
-          <p>International House, Mama Ngina Street, CBD, Nairobi, Kenya</p>
-          <p>Postal: P.O. Box 1830-01000, Thika, Kenya</p>
-          <p className="mt-1">
-            Phones:&nbsp;
-            <a href="tel:+254728872800" className="text-primary underline">+254 728 872 800</a> •{' '}
-            <a href="tel:+254720423764" className="text-primary underline">+254 720 423 764</a> •{' '}
-            <a href="tel:+254758276900" className="text-primary underline">+254 758 276 900</a>
+    <main className="bg-site text-slate-900 transition-colors dark:text-white">
+      <div className="mx-auto w-full max-w-6xl px-4 pb-16 pt-10 sm:pt-12 lg:px-8">
+        <header className="rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white to-slate-50 p-6 shadow-[0_10px_30px_rgba(15,23,42,0.07)] dark:border-white/10 dark:from-[#0B1220] dark:to-[#111B2E] sm:p-8">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600 dark:text-blue-300">Support</p>
+          <h1 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">Help Center</h1>
+          <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300 sm:text-base">
+            CVPro helps you create, edit, optimize, and export professional resumes/CVs and cover
+            letters quickly at a low cost. Use this page for quick answers and support pathways.
           </p>
-          <p>
-            Email:&nbsp;
-            <a
-              className="text-primary underline"
-              href="mailto:support@daybreaklearner.com?subject=Support%20Request&body=Hi%20Daybreak%20Support%2C%0A%0AMy%20issue%3A%20"
+          <p className="mt-5 inline-flex rounded-full border border-slate-200/80 bg-white/90 px-3 py-1 text-xs font-medium text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+            Last updated: {lastUpdated}
+          </p>
+        </header>
+
+        <section className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {helpGroups.map((group) => (
+            <article
+              key={group.id}
+              id={group.id}
+              className="rounded-2xl border border-slate-200/80 bg-white/92 p-5 shadow-[0_10px_28px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-[#0B1220]/80 dark:shadow-[0_12px_34px_rgba(0,0,0,0.28)]"
             >
-              support@daybreaklearner.com
-            </a>
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{group.title}</h2>
+              <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                {group.items.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </section>
+
+        <section className="mt-8 rounded-2xl border border-blue-200/80 bg-blue-50/80 p-6 dark:border-blue-400/30 dark:bg-blue-500/10">
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Need direct support?</h2>
+          <p className="mt-2 text-sm text-slate-700 dark:text-slate-200 sm:text-base">
+            Email <a className="font-semibold text-blue-700 dark:text-blue-200" href="mailto:support@onedollarcvpro.com">support@onedollarcvpro.com</a>. Include your account email,
+            screenshots, and payment reference if relevant so we can respond efficiently.
           </p>
-          <p className="text-xs text-gray-500 mt-2">
-            You can also leave structured feedback here:{" "}
-            <Link href="/complaints-feedback" className="underline text-primary">Complaints & Feedback</Link>.
+          <p className="mt-3 text-sm text-slate-700 dark:text-slate-200 sm:text-base">
+            For formal complaints or detailed service feedback, use the{' '}
+            <Link href="/complaints-feedback" className="underline underline-offset-4">
+              Complaints &amp; Feedback page
+            </Link>
+            .
           </p>
-        </div>
-      </section>
+        </section>
+
+        <section className="mt-8 rounded-2xl border border-slate-200/80 bg-white/92 p-6 shadow-[0_10px_28px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-[#0B1220]/80 dark:shadow-[0_12px_34px_rgba(0,0,0,0.28)]">
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Useful links</h2>
+          <div className="mt-4 flex flex-wrap gap-3 text-sm">
+            <Link href="/builder/new?templateId=ats-minimal" className="rounded-full border border-slate-200/90 px-3 py-1.5 hover:bg-slate-50 dark:border-white/15 dark:hover:bg-white/10">
+              Start CV Builder
+            </Link>
+            <Link href="/templates" className="rounded-full border border-slate-200/90 px-3 py-1.5 hover:bg-slate-50 dark:border-white/15 dark:hover:bg-white/10">
+              Browse Templates
+            </Link>
+            <Link href="/cover-letters" className="rounded-full border border-slate-200/90 px-3 py-1.5 hover:bg-slate-50 dark:border-white/15 dark:hover:bg-white/10">
+              Cover Letters
+            </Link>
+            <Link href="/fulfillment" className="rounded-full border border-slate-200/90 px-3 py-1.5 hover:bg-slate-50 dark:border-white/15 dark:hover:bg-white/10">
+              Fulfillment Policy
+            </Link>
+            <Link href="/cookie-policy" className="rounded-full border border-slate-200/90 px-3 py-1.5 hover:bg-slate-50 dark:border-white/15 dark:hover:bg-white/10">
+              Cookie Policy
+            </Link>
+            <Link href="/anti-spam-policy" className="rounded-full border border-slate-200/90 px-3 py-1.5 hover:bg-slate-50 dark:border-white/15 dark:hover:bg-white/10">
+              Anti-Spam Policy
+            </Link>
+          </div>
+        </section>
+
+        <section className="mt-8 rounded-2xl border border-slate-200/80 bg-white/92 p-6 shadow-[0_10px_28px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-[#0B1220]/80 dark:shadow-[0_12px_34px_rgba(0,0,0,0.28)]">
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Frequently asked questions</h2>
+          <div className="mt-4 space-y-3">
+            {faqItems.map((faq) => (
+              <details
+                key={faq.question}
+                className="rounded-xl border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/10 dark:bg-white/5"
+              >
+                <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900 dark:text-white">
+                  {faq.question}
+                </summary>
+                <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{faq.answer}</p>
+              </details>
+            ))}
+          </div>
+        </section>
+      </div>
     </main>
   );
-};
-
-export default HelpPage;
+}

@@ -22,6 +22,18 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.3,
     },
     {
+      url: absoluteUrl('/anti-spam-policy'),
+      lastModified: now,
+      changeFrequency: 'yearly',
+      priority: 0.3,
+    },
+    {
+      url: absoluteUrl('/complaints-feedback'),
+      lastModified: now,
+      changeFrequency: 'monthly',
+      priority: 0.4,
+    },
+    {
       url: absoluteUrl('/fulfillment'),
       lastModified: now,
       changeFrequency: 'yearly',

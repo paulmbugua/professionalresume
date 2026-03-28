@@ -527,12 +527,12 @@ const LoginPage: React.FC = () => {
 
           <p className="mt-6 text-center text-xs text-gray-500 dark:text-white/50">
             By continuing, you agree to our{' '}
-            <Link href="/terms" className="underline">
-              Terms
+            <Link href="/fulfillment" className="underline">
+              Fulfillment Policy
             </Link>{' '}
             and{' '}
-            <Link href="/privacy-policy" className="underline">
-              Privacy Policy
+            <Link href="/cookie-policy" className="underline">
+              Cookie Policy
             </Link>
             .
           </p>

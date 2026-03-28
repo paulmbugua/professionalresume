@@ -559,14 +559,14 @@ export function SiteFooter() {
           <div className="grid grid-cols-2 gap-10 sm:grid-cols-3">
             <div className="flex flex-col gap-2">
               <div className="text-sm font-semibold">Contact Us</div>
-              <Link
-                href="/contact"
+              <a
+                href="mailto:support@onedollarcvpro.com"
                 className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white"
               >
                 Support
-              </Link>
+              </a>
               <Link
-                href="/pricing"
+                href="/builder/new?templateId=ats-minimal"
                 className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white"
               >
                 Pricing
@@ -582,22 +582,28 @@ export function SiteFooter() {
             <div className="flex flex-col gap-2">
               <div className="text-sm font-semibold">Legal</div>
               <Link
-                href="/privacy"
+                href="/fulfillment"
                 className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white"
               >
-                Privacy Policy
+                Fulfillment Policy
               </Link>
               <Link
-                href="/terms"
+                href="/anti-spam-policy"
                 className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white"
               >
-                Terms &amp; Conditions
+                Anti-Spam Policy
               </Link>
               <Link
                 href="/cookie-policy"
                 className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white"
               >
                 Cookies Policy
+              </Link>
+              <Link
+                href="/complaints-feedback"
+                className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white"
+              >
+                Complaints &amp; Feedback
               </Link>
             </div>
 
