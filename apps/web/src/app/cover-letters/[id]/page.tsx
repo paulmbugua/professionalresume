@@ -1,11 +1,12 @@
 import { redirect } from 'next/navigation';
 
 type Props = {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 };
 
-export default function Page({ params }: Props) {
-  redirect(`/cover-letters/editor/${params.id}`);
+export default async function Page({ params }: Props) {
+  const { id } = await params;
+  redirect(`/cover-letters/editor/${id}`);
 }

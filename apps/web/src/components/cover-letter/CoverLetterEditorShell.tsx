@@ -1,10 +1,11 @@
+'use client';
+
 import React, { useMemo, useState } from 'react';
-import { useWatch, useFormContext } from 'react-hook-form';
+import { useFormContext, useWatch } from 'react-hook-form';
 import type { CoverLetterDraft } from '@cvpro/shared/types';
 import CoverLetterForm from './CoverLetterForm';
 import CoverLetterPreview from './CoverLetterPreview';
 import { normalizeCoverLetterDraft } from '../../utils/coverLetterDefaults';
-import { coverLetterTemplateRegistry } from '../../templates/coverLetterRegistry';
 import { trackAiAssistUsed } from '../../lib/analytics/events';
 
 type Props = {
@@ -43,10 +44,47 @@ const CoverLetterEditorShell: React.FC<Props> = ({
   const [activeTab, setActiveTab] = useState<'edit' | 'preview'>('edit');
   const { control, setValue } = useFormContext<CoverLetterDraft>();
   const live = useWatch({ control });
+
   const previewDraft = useMemo(
     () => normalizeCoverLetterDraft((live ?? draft) as CoverLetterDraft),
     [live, draft]
   );
+
+  const subjectText = previewDraft.subject?.trim() ?? '';
+  const bodyText = previewDraft.body?.trim() ?? '';
+  const closingText = previewDraft.closing?.trim() ?? '';
+
+  const handleImproveOpening = () => {
+    trackAiAssistUsed({
+      source_page: 'cover_letter_builder',
+      feature: 'improve_opening',
+    });
+
+    const openingIntro =
+      'I am excited to apply for this opportunity and believe my experience makes me a strong fit.';
+
+    const nextBody = bodyText.startsWith(openingIntro)
+      ? bodyText
+      : [openingIntro, bodyText].filter(Boolean).join('\n\n');
+
+    setValue('body', nextBody, { shouldDirty: true });
+  };
+
+  const handleStrongerClose = () => {
+    trackAiAssistUsed({
+      source_page: 'cover_letter_builder',
+      feature: 'stronger_close',
+    });
+
+    const strongerClose =
+      'Thank you for your time and consideration. I would welcome the opportunity to discuss how I can contribute.';
+
+    const nextClosing = closingText.includes(strongerClose)
+      ? closingText
+      : [closingText, strongerClose].filter(Boolean).join('\n\n');
+
+    setValue('closing', nextClosing, { shouldDirty: true });
+  };
 
   return (
     <div className="mx-auto w-full max-w-screen-2xl overflow-x-clip px-4 pb-10 pt-4 text-slate-900 dark:text-white lg:px-8">
@@ -79,26 +117,8 @@ const CoverLetterEditorShell: React.FC<Props> = ({
                     : 'Unsaved changes'}
             </p>
           </div>
+
           <div className="flex w-full flex-wrap items-center gap-2 xl:w-auto xl:justify-end">
-            <select
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 sm:w-auto [color-scheme:light] dark:border-white/15 dark:bg-slate-900 dark:text-white dark:[color-scheme:dark]"
-              value={previewDraft.templateId}
-              onChange={(e) =>
-                setValue('templateId', e.target.value as CoverLetterDraft['templateId'], {
-                  shouldDirty: true,
-                })
-              }
-            >
-              {coverLetterTemplateRegistry.map((template) => (
-                <option
-                  key={template.id}
-                  value={template.id}
-                  className="bg-white text-slate-900 dark:bg-slate-900 dark:text-white"
-                >
-                  {template.name}
-                </option>
-              ))}
-            </select>
             <button
               type="button"
               onClick={onPrint}
@@ -106,6 +126,7 @@ const CoverLetterEditorShell: React.FC<Props> = ({
             >
               Print
             </button>
+
             <button
               type="button"
               onClick={onExport}
@@ -114,6 +135,7 @@ const CoverLetterEditorShell: React.FC<Props> = ({
             >
               {isExporting ? 'Exporting...' : 'Export PDF'}
             </button>
+
             {exportUrl ? (
               <a
                 href={exportUrl}
@@ -124,6 +146,7 @@ const CoverLetterEditorShell: React.FC<Props> = ({
                 Download
               </a>
             ) : null}
+
             {exportUrl ? (
               <button
                 type="button"
@@ -133,34 +156,23 @@ const CoverLetterEditorShell: React.FC<Props> = ({
                 Copy link
               </button>
             ) : null}
+
             <button
               type="button"
               className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:border-primary dark:hover:text-primary"
-              onClick={() => {
-                trackAiAssistUsed({ source_page: 'cover_letter_builder', feature: 'improve_opening' });
-                setValue(
-                  'body.opening',
-                  `I am excited to apply for the ${previewDraft.letter.role || 'role'} at ${previewDraft.recipient.company || 'your company'}.\n\n${previewDraft.body.opening}`.trim(),
-                  { shouldDirty: true }
-                )
-              }}
+              onClick={handleImproveOpening}
             >
               AI: Improve opening
             </button>
+
             <button
               type="button"
               className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:border-primary dark:hover:text-primary"
-              onClick={() => {
-                trackAiAssistUsed({ source_page: 'cover_letter_builder', feature: 'stronger_close' });
-                setValue(
-                  'body.closing',
-                  `${previewDraft.body.closing}\n\nThank you for your consideration.`.trim(),
-                  { shouldDirty: true }
-                )
-              }}
+              onClick={handleStrongerClose}
             >
               AI: Stronger close
             </button>
+
             <button
               type="button"
               onClick={onSave}
@@ -169,11 +181,13 @@ const CoverLetterEditorShell: React.FC<Props> = ({
             >
               {isSaving ? 'Saving...' : 'Save'}
             </button>
+
             {onImportCoverLetter || onImportResume ? (
               <details className="relative">
                 <summary className="cursor-pointer list-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:bg-white/5 dark:text-slate-100">
                   {isImporting ? 'Importing…' : 'Import / AI Assist'}
                 </summary>
+
                 <div className="absolute left-0 right-0 z-50 mt-2 min-w-[220px] rounded-xl border border-slate-200 bg-white p-2 shadow-xl sm:left-auto sm:right-0 dark:border-white/10 dark:bg-slate-900">
                   {onImportCoverLetter ? (
                     <button
@@ -184,6 +198,7 @@ const CoverLetterEditorShell: React.FC<Props> = ({
                       Upload cover letter
                     </button>
                   ) : null}
+
                   {onImportResume ? (
                     <button
                       type="button"
@@ -198,6 +213,7 @@ const CoverLetterEditorShell: React.FC<Props> = ({
             ) : null}
           </div>
         </div>
+
         {importNotice ? (
           <p className="mt-2 text-xs text-slate-500 dark:text-slate-300">{importNotice}</p>
         ) : null}
@@ -215,6 +231,7 @@ const CoverLetterEditorShell: React.FC<Props> = ({
         >
           Edit
         </button>
+
         <button
           type="button"
           onClick={() => setActiveTab('preview')}
@@ -234,13 +251,17 @@ const CoverLetterEditorShell: React.FC<Props> = ({
         >
           <CoverLetterForm />
         </div>
+
         <div className={`${activeTab === 'edit' ? 'hidden' : 'block'} min-h-0 min-w-0 xl:block`}>
           <div className="h-[70vh] min-h-0 xl:sticky xl:top-24 xl:h-[calc(100vh-8rem)]">
             <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/95 p-3 shadow-sm dark:border-white/10 dark:bg-[#0B1220]/75">
               <div className="mb-2 flex items-center justify-between gap-2 px-1 text-[11px] font-medium text-slate-500 dark:text-slate-300">
                 <span>Live preview</span>
-                <span className="truncate">Template: {previewDraft.templateId}</span>
+                <span className="truncate">
+                  {subjectText ? `Subject: ${subjectText}` : 'Draft preview'}
+                </span>
               </div>
+
               <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-200/80 bg-slate-100/60 dark:border-white/10 dark:bg-slate-950/40">
                 <CoverLetterPreview draft={previewDraft} />
               </div>

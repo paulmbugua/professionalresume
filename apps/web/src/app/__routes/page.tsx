@@ -53,11 +53,7 @@ const routes = [
     component: 'legacy redirect to /cover-letters/editor/[id]',
   },
   { url: '/help', wrapper: 'src/app/help/page.tsx', component: 'src/pages/HelpPage.web.tsx' },
-  {
-    url: '/find-tutor',
-    wrapper: 'src/app/find-tutor/page.tsx',
-    component: 'src/pages/FindTutor.web.tsx',
-  },
+ 
   {
     url: '/messages',
     wrapper: 'src/app/messages/page.tsx',

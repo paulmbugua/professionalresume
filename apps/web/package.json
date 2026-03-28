@@ -4,14 +4,17 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "next lint && yarn verify:routes",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
     "type-check": "tsc --noEmit",
-    "verify:routes": "node ./scripts/verify-routes.mjs"
+    "verify:routes": "node ./scripts/verify-routes.mjs",
+    "cf:build": "opennextjs-cloudflare build",
+    "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "cf:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy"
   },
   "dependencies": {
     "@fortawesome/fontawesome-svg-core": "6.4.0",
@@ -37,12 +40,12 @@
     "lodash.debounce": "^4.0.8",
     "lucide-react": "^0.546.0",
     "moti": "^0.30.0",
-    "next": "^14.2.24",
+    "next": "^16.2.1",
     "pdfjs-dist": "^5.4.296",
     "qrcode": "^1.5.4",
-    "react": "^19.1.0",
+    "react": "^19.2.4",
     "react-cookie-consent": "^9.0.0",
-    "react-dom": "^19.1.0",
+    "react-dom": "^19.2.4",
     "react-error-boundary": "^6.0.0",
     "react-helmet-async": "^2.0.5",
     "react-hook-form": "^7.62.0",
@@ -62,6 +65,7 @@
     "three": "^0.179.1"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.18.0",
     "@tailwindcss/typography": "^0.5.16",
     "@types/canvas-confetti": "^1",
     "@types/lodash.debounce": "^4",
@@ -70,7 +74,9 @@
     "@types/react-dom": "19.0.3",
     "@types/react-native-web": "^0",
     "@types/three": "^0",
-    "typescript": "^5.6.3"
+    "eslint-config-next": "^16.2.1",
+    "typescript": "^5.6.3",
+    "wrangler": "^4.78.0"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [
