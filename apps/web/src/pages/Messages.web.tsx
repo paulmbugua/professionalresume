@@ -16,6 +16,8 @@ import type { ChatMessage } from '@cvpro/shared/types/ShopContextTypes';
 import chatPlaceholder from '../assets/chat.png';
 
 const Messages: React.FC = () => {
+  const placeholderAvatar =
+    typeof chatPlaceholder === 'string' ? chatPlaceholder : chatPlaceholder.src;
   const searchParams = useSearchParams();
   const {
     activeChat,
@@ -150,8 +152,8 @@ const Messages: React.FC = () => {
                       <img
                         src={
                           myProfile.role === 'user'
-                            ? chatPlaceholder
-                            : chatItem.avatar || chatPlaceholder
+                            ? placeholderAvatar
+                            : chatItem.avatar || placeholderAvatar
                         }
                         alt="Avatar"
                         className="w-10 h-10 rounded-full border-2 border-primary object-cover"
@@ -201,8 +203,8 @@ const Messages: React.FC = () => {
                 <img
                   src={
                     myProfile.role === 'user'
-                      ? chatPlaceholder
-                      : activeChat.avatar || chatPlaceholder
+                      ? placeholderAvatar
+                      : activeChat.avatar || placeholderAvatar
                   }
                   alt="Avatar"
                   className="w-8 h-8 rounded-full object-cover"

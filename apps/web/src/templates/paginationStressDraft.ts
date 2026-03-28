@@ -39,7 +39,7 @@ export function buildSidebarPaginationStressDraft(templateId: string): CvDraft {
     summary: 'Product leader focused on pragmatic execution and measurable outcomes.',
     skills: ['Roadmapping', 'Stakeholder Management', 'Experimentation'],
     certifications: [],
-    extras: [],
+    extras: { languages: [], interests: [] },
     experience: Array.from({ length: 7 }, (_, i) => ({
       company: `Main Column Heavy Org ${i + 1}`,
       role: 'Head of Product',

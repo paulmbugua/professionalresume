@@ -484,6 +484,9 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
 export const useShopContext = (): ShopContextValue => {
   const ctx = useContext(ShopContext);
   if (!ctx) {
+    if (typeof window === 'undefined') {
+      return {} as ShopContextValue;
+    }
     throw new Error('useShopContext must be used within a ShopContextProvider');
   }
   return ctx;

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import type { GetServerSideProps } from 'next';
 import { FormProvider, useForm, useWatch } from 'react-hook-form';
 import debounce from 'lodash.debounce';
 import { useShopContext } from '@cvpro/shared/context';
@@ -59,7 +60,7 @@ function mapEditorDraftToUpdatePayload(values: CoverLetterDraft): {
     fontSize?: number;
     lineHeight?: number;
     accentColor?: string;
-    pageTheme?: string;
+    pageTheme?: CoverLetterDraft['style']['pageTheme'];
   };
 } {
   const normalized = normalizeCoverLetterDraft(values);
@@ -68,7 +69,7 @@ function mapEditorDraftToUpdatePayload(values: CoverLetterDraft): {
     templateKey: normalized.templateId,
     data: {
       applicantName: normalized.sender.fullName,
-      applicantTitle: (normalized.sender as any).title || '',
+      applicantTitle: normalized.sender.title || '',
       applicantEmail: normalized.sender.email,
       applicantPhone: normalized.sender.phone,
       applicantLocation: normalized.sender.location,
@@ -435,3 +436,7 @@ const CoverLetterBuilderPage: React.FC = () => {
 };
 
 export default CoverLetterBuilderPage;
+
+export const getServerSideProps: GetServerSideProps = async () => ({
+  props: {},
+});

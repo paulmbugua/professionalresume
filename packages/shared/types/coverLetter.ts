@@ -46,7 +46,7 @@ export type CoverLetterMeta = {
   tags?: string[];
 };
 
-export type CoverLetterDraft = {
+export type LegacyCoverLetterDraft = {
   id: string;
   userId: string;
   title: string;
@@ -72,7 +72,29 @@ export type CoverLetterTemplate = {
   isAtsFriendly?: boolean;
 };
 
-export type CoverLetterExportResponse = {
+export type CoverLetterTemplateResponse = {
+  templates: CoverLetterTemplate[];
+  source?: 'db' | 'local';
+  fallback?: boolean;
+};
+
+export type CoverLetterGeneratePayload = {
+  prompt: string;
+  draftId?: string;
+  templateId?: string;
+  tone?: string;
+  roleTitle?: string;
+  companyName?: string;
+};
+
+export type CoverLetterRewritePayload = {
+  text: string;
+  instruction?: string;
+  draftId?: string;
+  tone?: string;
+};
+
+export type LegacyCoverLetterExportResponse = {
   url: string | null;
   fileKey: string;
   signedUrl?: string;
@@ -122,9 +144,9 @@ export const DEFAULT_COVER_LETTER_META: CoverLetterMeta = {
   tags: [],
 };
 
-export function normalizeCoverLetterDraft(
-  draft: Partial<CoverLetterDraft> = {},
-): CoverLetterDraft {
+export function normalizeLegacyCoverLetterDraft(
+  draft: Partial<LegacyCoverLetterDraft> = {},
+): LegacyCoverLetterDraft {
   return {
     id: draft.id ?? '',
     userId: draft.userId ?? '',

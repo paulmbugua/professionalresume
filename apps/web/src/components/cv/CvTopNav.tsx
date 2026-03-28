@@ -19,6 +19,7 @@ const CvTopNav: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
   const { theme, toggleTheme } = useTheme();
   const pathname = usePathname();
+  const safePathname = pathname ?? '';
   const isDark = theme === 'dark';
   const themeLabel = isDark ? 'Switch to light theme' : 'Switch to dark theme';
 
@@ -26,18 +27,18 @@ const CvTopNav: React.FC = () => {
     {
       href: '/builder/new?templateId=ats-minimal',
       label: 'CV Builder',
-      active: pathname === '/builder/new',
+      active: safePathname === '/builder/new',
     },
-    { href: '/templates', label: 'Templates', active: pathname === '/templates' },
+    { href: '/templates', label: 'Templates', active: safePathname === '/templates' },
     {
       href: '/builder',
       label: 'Drafts',
-      active: pathname === '/builder' || pathname.startsWith('/builder/'),
+      active: safePathname === '/builder' || safePathname.startsWith('/builder/'),
     },
     {
       href: '/cover-letters',
       label: 'Cover Letters',
-      active: pathname === '/cover-letters' || pathname.startsWith('/cover-letters/'),
+      active: safePathname === '/cover-letters' || safePathname.startsWith('/cover-letters/'),
     },
   ];
 

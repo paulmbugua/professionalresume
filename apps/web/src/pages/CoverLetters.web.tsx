@@ -3,6 +3,7 @@
 import React, { useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import type { GetServerSideProps } from 'next';
 import { useShopContext } from '@cvpro/shared/context';
 import {
   useMyCoverLetterDrafts,
@@ -146,3 +147,7 @@ const CoverLettersPage: React.FC = () => {
 };
 
 export default CoverLettersPage;
+
+export const getServerSideProps: GetServerSideProps = async () => ({
+  props: {},
+});

@@ -47,7 +47,30 @@ export const EMPTY_COVER_LETTER_DRAFT: CoverLetterDraft = {
 export const normalizeCoverLetterDraft = (
   raw?: Partial<CoverLetterDraft> | null
 ): CoverLetterDraft => {
+  const legacyDesign =
+    (raw as { design?: Partial<CoverLetterDraft['style']> } | null | undefined)?.design || {};
   const normalized = normalizeCoverLetterRenderModel((raw || {}) as Record<string, unknown>);
+  const styleCandidate = {
+    ...EMPTY_COVER_LETTER_DRAFT.style,
+    ...(raw?.style || {}),
+    ...legacyDesign,
+    ...normalized.style,
+  };
+
+  const normalizedStyle: CoverLetterDraft['style'] = {
+    fontFamily: styleCandidate.fontFamily,
+    fontSize:
+      typeof styleCandidate.fontSize === 'number'
+        ? styleCandidate.fontSize
+        : EMPTY_COVER_LETTER_DRAFT.style.fontSize,
+    lineHeight:
+      typeof styleCandidate.lineHeight === 'number'
+        ? styleCandidate.lineHeight
+        : EMPTY_COVER_LETTER_DRAFT.style.lineHeight,
+    accentColor: styleCandidate.accentColor,
+    pageTheme: styleCandidate.pageTheme === 'warm' ? 'warm' : 'light',
+  };
+
   return {
     ...EMPTY_COVER_LETTER_DRAFT,
     ...(raw || {}),
@@ -86,10 +109,7 @@ export const normalizeCoverLetterDraft = (
       closing: normalized.content.closingParagraph,
     },
     style: {
-      ...EMPTY_COVER_LETTER_DRAFT.style,
-      ...(raw?.style || {}),
-      ...(raw?.design || {}),
-      ...normalized.style,
+      ...normalizedStyle,
     },
   };
 };

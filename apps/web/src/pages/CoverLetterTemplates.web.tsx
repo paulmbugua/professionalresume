@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import type { GetServerSideProps } from 'next';
 import { useShopContext } from '@cvpro/shared/context';
 import { useCreateCoverLetterDraft } from '@cvpro/shared/hooks';
 
@@ -217,3 +218,7 @@ const CoverLetterTemplatesPage: React.FC = () => {
 };
 
 export default CoverLetterTemplatesPage;
+
+export const getServerSideProps: GetServerSideProps = async () => ({
+  props: {},
+});
