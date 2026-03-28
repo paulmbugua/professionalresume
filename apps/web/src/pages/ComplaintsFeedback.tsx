@@ -1,56 +1,86 @@
-// apps/web/src/pages/ComplaintsFeedback.tsx
-import React from "react";
+import React from 'react';
 import Link from 'next/link';
 
-export default function ComplaintsFeedback() {
+import SupportPageLayout from '../components/site/SupportPageLayout';
+
+const lastUpdated = 'March 28, 2026';
+
+export default function ComplaintsFeedbackPage() {
   return (
-    <main className="max-w-3xl mx-auto px-4 py-10 text-sm leading-6">
-      <h1 className="text-2xl font-bold">Complaints & Feedback</h1>
-      <p className="text-gray-500">Last updated: {new Date().toLocaleDateString()}</p>
-
-      <section className="mt-6 space-y-5">
-        <p>
-          We want every learner, tutor, and institution to have a great experience.
-          Tell us what went well and what we should improve.
+    <SupportPageLayout
+      eyebrow="Support"
+      title="Complaints & Feedback"
+      description="Your feedback helps us improve CVPro for every job seeker. Whether you have a suggestion, concern, or issue, we want to hear from you and resolve it quickly."
+      lastUpdated={lastUpdated}
+      contactTitle="Send feedback or raise a concern"
+      contactDescription="Email support@onedollarcvpro.com with relevant details (account email, screenshots, and payment reference when applicable). We aim to respond as promptly as possible."
+      sections={[
+        {
+          id: 'general-feedback',
+          title: 'General feedback',
+          body: (
+            <p>
+              Share ideas on templates, AI suggestions, editor usability, and overall experience. Even
+              short feedback helps us prioritize improvements.
+            </p>
+          ),
+        },
+        {
+          id: 'service-complaints',
+          title: 'Service complaints',
+          body: (
+            <p>
+              If the platform did not meet your expectations, explain what happened and when. Include
+              the steps taken so we can investigate and follow up with a practical resolution.
+            </p>
+          ),
+        },
+        {
+          id: 'billing-concerns',
+          title: 'Billing and payment concerns',
+          body: (
+            <p>
+              For duplicate charges, payment confirmation delays, or checkout issues, include your
+              receipt reference and account email in your message for faster support handling.
+            </p>
+          ),
+        },
+        {
+          id: 'technical-issues',
+          title: 'Technical issues',
+          body: (
+            <p>
+              Report bugs such as failed saves, export/download issues, layout errors, or login
+              problems. Helpful details include browser, device, and a screenshot of the issue.
+            </p>
+          ),
+        },
+        {
+          id: 'content-account',
+          title: 'Content or account concerns',
+          body: (
+            <p>
+              Contact us about account access, profile concerns, or content that may be inaccurate or
+              inappropriate. We review reported issues carefully and take corrective action when needed.
+            </p>
+          ),
+        },
+      ]}
+    >
+      <section className="mt-8 rounded-2xl border border-slate-200/80 bg-white/92 p-6 shadow-[0_10px_28px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-[#0B1220]/80 dark:shadow-[0_12px_34px_rgba(0,0,0,0.28)]">
+        <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Support request checklist</h2>
+        <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-slate-600 dark:text-slate-300 sm:text-base">
+          <li>Subject line that describes the issue clearly.</li>
+          <li>Account email used on CVPro.</li>
+          <li>Timeline and steps to reproduce (if technical).</li>
+          <li>Payment reference (if billing-related).</li>
+          <li>Screenshots or attachments when helpful.</li>
+        </ul>
+        <p className="mt-4 text-sm text-slate-600 dark:text-slate-300 sm:text-base">
+          You can also review our <Link href="/help" className="underline underline-offset-4">Help Center</Link> or
+          <Link href="/fulfillment" className="ml-1 underline underline-offset-4">Fulfillment Policy</Link> for quick answers.
         </p>
-
-        <h2 className="text-lg font-semibold">1) How to contact us</h2>
-        <ul className="list-disc pl-5 space-y-2">
-          <li>Email support: <a className="text-primary" href="mailto:support@daybreaklearner.com">support@daybreaklearner.com</a></li>
-          <li>Abuse/spam reports: <a className="text-primary" href="mailto:abuse@daybreaklearner.com">abuse@daybreaklearner.com</a></li>
-          <li>Privacy requests: <a className="text-primary" href="mailto:privacy@daybreaklearner.com">privacy@daybreaklearner.com</a></li>
-          <li>Phones: <a href="tel:+254728872800">+254 728 872 800</a>, <a href="tel:+254720423764">+254 720 423 764</a>, <a href="tel:+254758276900">+254 758 276 900</a></li>
-        </ul>
-
-        <h2 className="text-lg font-semibold">2) What to include</h2>
-        <p>Order/booking ID (if any), your account email, date/time, tutor/course title, screenshots, and a short description of the issue.</p>
-
-        <h2 className="text-lg font-semibold">3) Our response times</h2>
-        <ul className="list-disc pl-5 space-y-2">
-          <li>General support: initial response within 2 business days.</li>
-          <li>Payment/refund issues: initial response within 2 business days; resolution as fast as your processor allows.</li>
-          <li>Abuse/spam reports: we triage within 24 hours.</li>
-        </ul>
-
-        <h2 className="text-lg font-semibold">4) Escalation</h2>
-        <p>If you’re not satisfied with the outcome, reply to the thread requesting escalation. A senior reviewer will reassess the case.</p>
-
-        <h2 className="text-lg font-semibold">5) Helpful links</h2>
-        <ul className="list-disc pl-5 space-y-1">
-          <li><Link href="/refunds" className="text-primary underline">Refund & Cancellation Policy</Link></li>
-          <li><Link href="/fulfillment" className="text-primary underline">Fulfillment & Delivery Policy</Link></li>
-          <li><Link href="/privacy-policy" className="text-primary underline">Privacy Policy</Link></li>
-          <li><Link href="/anti-spam-policy" className="text-primary underline">Anti-Spam Policy</Link></li>
-          <li><Link href="/payment-flow" className="text-primary underline">How Payments Work</Link></li>
-        </ul>
-
-        <h2 className="text-lg font-semibold">6) Company & address</h2>
-        <div className="rounded-md p-4 bg-gray-50 dark:bg-[#121927] text-sm">
-          <p><strong>EKAZICONNECT SOLUTIONS LTD</strong></p>
-          <p>Registered Office: International House, Mama Ngina Street, CBD, Nairobi, Kenya</p>
-          <p>Postal: P.O. Box 1830-01000, Thika, Kenya</p>
-        </div>
       </section>
-    </main>
+    </SupportPageLayout>
   );
 }

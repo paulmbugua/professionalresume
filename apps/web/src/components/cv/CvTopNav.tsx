@@ -40,6 +40,11 @@ const CvTopNav: React.FC = () => {
       label: 'Cover Letters',
       active: safePathname === '/cover-letters' || safePathname.startsWith('/cover-letters/'),
     },
+    {
+      href: '/help',
+      label: 'Help',
+      active: safePathname === '/help',
+    },
   ];
 
   React.useEffect(() => {
