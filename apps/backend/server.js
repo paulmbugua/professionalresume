@@ -61,15 +61,15 @@ const isProduction = process.env.NODE_ENV === 'production';
 // ─── 1) Environment vars ────────────────────────────────────────────────────────
 const BACKEND_URL      = process.env.BACKEND_URL      || `http://localhost:${process.env.PORT || 4000}`;
 const WEB_BACKEND_URL  = process.env.WEB_BACKEND_URL  || 'http://localhost:5173';
-const PROD_BACKEND_URL = process.env.PROD_BACKEND_URL || 'https://server.daybreaklearner.com';
+const PROD_BACKEND_URL = process.env.PROD_BACKEND_URL || 'https://server.onedollarcvpro.com';
 
 // ─── 2) Allowed origins ────────────────────────────────────────────────────────
 const productionOrigins = [
-  'https://daybreaklearner.com',
-  'https://www.daybreaklearner.com',
-  'https://daybreaklearner.netlify.app',
-  'https://server.daybreaklearner.com',
-  'https://admin.daybreaklearner.com',
+  'https://onedollarcvpro.com',
+  'https://www.onedollarcvpro.com',
+  'https://onedollarcvpro.netlify.app',
+  'https://server.onedollarcvpro.com',
+  'https://admin.onedollarcvpro.com',
 ];
 
 const developmentOrigins = [
