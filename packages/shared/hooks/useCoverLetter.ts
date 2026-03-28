@@ -66,14 +66,22 @@ export function useCreateCoverLetterDraft({ backendUrl, token }: BaseArgs) {
       title?: string;
       data?: {
         applicantName?: string;
+        applicantTitle?: string;
         applicantEmail?: string;
         applicantPhone?: string;
         applicantLocation?: string;
         recipientName?: string;
+        recipientTitle?: string;
         companyName?: string;
+        companyAddress?: string;
         roleTitle?: string;
+        dateText?: string;
+        subjectLine?: string;
+        greeting?: string;
         letterBody?: string;
+        closingParagraph?: string;
         closingLine?: string;
+        signatureName?: string;
       };
       style?: {
         fontFamily?: string;
@@ -101,25 +109,33 @@ export function useSaveCoverLetterDraft({ backendUrl, token }: BaseArgs) {
       payload,
     }: {
       id: string;
-      payload: Partial<CoverLetterDraft> & {
+      payload: Omit<Partial<CoverLetterDraft>, 'style'> & {
         templateKey?: string;
         data?: {
           applicantName?: string;
+          applicantTitle?: string;
           applicantEmail?: string;
           applicantPhone?: string;
           applicantLocation?: string;
           recipientName?: string;
+          recipientTitle?: string;
           companyName?: string;
+          companyAddress?: string;
           roleTitle?: string;
+          dateText?: string;
+          subjectLine?: string;
+          greeting?: string;
           letterBody?: string;
+          closingParagraph?: string;
           closingLine?: string;
+          signatureName?: string;
         };
         style?: {
           fontFamily?: string;
           fontSize?: number;
           lineHeight?: number;
           accentColor?: string;
-          pageTheme?: string;
+          pageTheme?: CoverLetterDraft['style']['pageTheme'];
         };
       };
     }) => {

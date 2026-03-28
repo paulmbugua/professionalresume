@@ -16,16 +16,17 @@ const helperButton =
 const CoverLetterForm: React.FC = () => {
   const { register, setValue, getValues, watch } = useFormContext<CoverLetterDraft>();
 
-  const subject = watch('subject') ?? '';
-  const greeting = watch('greeting') ?? '';
-  const body = watch('body') ?? '';
-  const closing = watch('closing') ?? '';
+  const subject = watch('letter.subject') ?? '';
+  const greeting = watch('letter.greeting') ?? '';
+  const opening = watch('body.opening') ?? '';
+  const middleParagraphs = watch('body.middleParagraphs') ?? [];
+  const closing = watch('body.closing') ?? '';
+  const body = [opening, ...middleParagraphs].filter(Boolean).join('\n\n');
 
-  const appendText = (field: 'body' | 'closing', text: string) => {
-    const current = (getValues(field) ?? '').trim();
-    const next = current ? `${current}\n\n${text}` : text;
-
-    setValue(field, next, {
+  const appendBodyParagraph = (text: string) => {
+    const current = getValues('body.middleParagraphs') ?? [];
+    const next = [...current.filter(Boolean), text];
+    setValue('body.middleParagraphs', next, {
       shouldDirty: true,
       shouldTouch: true,
       shouldValidate: true,
@@ -33,7 +34,7 @@ const CoverLetterForm: React.FC = () => {
   };
 
   const replaceText = (
-    field: 'subject' | 'greeting' | 'body' | 'closing',
+    field: 'letter.subject' | 'letter.greeting' | 'body.opening' | 'body.closing',
     text: string
   ) => {
     setValue(field, text, {
@@ -79,14 +80,14 @@ const CoverLetterForm: React.FC = () => {
           <button
             type="button"
             className={helperButton}
-            onClick={() => replaceText('greeting', 'Dear Hiring Manager,')}
+            onClick={() => replaceText('letter.greeting', 'Dear Hiring Manager,')}
           >
             Dear Hiring Manager
           </button>
           <button
             type="button"
             className={helperButton}
-            onClick={() => replaceText('greeting', 'Dear Recruitment Team,')}
+            onClick={() => replaceText('letter.greeting', 'Dear Recruitment Team,')}
           >
             Dear Recruitment Team
           </button>
@@ -94,7 +95,7 @@ const CoverLetterForm: React.FC = () => {
             type="button"
             className={helperButton}
             onClick={() =>
-              replaceText('subject', 'Application for the advertised position')
+              replaceText('letter.subject', 'Application for the advertised position')
             }
           >
             Set subject
@@ -103,8 +104,8 @@ const CoverLetterForm: React.FC = () => {
             type="button"
             className={helperButton}
             onClick={() =>
-              appendText(
-                'body',
+              replaceText(
+                'body.opening',
                 'I am excited to apply for this opportunity and bring relevant experience, strong execution, and a results-driven mindset.'
               )
             }
@@ -115,8 +116,7 @@ const CoverLetterForm: React.FC = () => {
             type="button"
             className={helperButton}
             onClick={() =>
-              appendText(
-                'body',
+              appendBodyParagraph(
                 'In previous roles, I consistently delivered high-quality work, collaborated effectively with teams, and adapted quickly to changing priorities.'
               )
             }
@@ -127,8 +127,8 @@ const CoverLetterForm: React.FC = () => {
             type="button"
             className={helperButton}
             onClick={() =>
-              appendText(
-                'closing',
+              replaceText(
+                'body.closing',
                 'Thank you for your time and consideration. I would welcome the opportunity to discuss how I can contribute.'
               )
             }
@@ -148,7 +148,7 @@ const CoverLetterForm: React.FC = () => {
           <input
             className={input}
             placeholder="Application for Marketing Assistant"
-            {...register('subject')}
+            {...register('letter.subject')}
           />
         </div>
 
@@ -157,7 +157,7 @@ const CoverLetterForm: React.FC = () => {
           <input
             className={input}
             placeholder="Dear Hiring Manager,"
-            {...register('greeting')}
+            {...register('letter.greeting')}
           />
         </div>
       </section>
@@ -170,7 +170,14 @@ const CoverLetterForm: React.FC = () => {
           <button
             type="button"
             className={helperButton}
-            onClick={() => replaceText('body', '')}
+            onClick={() => {
+              replaceText('body.opening', '');
+              setValue('body.middleParagraphs', [], {
+                shouldDirty: true,
+                shouldTouch: true,
+                shouldValidate: true,
+              });
+            }}
           >
             Clear body
           </button>
@@ -181,7 +188,24 @@ const CoverLetterForm: React.FC = () => {
           <textarea
             className={`${input} min-h-[240px]`}
             placeholder={`Introduce yourself, explain why you fit the role, and highlight the strongest value you bring.\n\nExample:\nI am writing to express my strong interest in this opportunity. My background in customer service, organization, and problem-solving has prepared me to contribute immediately.\n\nI have consistently supported teams by improving workflows, communicating clearly, and maintaining a high standard of professionalism.`}
-            {...register('body')}
+            value={body}
+            onChange={(event) => {
+              const paragraphs = event.target.value
+                .split(/\n{2,}/)
+                .map((p) => p.trim())
+                .filter(Boolean);
+              const [nextOpening, ...nextMiddle] = paragraphs;
+              setValue('body.opening', nextOpening ?? '', {
+                shouldDirty: true,
+                shouldTouch: true,
+                shouldValidate: true,
+              });
+              setValue('body.middleParagraphs', nextMiddle, {
+                shouldDirty: true,
+                shouldTouch: true,
+                shouldValidate: true,
+              });
+            }}
           />
         </div>
 
@@ -190,8 +214,7 @@ const CoverLetterForm: React.FC = () => {
             type="button"
             className={helperButton}
             onClick={() =>
-              appendText(
-                'body',
+              appendBodyParagraph(
                 'My experience has strengthened my communication, teamwork, and ability to deliver excellent results under pressure.'
               )
             }
@@ -202,8 +225,7 @@ const CoverLetterForm: React.FC = () => {
             type="button"
             className={helperButton}
             onClick={() =>
-              appendText(
-                'body',
+              appendBodyParagraph(
                 'I am particularly drawn to this role because it aligns with my strengths, growth mindset, and commitment to meaningful impact.'
               )
             }
@@ -221,7 +243,7 @@ const CoverLetterForm: React.FC = () => {
           <button
             type="button"
             className={helperButton}
-            onClick={() => replaceText('closing', '')}
+            onClick={() => replaceText('body.closing', '')}
           >
             Clear closing
           </button>
@@ -232,7 +254,7 @@ const CoverLetterForm: React.FC = () => {
           <textarea
             className={`${input} min-h-[140px]`}
             placeholder={`Thank you for your time and consideration. I would welcome the opportunity to discuss my application further.\n\nSincerely,`}
-            {...register('closing')}
+            {...register('body.closing')}
           />
         </div>
 
@@ -240,14 +262,14 @@ const CoverLetterForm: React.FC = () => {
           <button
             type="button"
             className={helperButton}
-            onClick={() => replaceText('closing', 'Sincerely,')}
+            onClick={() => replaceText('body.closing', 'Sincerely,')}
           >
             Sincerely
           </button>
           <button
             type="button"
             className={helperButton}
-            onClick={() => replaceText('closing', 'Kind regards,')}
+            onClick={() => replaceText('body.closing', 'Kind regards,')}
           >
             Kind regards
           </button>
@@ -255,7 +277,12 @@ const CoverLetterForm: React.FC = () => {
             type="button"
             className={helperButton}
             onClick={() =>
-              appendText('closing', 'Thank you again for reviewing my application.')
+              replaceText(
+                'body.closing',
+                [closing, 'Thank you again for reviewing my application.']
+                  .filter(Boolean)
+                  .join('\n\n')
+              )
             }
           >
             Add thank-you line

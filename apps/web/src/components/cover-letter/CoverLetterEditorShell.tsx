@@ -50,9 +50,12 @@ const CoverLetterEditorShell: React.FC<Props> = ({
     [live, draft]
   );
 
-  const subjectText = previewDraft.subject?.trim() ?? '';
-  const bodyText = previewDraft.body?.trim() ?? '';
-  const closingText = previewDraft.closing?.trim() ?? '';
+  const subjectText = previewDraft.letter.subject?.trim() ?? '';
+  const bodyText = [previewDraft.body.opening, ...previewDraft.body.middleParagraphs]
+    .filter(Boolean)
+    .join('\n\n')
+    .trim();
+  const closingText = previewDraft.body.closing?.trim() ?? '';
 
   const handleImproveOpening = () => {
     trackAiAssistUsed({
@@ -63,11 +66,9 @@ const CoverLetterEditorShell: React.FC<Props> = ({
     const openingIntro =
       'I am excited to apply for this opportunity and believe my experience makes me a strong fit.';
 
-    const nextBody = bodyText.startsWith(openingIntro)
-      ? bodyText
-      : [openingIntro, bodyText].filter(Boolean).join('\n\n');
-
-    setValue('body', nextBody, { shouldDirty: true });
+    const currentOpening = previewDraft.body.opening?.trim() ?? '';
+    const nextOpening = currentOpening || openingIntro;
+    setValue('body.opening', nextOpening, { shouldDirty: true });
   };
 
   const handleStrongerClose = () => {
@@ -83,7 +84,7 @@ const CoverLetterEditorShell: React.FC<Props> = ({
       ? closingText
       : [closingText, strongerClose].filter(Boolean).join('\n\n');
 
-    setValue('closing', nextClosing, { shouldDirty: true });
+    setValue('body.closing', nextClosing, { shouldDirty: true });
   };
 
   return (

@@ -51,15 +51,18 @@ export default function GoogleRedirectHandler({
   const doneRef = useRef(false);
   const router = useRouter();
   const searchParams = useSearchParams();
+  const safeSearchParams = searchParams ?? new URLSearchParams();
 
   const [mounted, setMounted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => setMounted(true), []);
 
-  const mode = (searchParams.get('mode') === 'institution' ? 'institution' : 'consumer') as LoginMode;
+  const mode = (safeSearchParams.get('mode') === 'institution'
+    ? 'institution'
+    : 'consumer') as LoginMode;
 
-  const rawReturnTo = useMemo(() => searchParams.get('returnTo') || '', [searchParams]);
+  const rawReturnTo = useMemo(() => safeSearchParams.get('returnTo') || '', [safeSearchParams]);
   const fallbackReturnTo = mode === 'institution' ? defaultInstitutionReturnTo : defaultConsumerReturnTo;
   const returnTo = useMemo(() => sanitizeInternalPath(rawReturnTo, fallbackReturnTo), [rawReturnTo, fallbackReturnTo]);
 

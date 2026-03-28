@@ -44,7 +44,7 @@ const PaystackCallbackPage: React.FC = () => {
           value: 1,
           purchase_type: 'export_unlock',
           plan_name: 'one_time_unlock',
-          product_type: pendingReturn?.source === 'cover_letters' ? 'cover_letter' : 'resume',
+          product_type: 'resume',
           source_page: pendingReturn?.source || 'paystack_callback',
           items: [{ item_id: 'cvpro-export-unlock', item_name: 'CVPro Export Unlock', price: 1, quantity: 1 }],
         });

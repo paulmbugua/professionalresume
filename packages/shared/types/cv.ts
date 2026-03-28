@@ -85,7 +85,7 @@ export type CvDraftMeta = {
   importMode?: 'merge' | 'replace';
 };
 
-export type CoverLetterDraft = {
+export type CvCoverLetterContent = {
   subject?: string;
   greeting?: string;
   body?: string;
@@ -130,7 +130,7 @@ export type CvDraft = {
   formatting?: CvFormattingDefaults;
   templateTheme?: CvTemplateTheme;
   richText?: CvRichTextMap;
-  coverLetter?: CoverLetterDraft;
+  coverLetter?: CvCoverLetterContent;
   aiMeta?: CvAiMeta;
   generationMeta?: Record<string, unknown>;
   meta?: CvDraftMeta;
@@ -183,6 +183,7 @@ export type CoverLetterDraft = {
   createdAt?: string;
   sender: {
     fullName: string;
+    title?: string;
     email: string;
     phone: string;
     location: string;
@@ -228,4 +229,3 @@ export type CoverLetterEntitlement = {
   sourcePaymentId?: number;
   grantedAt?: string;
 };
-
