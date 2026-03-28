@@ -75,6 +75,7 @@ const CvTopNav: React.FC = () => {
               alt="OneDollarCVPro"
               fill
               priority
+              sizes="(max-width: 640px) 170px, (max-width: 1024px) 220px, 260px"
               className="object-contain object-left"
             />
           </Link>
