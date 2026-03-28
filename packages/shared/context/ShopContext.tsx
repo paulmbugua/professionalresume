@@ -79,6 +79,11 @@ const normalizeRole = (r: unknown): UserRole => {
   return null;
 };
 
+const isAuthStatus = (status?: number): boolean => status === 401 || status === 403;
+
+const isUserHydratePath = (path: string): boolean =>
+  path === '/api/user/me' || path === '/api/profile/me';
+
 /** single-flight guard to avoid storms when many requests 401 at once */
 let autoLogoutInFlight = false;
 async function runLogoutOnce(fn: () => Promise<void>) {
@@ -101,10 +106,9 @@ function attachAuthGuards(
   onOrgAuthFail: () => Promise<void>,
   onAdminAuthFail: () => Promise<void>,
 ) {
-  http.interceptors.request.use((cfg) => {
+  const requestId = http.interceptors.request.use((cfg) => {
     const { token, orgToken, adminToken } = getTokens();
 
-    // compute pathname safely
     let path = '';
     try {
       const full = axios.getUri(cfg);
@@ -120,22 +124,26 @@ function attachAuthGuards(
     const useToken = wantsAdmin ? adminToken : wantsOrg ? orgToken : token;
 
     cfg.headers = cfg.headers ?? {};
-    if (useToken) (cfg.headers as any).Authorization = `Bearer ${useToken}`;
-    else delete (cfg.headers as any).Authorization;
+    if (useToken) {
+      (cfg.headers as any).Authorization = `Bearer ${useToken}`;
+    } else {
+      delete (cfg.headers as any).Authorization;
+    }
 
     // scrub any stray custom auth header (prevents CORS preflight errors)
     if ((cfg.headers as any)['x-auth-token']) {
       delete (cfg.headers as any)['x-auth-token'];
     }
 
-    (cfg as any).__session = session; // tell response interceptor which session it was
+    (cfg as any).__session = session;
     return cfg;
   });
 
-  http.interceptors.response.use(
+  const responseId = http.interceptors.response.use(
     (res) => res,
     async (error: AxiosError) => {
       const status = error?.response?.status;
+
       let path = '';
       try {
         const full = axios.getUri(error?.config || {});
@@ -148,18 +156,27 @@ function attachAuthGuards(
 
       const session = (error?.config as any)?.__session as 'user' | 'org' | 'admin' | undefined;
 
-      // Admin token will 401 on user endpoints; ignore those 401s.
-      const ignoreUserHydrate401 =
-        session === 'admin' && (path === '/api/user/me' || path === '/api/user/me');
+      // Admin sessions may probe user hydration endpoints; do not treat those as admin auth failures.
+      const ignoreHydrate401ForAdmin = session === 'admin' && isUserHydratePath(path);
 
-      if ((status === 401 || status === 403) && !ignoreUserHydrate401) {
-        if (session === 'admin') await onAdminAuthFail();
-        else if (session === 'org') await onOrgAuthFail();
-        else await onUserAuthFail();
+      if (isAuthStatus(status) && !ignoreHydrate401ForAdmin) {
+        if (session === 'admin') {
+          await onAdminAuthFail();
+        } else if (session === 'org') {
+          await onOrgAuthFail();
+        } else {
+          await onUserAuthFail();
+        }
       }
+
       return Promise.reject(error);
     },
   );
+
+  return () => {
+    http.interceptors.request.eject(requestId);
+    http.interceptors.response.eject(responseId);
+  };
 }
 
 const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
@@ -200,12 +217,15 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     orgToken: '',
     adminToken: '',
   });
+
   useEffect(() => {
     tokensRef.current.token = token;
   }, [token]);
+
   useEffect(() => {
     tokensRef.current.orgToken = orgToken;
   }, [orgToken]);
+
   useEffect(() => {
     tokensRef.current.adminToken = adminToken;
   }, [adminToken]);
@@ -219,6 +239,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
 
     setTokenState('');
     setUserEmail(null);
+    setTokens(0);
     setUserId(null);
     setRole(null);
 
@@ -245,7 +266,6 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     try {
       await storage?.removeItem('adminToken');
     } catch {}
-    // No redirect; admin app can handle route guards itself
   }, [storage]);
 
   const orgLogout = useCallback(async (): Promise<void> => {
@@ -256,17 +276,18 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     await runLogoutOnce(doAutoAdminLogout);
   }, [doAutoAdminLogout]);
 
-  // Attach guards once
+  // Attach guards once and clean them up (important in React strict mode / hot reload)
   useEffect(() => {
-    attachAuthGuards(
+    const detach = attachAuthGuards(
       httpRef.current,
       () => tokensRef.current,
       () => runLogoutOnce(doAutoUserLogout),
       () => runLogoutOnce(doAutoOrgLogout),
       () => runLogoutOnce(doAutoAdminLogout),
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+
+    return detach;
+  }, [doAutoUserLogout, doAutoOrgLogout, doAutoAdminLogout]);
 
   // ── Persist / load tokens & role once ─────────────────────────────────────
   useEffect(() => {
@@ -281,7 +302,6 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
 
         if (t && t.split('.').length === 3) {
           setTokenState(t);
-          // default Authorization should be user token only (interceptor will override as needed)
           httpRef.current.defaults.headers.common.Authorization = `Bearer ${t}`;
         } else if (t) {
           await storage?.removeItem('token');
@@ -310,14 +330,21 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
   const setToken = useCallback(
     async (newToken: string): Promise<void> => {
       setTokenState(newToken);
+
       if (newToken) {
         httpRef.current.defaults.headers.common.Authorization = `Bearer ${newToken}`;
         await storage?.setItem('token', newToken);
-      } else {
-        delete httpRef.current.defaults.headers.common.Authorization;
-        await storage?.removeItem('token');
-        await storage?.removeItem('role');
+        return;
       }
+
+      delete httpRef.current.defaults.headers.common.Authorization;
+      setUserEmail(null);
+      setTokens(0);
+      setUserId(null);
+      setRole(null);
+
+      await storage?.removeItem('token');
+      await storage?.removeItem('role');
     },
     [storage],
   );
@@ -325,7 +352,6 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
   // ── Set / clear institution token (writes to storage) ─────────────────────
   const setOrgToken = useCallback(
     async (newOrgToken: string): Promise<void> => {
-      // ✅ allow clear
       if (!newOrgToken) {
         setOrgTokenState('');
         await storage?.removeItem('orgToken');
@@ -333,7 +359,6 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
         return;
       }
 
-      // validate JWT-ish
       if (typeof newOrgToken !== 'string' || newOrgToken.split('.').length !== 3) {
         console.warn('[ShopContext] setOrgToken ignored non-JWT value');
         return;
@@ -350,6 +375,7 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
   const setAdminToken = useCallback(
     async (newAdminToken: string): Promise<void> => {
       setAdminTokenState(newAdminToken);
+
       if (newAdminToken) {
         await storage?.setItem('adminToken', newAdminToken);
       } else {
@@ -359,7 +385,6 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     [storage],
   );
 
-  // Public user logout (does not touch org or admin sessions)
   const logout = useCallback(async (): Promise<void> => {
     await runLogoutOnce(doAutoUserLogout);
   }, [doAutoUserLogout]);
@@ -372,11 +397,18 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
   const { data: queryData, isLoading: loadingProfile, refetch } = useAppQuery<Profile | null, Error>(
     ['profile', token, adminToken],
     async () => {
-      const res = await httpRef.current.get<ApiProfileMeResponse>('/api/user/me');
-      return res.data.profileExists ? res.data.profile : null;
+      try {
+        const res = await httpRef.current.get<ApiProfileMeResponse>('/api/profile/me');
+        return res.data.profileExists ? res.data.profile : null;
+      } catch (error) {
+        if (axios.isAxiosError(error) && isAuthStatus(error.response?.status)) {
+          return null;
+        }
+        throw error;
+      }
     },
     {
-      enabled: Boolean(token) && !adminToken, // skip in admin session
+      enabled: Boolean(token) && !adminToken,
       retry: false,
     },
   );
@@ -389,30 +421,53 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
 
   // ── Fetch /api/user/me (user details) ─────────────────────────────────────
   const fetchUserDetails = useCallback(async (): Promise<void> => {
-    const { data } = await httpRef.current.get<ApiUserMeResponse>('/api/user/me');
+    try {
+      const { data } = await httpRef.current.get<ApiUserMeResponse>('/api/user/me');
 
-    const incomingEmail = data.email ?? null;
-    if (incomingEmail !== userEmail) setUserEmail(incomingEmail);
+      const incomingEmail = data.email ?? null;
+      if (incomingEmail !== userEmail) setUserEmail(incomingEmail);
 
-    const incomingTokens = data.tokens ?? 0;
-    if (incomingTokens !== tokens) setTokens(incomingTokens);
+      const incomingTokens = data.tokens ?? 0;
+      if (incomingTokens !== tokens) setTokens(incomingTokens);
 
-    const incomingUserId = data.userId != null ? String(data.userId) : null;
-    if (incomingUserId !== userId) setUserId(incomingUserId);
+      const incomingUserId = data.userId != null ? String(data.userId) : null;
+      if (incomingUserId !== userId) setUserId(incomingUserId);
 
-    const incomingRole = normalizeRole(data.role ?? null);
-    if (incomingRole !== role) setRole(incomingRole);
+      const incomingRole = normalizeRole(data.role ?? null);
+      if (incomingRole !== role) setRole(incomingRole);
 
-    // persist role for reloads
-    if (storage) {
-      if (incomingRole) await storage.setItem('role', incomingRole);
-      else await storage.removeItem('role');
+      if (storage) {
+        if (incomingRole) {
+          await storage.setItem('role', incomingRole);
+        } else {
+          await storage.removeItem('role');
+        }
+      }
+    } catch (error) {
+      if (axios.isAxiosError(error) && isAuthStatus(error.response?.status)) {
+        setUserEmail(null);
+        setTokens(0);
+        setUserId(null);
+        setRole(null);
+
+        try {
+          await storage?.removeItem('role');
+        } catch {}
+
+        return;
+      }
+
+      throw error;
     }
-  }, [userEmail, tokens, userId, role, storage]);
+  }, [role, storage, tokens, userEmail, userId]);
 
   useEffect(() => {
-    if (!token || adminToken) return; // skip in admin session
-    void fetchUserDetails().catch((e) => console.error(e));
+    if (!token || adminToken) return;
+
+    void fetchUserDetails().catch((error) => {
+      if (axios.isAxiosError(error) && isAuthStatus(error.response?.status)) return;
+      console.error('[ShopContext] fetchUserDetails failed', error);
+    });
   }, [token, adminToken, fetchUserDetails]);
 
   const refreshUserDetails = useCallback(async (): Promise<void> => {
@@ -422,7 +477,6 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
   // ── Compose and provide context value ─────────────────────────────────────
   const value = useMemo<ShopContextValue>(
     () => ({
-      // existing
       backendUrl,
       token,
       initializing,
@@ -440,15 +494,12 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
       refreshUserDetails,
       role,
 
-      // org
       orgToken,
       setOrgToken,
       orgLogout,
 
-      // axios
       http: httpRef.current,
 
-      // admin
       adminToken,
       setAdminToken,
       adminLogout,

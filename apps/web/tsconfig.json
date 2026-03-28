@@ -1,37 +1,20 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "esnext",
-    "lib": [
-      "dom",
-      "esnext"
-    ],
+    "target": "ESNext",
+    "lib": ["dom", "dom.iterable", "esnext"],
     "jsx": "preserve",
-    "types": [
-      "react",
-      "react-dom",
-      "node",
-      "next"
-    ],
+    "types": ["react", "react-dom", "node", "next"],
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "src/*"
-      ],
-      // point to the flat shared folder
-      "@shared": [
-        "../../packages/shared"
-      ],
-      "@shared/*": [
-        "../../packages/shared/*"
-      ],
+      "@/*": ["src/*"],
+      "@shared": ["../../packages/shared"],
+      "@shared/*": ["../../packages/shared/*"],
       "@cvpro/shared": [
         "../../packages/shared/index.ts",
         "../../packages/shared/index.d.ts"
       ],
-      "@cvpro/shared/*": [
-        "../../packages/shared/*"
-      ],
+      "@cvpro/shared/*": ["../../packages/shared/*"],
       "@cvpro/shared/types": [
         "../../packages/shared/types/index.ts",
         "../../packages/shared/types/index.d.ts"
@@ -46,13 +29,19 @@
     "strictNullChecks": true
   },
   "include": [
-    "src",
+    "next-env.d.ts",
+    ".next/types/**/*.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
     "*.ts",
     "*.tsx",
-    "../../packages/shared",
-    ".next/types/**/*.ts"
-, "eslint.config.mjs"  ],
+    "../../packages/shared/**/*.ts",
+    "../../packages/shared/**/*.tsx"
+  ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    ".next",
+    "dist",
+    "build"
   ]
 }
