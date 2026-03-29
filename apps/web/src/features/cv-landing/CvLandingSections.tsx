@@ -102,6 +102,8 @@ export function LogoMarquee({
   items: { label: string; src?: string }[];
   speedSec?: number;
 }) {
+  const [brokenSrcSet, setBrokenSrcSet] = React.useState<Set<string>>(new Set());
+
   const Row = ({ dup }: { dup?: boolean }) => (
     <div className="flex items-center gap-10 pr-10 sm:gap-12 sm:pr-12">
       {items.map((it, idx) => (
@@ -109,13 +111,20 @@ export function LogoMarquee({
           key={`${dup ? 'dup-' : ''}${idx}-${it.label}`}
           className="flex items-center justify-center"
         >
-          {it.src ? (
+          {it.src && !brokenSrcSet.has(it.src) ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={it.src}
               alt={it.label}
               className="h-8 w-auto select-none object-contain opacity-95 transition hover:opacity-100 dark:brightness-125 sm:h-10 md:h-11"
               draggable={false}
+              onError={() => {
+                setBrokenSrcSet((prev) => {
+                  const next = new Set(prev);
+                  next.add(it.src!);
+                  return next;
+                });
+              }}
             />
           ) : (
             <span className="select-none text-sm font-semibold text-slate-400 dark:text-slate-400 sm:text-base">

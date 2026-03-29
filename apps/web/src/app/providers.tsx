@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import ShopContextProvider from '@cvpro/shared/context/ShopContext';
 import { ThemeProvider } from '@cvpro/shared/hooks';
+import { logResolvedBackendUrl, resolveBackendUrl } from '../lib/backendUrl';
 
 type AsyncStorageLike = {
   getItem: (k: string) => Promise<string | null>;
@@ -12,7 +13,8 @@ type AsyncStorageLike = {
 };
 
 const Providers = ({ children }: { children: React.ReactNode }) => {
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.trim() || 'http://localhost:4001';
+  const backendUrl = resolveBackendUrl(process.env.NEXT_PUBLIC_BACKEND_URL);
+  logResolvedBackendUrl('providers', backendUrl);
 
   // Create storage only once; guard window/localStorage just in case.
   const storage: AsyncStorageLike = useMemo(

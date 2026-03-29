@@ -15,6 +15,7 @@ import { templateRegistryList } from '../../templates/registry';
 import type { AnyTemplate, LandingVariant } from './types';
 import { getLandingCopy, pickTemplatesById, useThumbHtml } from './utils';
 import { trackBuilderStarted, trackTemplateSelect } from '../../lib/analytics/events';
+import { resolveBackendUrl } from '../../lib/backendUrl';
 import {
   CoverLettersPromoSection,
   DotsBg,
@@ -95,9 +96,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
   const { backendUrl, token } = useShopContext() as { backendUrl?: string; token?: string | null };
   const { theme } = useTheme();
   const isDark = theme === 'dark';
-  const processEnv = typeof process !== 'undefined' ? process.env : undefined;
-  const envBackendUrl = processEnv?.NEXT_PUBLIC_BACKEND_URL?.trim() || '';
-  const resolvedBackendUrl = envBackendUrl || backendUrl?.trim() || 'http://localhost:4001';
+  const resolvedBackendUrl = resolveBackendUrl(backendUrl || process.env.NEXT_PUBLIC_BACKEND_URL);
   const router = useRouter();
 
   const { data, isLoading, error } = useCvTemplates({ backendUrl: resolvedBackendUrl });

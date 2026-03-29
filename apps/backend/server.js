@@ -73,6 +73,11 @@ const productionOrigins = [
   'https://admin.onedollarcvpro.com',
 ];
 
+const envOrigins = String(process.env.CORS_ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 const developmentOrigins = [
   BACKEND_URL,
   WEB_BACKEND_URL,
@@ -90,7 +95,9 @@ const developmentOrigins = [
   'exp://192.168.68.47:19000', // Expo app
 ];
 
-const allowedOrigins = isProduction ? productionOrigins : developmentOrigins;
+const allowedOrigins = Array.from(
+  new Set([...(isProduction ? productionOrigins : developmentOrigins), ...envOrigins]),
+);
 
 // ─── 3) CORS for ALL endpoints & preflight OPTIONS (single source of truth) ────
 const corsOptions = {
