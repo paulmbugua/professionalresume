@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
+    "playwright:install": "playwright install chromium",
     "payout:worker": "node cronJobs/payoutWorker.js",
     "start:ipv4": "node --dns-result-order=ipv4first server.js",
     "seed:packages": "node scripts/addPackages.js",
