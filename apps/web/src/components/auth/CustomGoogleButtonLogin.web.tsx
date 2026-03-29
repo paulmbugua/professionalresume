@@ -3,6 +3,9 @@
 import React, { useState } from 'react';
 import { FcGoogle } from 'react-icons/fc';
 
+import { resolveBackendUrl } from '@/lib/backendUrl';
+import { DEFAULT_RETURN_TO, sanitizeInternalReturnTo } from '@/lib/returnTo';
+
 export default function CustomGoogleButtonLogin({
   returnTo,
   className,
@@ -15,12 +18,14 @@ export default function CustomGoogleButtonLogin({
   const handleGoogleLogin = async () => {
     try {
       setLoading(true);
-      const backendUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || '').trim();
-      if (!backendUrl) throw new Error('Missing NEXT_PUBLIC_BACKEND_URL');
+
+      const backendUrl = resolveBackendUrl(process.env.NEXT_PUBLIC_BACKEND_URL);
+      const safeReturnTo = sanitizeInternalReturnTo(returnTo, DEFAULT_RETURN_TO);
 
       const params = new URLSearchParams();
-      if (returnTo) params.set('returnTo', returnTo);
-      const url = `${backendUrl.replace(/\/+$/, '')}/api/auth/google?${params.toString()}`;
+      params.set('returnTo', safeReturnTo);
+
+      const url = `${backendUrl}/api/auth/google?${params.toString()}`;
       window.location.assign(url);
     } catch (err: any) {
       console.error('[google-login] failure', err);
