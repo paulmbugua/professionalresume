@@ -17,7 +17,9 @@
       "service": "cvpro"
     }
   ],
-  
+  "vars": {
+    "NEXT_PUBLIC_BACKEND_URL": "https://server.onedollarcvpro.com"
+  },
   "routes": [
     {
       "pattern": "onedollarcvpro.com",
