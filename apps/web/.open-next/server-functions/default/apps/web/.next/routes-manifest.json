@@ -402,15 +402,15 @@
   "dataRoutes": [
     {
       "page": "/CoverLetterBuilderPage.web",
-      "dataRouteRegex": "^/_next/data/FGfuxnKPdTncRRoY7Tdo1/CoverLetterBuilderPage.web\\.json$"
+      "dataRouteRegex": "^/_next/data/uhRP6KqBn0Vt4Gb8nyHZX/CoverLetterBuilderPage.web\\.json$"
     },
     {
       "page": "/CoverLetters.web",
-      "dataRouteRegex": "^/_next/data/FGfuxnKPdTncRRoY7Tdo1/CoverLetters.web\\.json$"
+      "dataRouteRegex": "^/_next/data/uhRP6KqBn0Vt4Gb8nyHZX/CoverLetters.web\\.json$"
     },
     {
       "page": "/CoverLetterTemplates.web",
-      "dataRouteRegex": "^/_next/data/FGfuxnKPdTncRRoY7Tdo1/CoverLetterTemplates.web\\.json$"
+      "dataRouteRegex": "^/_next/data/uhRP6KqBn0Vt4Gb8nyHZX/CoverLetterTemplates.web\\.json$"
     }
   ],
   "rsc": {
