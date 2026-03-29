@@ -86,7 +86,7 @@ const LoginPage: React.FC = () => {
   const { token } = useShopContext() as any;
 
   const {
-    handleGoogleLoginSuccess,
+    handleGoogleOAuthCode,
     handleGoogleLoginFailure,
     loginWithEmail,
     registerWithEmail,
@@ -103,6 +103,47 @@ const LoginPage: React.FC = () => {
   useEffect(() => {
     if (token) router.replace(getReturnTo() || DEFAULT_RETURN_TO);
   }, [router, token, getReturnTo]);
+
+  useEffect(() => {
+    const authCode = (searchParams?.get('authCode') || '').trim();
+    const authError = (searchParams?.get('authError') || '').trim();
+    if (!authCode && !authError) return;
+
+    if (authError) {
+      handleGoogleLoginFailure(new Error(authError.replace(/_/g, ' ')));
+      setError('Google sign-in failed. Please try again.');
+      return;
+    }
+
+    let cancelled = false;
+    setBusy(true);
+    setError(null);
+
+    void handleGoogleOAuthCode(authCode)
+      .then(() => {
+        if (cancelled) return;
+        trackLogin({ auth_method: 'google', source_page: computedReturnTo });
+        router.replace(getReturnTo() || DEFAULT_RETURN_TO);
+      })
+      .catch((err: any) => {
+        if (cancelled) return;
+        setError(err?.message || 'Google sign-in failed.');
+      })
+      .finally(() => {
+        if (!cancelled) setBusy(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    searchParams,
+    handleGoogleOAuthCode,
+    handleGoogleLoginFailure,
+    computedReturnTo,
+    getReturnTo,
+    router,
+  ]);
 
   const [authMode, setAuthMode] = useState<AuthMode>('Login');
   const [resetMode, setResetMode] = useState<ResetMode>('idle');
@@ -515,12 +556,6 @@ const LoginPage: React.FC = () => {
 
           <div className="flex justify-center">
             <CustomGoogleButtonLogin
-              onSuccess={async (token) => {
-                await handleGoogleLoginSuccess(token);
-                trackLogin({ auth_method: 'google', source_page: computedReturnTo });
-              }}
-              onFailure={handleGoogleLoginFailure}
-              mode="consumer"
               returnTo={getReturnTo()}
             />
           </div>

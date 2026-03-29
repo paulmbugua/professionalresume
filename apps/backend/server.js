@@ -21,6 +21,7 @@ import earningsRoutes from './routes/earningsRoutes.js';
 import uploadsRoutes from './routes/uploadsRoutes.js';
 import coverLetterRoutes from './routes/coverLetterRoutes.js';
 import cvPaymentRoutes from './routes/cvPaymentRoutes.js';
+import authRoutes from './routes/authRoutes.js';
 
 
 // Middleware
@@ -207,6 +208,7 @@ app.use('/api/uploads',                                uploadsRoutes);
 
 app.use('/api/earnings',                               earningsRoutes);
 app.use('/api/user', userRouter);
+app.use('/api/auth',                                   authRoutes);
 
 app.use('/api/ai', inflightLimiter({ keyFn: aiKeyFn, max: Number(process.env.AI_MAX_INFLIGHT || 2) }));
 // ✅ Apply strict AI limiter to expensive AI/TTS work (per-user, per-bucket)

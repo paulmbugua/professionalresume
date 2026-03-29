@@ -147,14 +147,14 @@ const useAuth = (options?: UseLoginOptions) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<Error | null>(null);
 
-  /** GOOGLE FLOW (CVPro) */
-  const handleGoogleLoginSuccess = useCallback(
-    async (idToken: string) => {
+  /** GOOGLE OAUTH CALLBACK FLOW (CVPro) */
+  const handleGoogleOAuthCode = useCallback(
+    async (code: string) => {
       try {
-        const resp: AuthResponse = await api.googleLogin(backendUrl, idToken);
+        const resp: AuthResponse = await api.exchangeGoogleAuthCode(backendUrl, code);
         const jwt = resp?.token;
 
-        if (!jwt) throw new Error('No JWT returned from googleLogin');
+        if (!jwt) throw new Error('No JWT returned from google oauth exchange');
 
         setToken(jwt);
 
@@ -292,7 +292,7 @@ const useAuth = (options?: UseLoginOptions) => {
 
   return {
     // Google
-    handleGoogleLoginSuccess,
+    handleGoogleOAuthCode,
     handleGoogleLoginFailure,
 
     // Email/password
