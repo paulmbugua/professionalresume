@@ -12,16 +12,15 @@
   "/CvTemplates.web": "pages/CvTemplates.web.html",
   "/FulfillmentPolicy": "pages/FulfillmentPolicy.html",
   "/GlobalAuthRedirect": "pages/GlobalAuthRedirect.html",
-  "/GoogleRedirectHandler.web": "pages/GoogleRedirectHandler.web.html",
   "/HelpPage.web": "pages/HelpPage.web.html",
   "/Landing.web": "pages/Landing.web.html",
   "/LoginPage.web": "pages/LoginPage.web.html",
   "/Messages.web": "pages/Messages.web.html",
   "/PaystackCallback.web": "pages/PaystackCallback.web.html",
   "/ProfilePage.web": "pages/ProfilePage.web.html",
+  "/CoverLetters.web": "pages/CoverLetters.web.js",
   "/CoverLetterTemplates.web": "pages/CoverLetterTemplates.web.js",
   "/CoverLetterBuilderPage.web": "pages/CoverLetterBuilderPage.web.js",
-  "/CoverLetters.web": "pages/CoverLetters.web.js",
   "/_document": "pages/_document.js",
   "/404": "pages/404.html"
 }
