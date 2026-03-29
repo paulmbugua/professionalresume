@@ -27,16 +27,16 @@ const toMessage = (err: any) =>
   'Request failed';
 
 // --- Google login stays mostly same but add withCredentials for cookies
-export const googleLogin = async (
+export const exchangeGoogleAuthCode = async (
   backendUrl: string,
-  credential: string
+  code: string
 ): Promise<AuthResponse> => {
   try {
     const api = client(backendUrl);
-    const res = await api.post<AuthResponse>('/api/user/google-login', { token: credential });
+    const res = await api.post<AuthResponse>('/api/auth/google/exchange', { code });
     return res.data;
   } catch (err: any) {
-    console.error('🔴 [googleLogin] status/data:', err.response?.status, err.response?.data);
+    console.error('🔴 [exchangeGoogleAuthCode] status/data:', err.response?.status, err.response?.data);
     throw new Error(toMessage(err));
   }
 };
