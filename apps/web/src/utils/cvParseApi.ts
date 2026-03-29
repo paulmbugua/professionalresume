@@ -42,9 +42,34 @@ export async function parseUploadedCv(args: {
       : undefined,
   });
 
-  const res = await api.post<ParsedCvResponse>('/api/cv/parse', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+  if (process.env.NODE_ENV !== 'production') {
+    console.info('[cv-parse] upload-start', {
+      backendUrl: args.backendUrl,
+      hasToken: Boolean(safeToken),
+      mode: args.mode || 'merge',
+      fileName: args.file?.name,
+      fileType: args.file?.type,
+      fileSize: args.file?.size,
+    });
+  }
 
-  return res.data;
+  try {
+    const res = await api.post<ParsedCvResponse>('/api/cv/parse', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data;
+  } catch (err: any) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[cv-parse] upload-failed', {
+        backendUrl: args.backendUrl,
+        status: err?.response?.status,
+        message:
+          err?.response?.data?.message ||
+          err?.response?.data?.error ||
+          err?.message ||
+          'Request failed',
+      });
+    }
+    throw err;
+  }
 }

@@ -5,6 +5,7 @@ import type { CvDraft } from '@cvpro/shared/types';
 import { demoResume } from '../../templates/demoResume';
 import { templateRegistryById } from '../../templates/registry';
 import { withPreviewEnhancements } from '../../utils/cvHtmlEnhance';
+import { stripScripts } from '../../utils/sanitizeHtmlForIframe';
 
 type TemplateLite = { id: string; name?: string; description?: string };
 
@@ -52,7 +53,7 @@ const TemplateSpotlightModal: React.FC<Props> = ({ isOpen, template, onClose, on
   const previewHtml = useMemo(() => {
     if (!templateMeta?.renderHtml || !template?.id) return null;
 
-    const raw = templateMeta.renderHtml(previewDraft);
+    const raw = stripScripts(templateMeta.renderHtml(previewDraft));
 
     // ✅ Modal should show ONE page only and should NOT autosize
     // - injectAutosize:false prevents height growth loop

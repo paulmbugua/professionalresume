@@ -9,6 +9,9 @@ import type {
 } from '@cvpro/shared/types';
 
 function client(backendUrl: string, token?: string) {
+  if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'production') {
+    console.info('[cv-api] create-client', { backendUrl });
+  }
   return axios.create({
     baseURL: backendUrl,
     withCredentials: true,
@@ -42,6 +45,13 @@ export const listCvTemplates = async (backendUrl: string): Promise<CvTemplateRes
     }
     return { templates: [], source: 'db', fallback: false };
   } catch (err: any) {
+    if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'production') {
+      console.warn('[cv-api] templates-fetch-failed', {
+        backendUrl,
+        status: err?.response?.status,
+        message: toMessage(err),
+      });
+    }
     throw new Error(toMessage(err));
   }
 };

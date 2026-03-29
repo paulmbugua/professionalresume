@@ -2,10 +2,14 @@
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
+const DEFAULT_PUBLIC_BACKEND_URL = 'https://server.onedollarcvpro.com';
+const nextPublicBackendUrl =
+  process.env.NEXT_PUBLIC_BACKEND_URL?.trim().replace(/\/+$/, '') || DEFAULT_PUBLIC_BACKEND_URL;
 
 // Helpful: proves Next sees env at startup (server-side)
 console.log('[next] env check', {
   hasBackendUrl: Boolean(process.env.NEXT_PUBLIC_BACKEND_URL),
+  resolvedBackendUrl: nextPublicBackendUrl,
 });
 
 const nextConfig = {
@@ -19,7 +23,7 @@ const nextConfig = {
 
   // ✅ Safety net: ensure these are always exposed to the client bundle
   env: {
-    NEXT_PUBLIC_BACKEND_URL: process.env.NEXT_PUBLIC_BACKEND_URL,
+    NEXT_PUBLIC_BACKEND_URL: nextPublicBackendUrl,
     NEXT_PUBLIC_APP_ORIGIN: process.env.NEXT_PUBLIC_APP_ORIGIN,
   },
 
