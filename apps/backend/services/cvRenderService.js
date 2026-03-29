@@ -140,11 +140,14 @@ export function buildCvHtml({ draft }) {
 export async function htmlToPdfBuffer(html) {
   let browser = null;
   const platform = process.platform;
+  const isProduction = process.env.NODE_ENV === 'production';
 
-  const logEngineSelection = ({ engine, extra = {} }) => {
+  const logEngineSelection = ({ engine, executablePath = null, fallbackReason = null, extra = {} }) => {
     console.info('[exportPdf] launch', {
       engine,
       platform,
+      executablePath,
+      fallbackReason,
       ...extra,
     });
   };
@@ -161,7 +164,7 @@ export async function htmlToPdfBuffer(html) {
     const candidates = [];
     if (process.env.CHROME_PATH) candidates.push(process.env.CHROME_PATH);
     if (platform === 'win32') candidates.push(...OPTIONAL_WINDOWS_CHROME_PATHS);
-    if (platform === 'linux') candidates.push(...OPTIONAL_LINUX_CHROME_PATHS);
+    if (!isProduction && platform === 'linux') candidates.push(...OPTIONAL_LINUX_CHROME_PATHS);
 
     const chosenPath = candidates.find((candidate) => fs.existsSync(candidate)) || null;
     return {
@@ -170,26 +173,51 @@ export async function htmlToPdfBuffer(html) {
     };
   };
 
-  const tryPuppeteer = async () => {
+  const resolvePuppeteerExecutable = async () => {
     const puppeteer = await import('puppeteer');
+    let bundledPath = null;
+    try {
+      bundledPath = puppeteer.executablePath();
+    } catch {}
+
     const { chosenPath, checkedPaths } = resolveFallbackExecutablePath();
+    const executablePath =
+      process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH)
+        ? process.env.CHROME_PATH
+        : bundledPath && fs.existsSync(bundledPath)
+          ? bundledPath
+          : chosenPath;
+
+    return {
+      puppeteer,
+      executablePath,
+      bundledPath,
+      checkedPaths,
+    };
+  };
+
+  const tryPuppeteer = async (fallbackReason = null) => {
+    const { puppeteer, executablePath, bundledPath, checkedPaths } =
+      await resolvePuppeteerExecutable();
     logEngineSelection({
       engine: 'puppeteer',
+      executablePath: executablePath || null,
+      fallbackReason,
       extra: {
-        fallbackExecutablePath: chosenPath || null,
+        puppeteerBundledExecutablePath: bundledPath || null,
         checkedFallbackPaths: checkedPaths,
       },
     });
 
-    if (!chosenPath) {
+    if (!executablePath) {
       throw new Error(
-        `No fallback Chrome/Chromium executable found for platform=${platform}. Checked: ${checkedPaths.join(', ') || 'none'}`,
+        `No Puppeteer/browser executable found for platform=${platform}. Checked: ${checkedPaths.join(', ') || 'none'}`,
       );
     }
 
     browser = await puppeteer.launch({
       headless: true,
-      executablePath: chosenPath,
+      executablePath,
       args: CONTAINER_BROWSER_ARGS,
     });
 
@@ -207,7 +235,7 @@ export async function htmlToPdfBuffer(html) {
     );
   };
 
-  const tryPlaywright = async () => {
+  const tryPlaywright = async (fallbackReason = null) => {
     const playwright = await import('playwright');
     let bundledExecutablePath = null;
     try {
@@ -218,15 +246,16 @@ export async function htmlToPdfBuffer(html) {
     );
     logEngineSelection({
       engine: 'playwright',
+      executablePath: bundledExecutablePath || null,
+      fallbackReason,
       extra: {
         playwrightBrowserAvailable,
-        playwrightExecutablePath: bundledExecutablePath || null,
       },
     });
 
     if (!playwrightBrowserAvailable) {
       throw new Error(
-        `Playwright Chromium is not installed for platform=${platform}. Run: yarn playwright:install:backend`,
+        `Playwright Chromium is not installed for platform=${platform} (optional fallback engine).`,
       );
     }
 
@@ -250,18 +279,38 @@ export async function htmlToPdfBuffer(html) {
   };
 
   try {
-    try {
-      return await tryPlaywright(false);
-    } catch (e) {
-      console.warn(
-        '[exportPdf] playwright failed; trying puppeteer fallback',
-        e?.message || e,
-      );
-      return await tryPuppeteer();
+    const shouldPreferPuppeteer = platform === 'linux' && isProduction;
+    const engines = shouldPreferPuppeteer
+      ? [
+          { name: 'puppeteer', fn: tryPuppeteer },
+          { name: 'playwright', fn: tryPlaywright },
+        ]
+      : [
+          { name: 'playwright', fn: tryPlaywright },
+          { name: 'puppeteer', fn: tryPuppeteer },
+        ];
+
+    let lastError = null;
+    for (const [index, engine] of engines.entries()) {
+      const fallbackReason =
+        index === 0
+          ? null
+          : `${engines[index - 1].name} failed: ${lastError?.message || 'unknown error'}`;
+      try {
+        return await engine.fn(fallbackReason);
+      } catch (error) {
+        lastError = error;
+        console.warn(
+          `[exportPdf] ${engine.name} failed${index < engines.length - 1 ? '; trying fallback' : ''}`,
+          error?.message || error,
+        );
+      }
     }
+
+    throw lastError || new Error('No PDF engine could render the document.');
   } catch (error) {
     throw new Error(
-      `HTML→PDF rendering failed on platform=${platform}: ${error?.message || error}. Install Playwright Chromium during build (yarn playwright:install:backend) or set CHROME_PATH to a valid Chrome/Chromium binary.`,
+      `HTML→PDF rendering failed on platform=${platform}: ${error?.message || error}. Ensure Puppeteer is installed and can resolve a browser executable (or set CHROME_PATH).`,
     );
   } finally {
     if (browser) {

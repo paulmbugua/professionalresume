@@ -37,7 +37,7 @@
     "lint:fix": "turbo run lint -- --fix",
     "test": "turbo run test",
     "playwright:install:backend": "yarn workspace @cvpro/backend playwright:install",
-    "railway:build:backend": "yarn install --immutable && yarn playwright:install:backend",
+    "railway:build:backend": "yarn install --immutable",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
     "install:natives": "node scripts/check-native-modules.js",
