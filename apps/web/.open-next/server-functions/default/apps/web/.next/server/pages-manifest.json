@@ -20,8 +20,8 @@
   "/PaystackCallback.web": "pages/PaystackCallback.web.html",
   "/ProfilePage.web": "pages/ProfilePage.web.html",
   "/CoverLetterTemplates.web": "pages/CoverLetterTemplates.web.js",
-  "/CoverLetters.web": "pages/CoverLetters.web.js",
   "/CoverLetterBuilderPage.web": "pages/CoverLetterBuilderPage.web.js",
+  "/CoverLetters.web": "pages/CoverLetters.web.js",
   "/_document": "pages/_document.js",
   "/404": "pages/404.html"
 }

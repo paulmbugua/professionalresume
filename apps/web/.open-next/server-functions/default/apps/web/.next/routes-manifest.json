@@ -408,15 +408,15 @@
   "dataRoutes": [
     {
       "page": "/CoverLetterBuilderPage.web",
-      "dataRouteRegex": "^/_next/data/TJc5m6M\\-aZqhOy0b6rAL9/CoverLetterBuilderPage.web\\.json$"
+      "dataRouteRegex": "^/_next/data/_QsHEOqYGp7rUmcFGgo__/CoverLetterBuilderPage.web\\.json$"
     },
     {
       "page": "/CoverLetters.web",
-      "dataRouteRegex": "^/_next/data/TJc5m6M\\-aZqhOy0b6rAL9/CoverLetters.web\\.json$"
+      "dataRouteRegex": "^/_next/data/_QsHEOqYGp7rUmcFGgo__/CoverLetters.web\\.json$"
     },
     {
       "page": "/CoverLetterTemplates.web",
-      "dataRouteRegex": "^/_next/data/TJc5m6M\\-aZqhOy0b6rAL9/CoverLetterTemplates.web\\.json$"
+      "dataRouteRegex": "^/_next/data/_QsHEOqYGp7rUmcFGgo__/CoverLetterTemplates.web\\.json$"
     }
   ],
   "rsc": {
