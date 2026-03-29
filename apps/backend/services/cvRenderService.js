@@ -11,6 +11,16 @@ import {
 
 const SIDEBAR_TEMPLATE_IDS = new Set(['modern-sidebar', 'modern-sidebar-blue']);
 const COVER_LETTER_TEMPLATE_IDS = new Set(Object.keys(coverLetterRenderersById));
+const CONTAINER_BROWSER_ARGS = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'];
+const OPTIONAL_LINUX_CHROME_PATHS = [
+  '/usr/bin/google-chrome',
+  '/usr/bin/chromium',
+  '/usr/bin/chromium-browser',
+];
+const OPTIONAL_WINDOWS_CHROME_PATHS = [
+  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+];
 
 function applySidebarPagedBackgroundCss(templateId) {
   if (!SIDEBAR_TEMPLATE_IDS.has(String(templateId || '').trim())) return '';
@@ -129,6 +139,15 @@ export function buildCvHtml({ draft }) {
 
 export async function htmlToPdfBuffer(html) {
   let browser = null;
+  const platform = process.platform;
+
+  const logEngineSelection = ({ engine, extra = {} }) => {
+    console.info('[exportPdf] launch', {
+      engine,
+      platform,
+      ...extra,
+    });
+  };
 
   const assertPdf = (pdfBuffer) => {
     if (!pdfBuffer || pdfBuffer.length < 30000) {
@@ -138,24 +157,40 @@ export async function htmlToPdfBuffer(html) {
     return pdfBuffer;
   };
 
+  const resolveFallbackExecutablePath = () => {
+    const candidates = [];
+    if (process.env.CHROME_PATH) candidates.push(process.env.CHROME_PATH);
+    if (platform === 'win32') candidates.push(...OPTIONAL_WINDOWS_CHROME_PATHS);
+    if (platform === 'linux') candidates.push(...OPTIONAL_LINUX_CHROME_PATHS);
+
+    const chosenPath = candidates.find((candidate) => fs.existsSync(candidate)) || null;
+    return {
+      chosenPath,
+      checkedPaths: candidates,
+    };
+  };
+
   const tryPuppeteer = async () => {
     const puppeteer = await import('puppeteer');
-    console.info('exportPdf engine=puppeteer');
+    const { chosenPath, checkedPaths } = resolveFallbackExecutablePath();
+    logEngineSelection({
+      engine: 'puppeteer',
+      extra: {
+        fallbackExecutablePath: chosenPath || null,
+        checkedFallbackPaths: checkedPaths,
+      },
+    });
 
-    const systemChrome =
-      process.env.CHROME_PATH ||
-      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-
-    if (process.platform === 'win32' && !fs.existsSync(systemChrome)) {
+    if (!chosenPath) {
       throw new Error(
-        `System Chrome not found at ${systemChrome}. Install Chrome or set CHROME_PATH env var.`,
+        `No fallback Chrome/Chromium executable found for platform=${platform}. Checked: ${checkedPaths.join(', ') || 'none'}`,
       );
     }
 
     browser = await puppeteer.launch({
       headless: true,
-      executablePath: systemChrome,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
+      executablePath: chosenPath,
+      args: CONTAINER_BROWSER_ARGS,
     });
 
     const page = await browser.newPage();
@@ -172,17 +207,32 @@ export async function htmlToPdfBuffer(html) {
     );
   };
 
-  const tryPlaywright = async (useChromeChannel = false) => {
+  const tryPlaywright = async () => {
     const playwright = await import('playwright');
-    console.info(
-      'exportPdf engine=playwright',
-      useChromeChannel ? 'channel=chrome' : 'channel=bundled',
+    let bundledExecutablePath = null;
+    try {
+      bundledExecutablePath = playwright.chromium.executablePath();
+    } catch {}
+    const playwrightBrowserAvailable = Boolean(
+      bundledExecutablePath && fs.existsSync(bundledExecutablePath),
     );
+    logEngineSelection({
+      engine: 'playwright',
+      extra: {
+        playwrightBrowserAvailable,
+        playwrightExecutablePath: bundledExecutablePath || null,
+      },
+    });
+
+    if (!playwrightBrowserAvailable) {
+      throw new Error(
+        `Playwright Chromium is not installed for platform=${platform}. Run: yarn playwright:install:backend`,
+      );
+    }
 
     browser = await playwright.chromium.launch({
       headless: true,
-      ...(useChromeChannel ? { channel: 'chrome' } : {}),
-      args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+      args: [...CONTAINER_BROWSER_ARGS, '--disable-dev-shm-usage'],
     });
 
     const page = await browser.newPage();
@@ -200,37 +250,19 @@ export async function htmlToPdfBuffer(html) {
   };
 
   try {
-    if (process.platform === 'win32') {
-      try {
-        return await tryPuppeteer();
-      } catch (e) {
-        console.warn(
-          '[exportPdf] puppeteer failed on win32; trying playwright chrome channel',
-          e?.message || e,
-        );
-      }
-      try {
-        return await tryPlaywright(true);
-      } catch (e) {
-        console.warn(
-          '[exportPdf] playwright chrome channel failed; trying bundled chromium',
-          e?.message || e,
-        );
-      }
-      return await tryPlaywright(false);
-    }
-
     try {
       return await tryPlaywright(false);
     } catch (e) {
       console.warn(
-        '[exportPdf] playwright failed; trying puppeteer',
+        '[exportPdf] playwright failed; trying puppeteer fallback',
         e?.message || e,
       );
       return await tryPuppeteer();
     }
   } catch (error) {
-    throw new Error(`HTML→PDF rendering failed: ${error?.message || error}`);
+    throw new Error(
+      `HTML→PDF rendering failed on platform=${platform}: ${error?.message || error}. Install Playwright Chromium during build (yarn playwright:install:backend) or set CHROME_PATH to a valid Chrome/Chromium binary.`,
+    );
   } finally {
     if (browser) {
       try {
