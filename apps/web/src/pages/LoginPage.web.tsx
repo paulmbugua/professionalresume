@@ -9,31 +9,14 @@ import { Eye, EyeOff, FileCheck2, FileText, Sparkles } from 'lucide-react';
 import useAuth from '@cvpro/shared/hooks/useAuth';
 import { useShopContext } from '@cvpro/shared/context';
 import CustomGoogleButtonLogin from '@/components/auth/CustomGoogleButtonLogin.web';
-import { getReturnToFromQuery } from '../lib/returnTo';
+import { DEFAULT_RETURN_TO, getReturnToFromQuery, sanitizeInternalReturnTo } from '../lib/returnTo';
 import { trackLogin, trackSignUp } from '../lib/analytics/events';
 
 type AuthMode = 'Login' | 'Sign Up';
 type ResetMode = 'idle' | 'requesting' | 'verifying';
 
-const DEFAULT_RETURN_TO = '/builder';
 const RETURN_TO_SS_KEY = 'auth:returnTo';
 const CV_AUTH_REASON_SS_KEY = 'auth:cvReason';
-
-/**
- * Avoid open redirects.
- * - Allow only internal paths like "/builder", "/templates"
- * - Disallow "https://evil.com", "//evil.com", "javascript:..."
- */
-const sanitizeInternalPath = (raw?: string | null) => {
-  const s = (raw || '').trim();
-  if (!s) return DEFAULT_RETURN_TO;
-
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(s)) return DEFAULT_RETURN_TO;
-  if (s.startsWith('//')) return DEFAULT_RETURN_TO;
-  if (!s.startsWith('/')) return DEFAULT_RETURN_TO;
-
-  return s.replace(/\/{2,}/g, '/');
-};
 
 const safeSessionGet = (k: string) => {
   try {
@@ -69,7 +52,7 @@ const LoginPage: React.FC = () => {
   const searchParams = useSearchParams();
 
   const computedReturnTo = useMemo(
-    () => sanitizeInternalPath(getReturnToFromQuery(searchParams, DEFAULT_RETURN_TO)),
+    () => sanitizeInternalReturnTo(getReturnToFromQuery(searchParams, DEFAULT_RETURN_TO)),
     [searchParams]
   );
 
@@ -79,7 +62,7 @@ const LoginPage: React.FC = () => {
   }, []);
 
   const getReturnTo = useCallback(() => {
-    return sanitizeInternalPath(safeSessionGet(RETURN_TO_SS_KEY)) || DEFAULT_RETURN_TO;
+    return sanitizeInternalReturnTo(safeSessionGet(RETURN_TO_SS_KEY)) || DEFAULT_RETURN_TO;
   }, []);
   const clearReturnTo = useCallback(() => safeSessionRemove(RETURN_TO_SS_KEY), []);
 
@@ -94,7 +77,7 @@ const LoginPage: React.FC = () => {
     resetPasswordWithOTP,
   } = useAuth({
     navigateFn: (dest) => {
-      const target = sanitizeInternalPath(dest || getReturnTo());
+      const target = sanitizeInternalReturnTo(dest || getReturnTo());
       clearReturnTo();
       router.replace(target);
     },

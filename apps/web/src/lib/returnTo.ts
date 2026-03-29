@@ -4,9 +4,27 @@ type SearchLike = {
   get: (name: string) => string | null;
 };
 
+export const DEFAULT_RETURN_TO = '/builder';
+
+/**
+ * Avoid open redirects.
+ * - Allow only internal paths like "/builder", "/templates"
+ * - Disallow "https://evil.com", "//evil.com", "javascript:..."
+ */
+export function sanitizeInternalReturnTo(raw?: string | null, fallback = DEFAULT_RETURN_TO): string {
+  const candidate = (raw || '').trim();
+  if (!candidate) return fallback;
+
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(candidate)) return fallback;
+  if (candidate.startsWith('//')) return fallback;
+  if (!candidate.startsWith('/')) return fallback;
+
+  return candidate.replace(/\/{2,}/g, '/');
+}
+
 export function getReturnToFromQuery(
   query: URLSearchParams | SearchLike | QueryObject | null | undefined,
-  fallback = '/builder',
+  fallback = DEFAULT_RETURN_TO,
 ): string {
   if (!query) return fallback;
 
@@ -25,10 +43,5 @@ export function getReturnToFromQuery(
   };
 
   const candidate = readValue('returnTo') || readValue('next') || fallback;
-
-  if (!candidate.startsWith('/')) return fallback;
-  if (candidate.startsWith('//')) return fallback;
-  if (/^https?:\/\//i.test(candidate)) return fallback;
-
-  return candidate;
+  return sanitizeInternalReturnTo(candidate, fallback);
 }
