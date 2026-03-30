@@ -3,6 +3,10 @@ import {
   buildCssVars as buildCssVarsJs,
   normalizeCvDraft as normalizeCvDraftJs,
   paginationCss as paginationCssJs,
+  buildCvFontFaceCss as buildCvFontFaceCssJs,
+  getTemplateFontAudit as getTemplateFontAuditJs,
+  getTemplateFontDependencies as getTemplateFontDependenciesJs,
+  getTemplateFontStack as getTemplateFontStackJs,
   resolveTemplateTypography as resolveTemplateTypographyJs,
   renderCvHtmlByTemplate as renderCvHtmlByTemplateJs,
   renderersById as renderersByIdJs,
@@ -21,3 +25,12 @@ export const paginationCss: string = paginationCssJs;
 export const resolveTemplateTypography: (draft?: CvDraft) => Record<string, number> =
   resolveTemplateTypographyJs;
 export const templateMarkersById: Record<string, string[]> = templateMarkersByIdJs;
+
+export const buildCvFontFaceCss: (input?: { fontKeys?: string[] }) => string =
+  buildCvFontFaceCssJs;
+export const getTemplateFontStack: (templateId?: string) => string = getTemplateFontStackJs;
+export const getTemplateFontDependencies: (templateId?: string) => string[] =
+  getTemplateFontDependenciesJs;
+export const getTemplateFontAudit: () =>
+  Array<{ templateId: string; fontFamily: string; dependencies: string[] }> =
+  getTemplateFontAuditJs;

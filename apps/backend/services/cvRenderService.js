@@ -3,6 +3,10 @@ import {
   normalizeCvDraft,
   renderersById as cvRenderersById,
   templateMarkersById as cvTemplateMarkersById,
+  buildCvFontFaceCss,
+  getTemplateFontAudit,
+  getTemplateFontDependencies,
+  getTemplateFontStack,
 } from '../../../packages/shared/cv/renderers/index.js';
 import {
   renderersById as coverLetterRenderersById,
@@ -21,6 +25,66 @@ const OPTIONAL_WINDOWS_CHROME_PATHS = [
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
 ];
+
+function buildExportFontCss(templateId) {
+  const dependencies = getTemplateFontDependencies(templateId);
+  return {
+    dependencies,
+    stack: getTemplateFontStack(templateId),
+    css: buildCvFontFaceCss({ fontKeys: dependencies }),
+  };
+}
+
+function withExportFontCss(html, templateId) {
+  const { css } = buildExportFontCss(templateId);
+  if (!css) return html;
+  if (html.includes('id="cv-font-faces"')) {
+    return html.replace(
+      /<style id="cv-font-faces">[\s\S]*?<\/style>/,
+      `<style id="cv-font-faces">${css}</style>`
+    );
+  }
+  if (html.includes('</head>')) {
+    return html.replace('</head>', `<style id="cv-font-faces">${css}</style></head>`);
+  }
+  return `<style id="cv-font-faces">${css}</style>${html}`;
+}
+
+async function waitForDocumentFonts(page) {
+  const result = await page.evaluate(async () => {
+    const details = {
+      hasDocumentFonts: Boolean(document?.fonts),
+      statusBefore: document?.fonts?.status || 'unavailable',
+      statusAfter: document?.fonts?.status || 'unavailable',
+      loadedCount: null,
+      failedCount: null,
+      done: false,
+    };
+
+    if (!document?.fonts || !document.fonts.ready || typeof document.fonts.ready.then !== 'function') {
+      return details;
+    }
+
+    await document.fonts.ready;
+    details.done = true;
+    details.statusAfter = document.fonts.status || 'unavailable';
+
+    if (typeof document.fonts.forEach === 'function') {
+      let loadedCount = 0;
+      let failedCount = 0;
+      document.fonts.forEach((fontFace) => {
+        if (fontFace.status === 'loaded') loadedCount += 1;
+        if (fontFace.status === 'error') failedCount += 1;
+      });
+      details.loadedCount = loadedCount;
+      details.failedCount = failedCount;
+    }
+
+    return details;
+  });
+
+  return result;
+}
 
 function applySidebarPagedBackgroundCss(templateId) {
   if (!SIDEBAR_TEMPLATE_IDS.has(String(templateId || '').trim())) return '';
@@ -69,6 +133,8 @@ function withExportEnhancements(html, templateId) {
   if (!next.includes('data-template-id=')) {
     next = next.replace('<body', `<body data-template-id="${templateId}"`);
   }
+
+  next = withExportFontCss(next, templateId);
 
   const sidebarCss = applySidebarPagedBackgroundCss(templateId);
   if (sidebarCss && !next.includes('id="cv-sidebar-paged-background"')) {
@@ -132,6 +198,13 @@ export function buildCvHtml({ draft }) {
     primary: normalized.templateTheme?.primary,
     sidebarBg: normalized.templateTheme?.sidebarBg,
     headerBg: normalized.templateTheme?.headerBg,
+  });
+  const fontInfo = buildExportFontCss(templateId);
+  console.info('[exportCv] fontAudit=', getTemplateFontAudit());
+  console.info('[exportCv] templateFonts=', {
+    templateId,
+    requestedFamilies: fontInfo.dependencies,
+    fontFamilyStack: fontInfo.stack,
   });
   assertTemplateMarkers(templateId, html);
   return html;
@@ -226,6 +299,8 @@ export async function htmlToPdfBuffer(html) {
       await page.emulateMediaType('print');
 
     await page.setContent(html, { waitUntil: 'networkidle0' });
+    const fontReadyState = await waitForDocumentFonts(page);
+    console.info('[exportPdf] puppeteer document.fonts', fontReadyState);
     return assertPdf(
       await page.pdf({
         format: 'A4',
@@ -269,6 +344,8 @@ export async function htmlToPdfBuffer(html) {
       await page.emulateMedia({ media: 'print' });
 
     await page.setContent(html, { waitUntil: 'networkidle' });
+    const fontReadyState = await waitForDocumentFonts(page);
+    console.info('[exportPdf] playwright document.fonts', fontReadyState);
     return assertPdf(
       await page.pdf({
         format: 'A4',

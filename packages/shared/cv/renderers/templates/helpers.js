@@ -40,7 +40,7 @@ const DEFAULT_TYPOGRAPHY = {
   h3Size: 11,
   bodySize: 14,
   lineHeight: 1.48,
-  fontFamily: 'Inter, system-ui, Arial',
+  fontFamily: "'Inter', 'Segoe UI', Arial, sans-serif",
 };
 
 const templateTypographyDefaults = {

@@ -8,6 +8,7 @@ import {
   safeKey,
   sectionVisible,
 } from './helpers.js';
+import { buildCvFontFaceCss, getTemplateFontDependencies, getTemplateFontStack } from './fonts.js';
 
 const contactLine = (b) => esc([b.email, b.phone, b.location].filter(Boolean).join(' • '));
 
@@ -85,7 +86,14 @@ function joinSections(d, map) {
 }
 
 function doc(d, body, css) {
-  return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><style>${buildCssVars(d)}${paginationCss}${PAGE_SHELL}${css}</style></head><body data-template-id="${esc(d.templateId || '')}">${body}</body></html>`;
+  const templateId = String(d.templateId || '').trim();
+  const fontFamily = getTemplateFontStack(templateId);
+  const fontFaceCss = buildCvFontFaceCss({
+    fontKeys: getTemplateFontDependencies(templateId),
+  });
+  const cssVars = `${buildCssVars(d)}:root{--fontFamily:${fontFamily};}`;
+
+  return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><style id="cv-font-faces">${fontFaceCss}</style><style>${cssVars}${paginationCss}${PAGE_SHELL}${css}</style></head><body data-template-id="${esc(templateId)}">${body}</body></html>`;
 }
 
 export function renderModernSidebarHtml(draft = {}) {
@@ -160,7 +168,7 @@ export function renderAtsCompactHtml(draft = {}) {
   return doc(
     d,
     `<main class="page atsCompactLayout"><div class="inner"><header><h1>${esc(d.basics.name || 'Your Name')}</h1><div>${contactLine(d.basics)}</div></header>${sections}</div></main>`,
-    `${TYPOGRAPHY_BASE}body{font-family:Inter,Arial,sans-serif;background:#fff}.inner{padding:10.5mm 12mm}header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1px solid #ddd;padding-bottom:6px}header div{font-size:var(--resolvedMetaSize)}h2{letter-spacing:.09em;margin:8px 0 5px;color:#111}`
+    `${TYPOGRAPHY_BASE}body{font-family:var(--fontFamily);background:#fff}.inner{padding:10.5mm 12mm}header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1px solid #ddd;padding-bottom:6px}header div{font-size:var(--resolvedMetaSize)}h2{letter-spacing:.09em;margin:8px 0 5px;color:#111}`
   );
 }
 
