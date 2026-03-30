@@ -11,11 +11,19 @@ type Props = {
   pendingAction: string;
   onClose: () => void;
   onPayWithMpesa: (phone: string) => Promise<void>;
-  onConfirmMpesa: (payload?: { mpesaReceipt?: string }) => Promise<void>;
+  onRetryStatusCheck: () => Promise<void>;
   onPayWithPaystack: () => Promise<void>;
   isLoadingMpesaInit?: boolean;
-  isLoadingMpesaConfirm?: boolean;
   isLoadingPaystack?: boolean;
+  mpesaFlowState?:
+    | 'idle'
+    | 'initiating'
+    | 'stk_sent'
+    | 'waiting_for_payment'
+    | 'confirmed'
+    | 'failed'
+    | 'expired'
+    | 'cancelled';
   message?: string;
   error?: string | null;
 };
@@ -25,17 +33,18 @@ const CvPaymentModal: React.FC<Props> = ({
   pendingAction,
   onClose,
   onPayWithMpesa,
-  onConfirmMpesa,
+  onRetryStatusCheck,
   onPayWithPaystack,
   isLoadingMpesaInit,
-  isLoadingMpesaConfirm,
   isLoadingPaystack,
+  mpesaFlowState = 'idle',
   message,
   error,
 }) => {
   const [method, setMethod] = useState<'PAYSTACK' | 'MPESA'>('PAYSTACK');
   const [phone, setPhone] = useState('');
-  const [manualReceipt, setManualReceipt] = useState('');
+  const isWaitingForPayment = mpesaFlowState === 'stk_sent' || mpesaFlowState === 'waiting_for_payment';
+  const canRetryStatus = mpesaFlowState === 'expired' || mpesaFlowState === 'failed' || mpesaFlowState === 'cancelled';
 
   const actionLabel = useMemo(() => pendingAction.replaceAll('_', ' '), [pendingAction]);
 
@@ -105,24 +114,19 @@ const CvPaymentModal: React.FC<Props> = ({
 
             <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-white/10 dark:bg-slate-900/80">
               <p className="text-xs text-gray-600 dark:text-white/75">
-                If prompt/callback delays, confirm manually:
+                {isWaitingForPayment
+                  ? 'Check your phone and enter your M-Pesa PIN. We will confirm automatically.'
+                  : 'After sending STK push, we keep checking payment status automatically.'}
               </p>
-
-              <input
-                value={manualReceipt}
-                onChange={(e) => setManualReceipt(e.target.value)}
-                placeholder="Optional M-Pesa receipt"
-                className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition focus:border-primary dark:border-white/15 dark:bg-slate-950 dark:text-white dark:placeholder:text-white/35"
-              />
-
-              <button
-                type="button"
-                onClick={() => onConfirmMpesa({ mpesaReceipt: manualReceipt || undefined })}
-                disabled={Boolean(isLoadingMpesaConfirm)}
-                className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 transition hover:bg-gray-50 disabled:opacity-60 dark:border-white/15 dark:bg-slate-950 dark:text-white dark:hover:bg-slate-800"
-              >
-                {isLoadingMpesaConfirm ? 'Confirming…' : 'Confirm payment'}
-              </button>
+              {canRetryStatus ? (
+                <button
+                  type="button"
+                  onClick={onRetryStatusCheck}
+                  className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 transition hover:bg-gray-50 disabled:opacity-60 dark:border-white/15 dark:bg-slate-950 dark:text-white dark:hover:bg-slate-800"
+                >
+                  Check status again
+                </button>
+              ) : null}
             </div>
           </div>
         ) : (

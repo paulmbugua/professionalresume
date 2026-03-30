@@ -7,6 +7,7 @@ import {
   getEntitlement,
   getCvPaymentConfig,
   initMpesa,
+  mpesaStatus,
   mpesaCallback,
   verifyPaystack,
 } from '../controllers/cvPaymentController.js';
@@ -16,6 +17,7 @@ const r = express.Router();
 r.get('/config', getCvPaymentConfig);
 r.post('/mpesa/init', requireAuth, initMpesa);
 r.post('/mpesa/confirm', requireAuth, confirmMpesa);
+r.get('/mpesa/status', requireAuth, mpesaStatus);
 r.post('/mpesa/callback', mpesaCallback);
 r.post('/paystack/create-order', requireAuth, createPaystackOrder);
 r.get('/paystack/verify/:reference', requireAuth, verifyPaystack);
