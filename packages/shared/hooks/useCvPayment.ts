@@ -135,14 +135,6 @@ export function useCvPayment({ backendUrl, token }: Args) {
 
       setMpesaFlowState('failed');
       setMpesaStatusMessage(result.message || 'Payment failed. Please try again.');
-    } catch (error: any) {
-      console.warn('[cv/mpesa/poll] check failed', {
-        message: error?.message,
-      });
-      setMpesaFlowState('waiting_for_payment');
-      setMpesaStatusMessage(
-        'Still waiting for confirmation. Check your phone, or use manual confirm with M-Pesa transaction code.'
-      );
     } finally {
       pollingInFlightRef.current = false;
     }
@@ -226,12 +218,6 @@ export function useCvPayment({ backendUrl, token }: Args) {
       if (result.status === 'Completed') {
         stopPolling('manual_confirm_success');
         await finalizeSuccessfulMpesaPayment();
-        return;
-      }
-      if (result.status === 'Pending') {
-        setMpesaFlowState('waiting_for_payment');
-        setMpesaStatusMessage(result.message || 'Waiting for M-Pesa confirmation…');
-        return;
       }
       setMpesaFlowState('failed');
       setMpesaStatusMessage(result.message || 'Manual confirmation failed. Please retry.');

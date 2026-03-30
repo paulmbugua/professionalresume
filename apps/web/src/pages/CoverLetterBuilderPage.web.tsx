@@ -327,9 +327,6 @@ const CoverLetterBuilderPageInner: React.FC<{
           await cvPayment.initMpesaMutation.mutateAsync(phone);
         }}
         onRetryStatusCheck={cvPayment.retryMpesaPolling}
-        onManualConfirmMpesa={async (payload) => {
-          await cvPayment.confirmMpesaMutation.mutateAsync(payload);
-        }}
         onPayWithPaystack={async () => {
           const nextPath = `${window.location.pathname}?cv_action=${cvPayment.pendingAction}`;
           trackBeginCheckout({ currency: 'KES', value: PAYSTACK_KES_AMOUNT, purchase_type: 'export_unlock', product_type: 'cover_letter', source_page: 'cover_letter_builder', items: [{ item_id: 'cvpro-export-unlock', item_name: 'CVPro Export Unlock', price: PAYSTACK_KES_AMOUNT, quantity: 1 }] });
@@ -337,7 +334,6 @@ const CoverLetterBuilderPageInner: React.FC<{
           window.location.href = order.authorizationUrl;
         }}
         isLoadingMpesaInit={cvPayment.initMpesaMutation.isPending}
-        isLoadingMpesaConfirm={cvPayment.confirmMpesaMutation.isPending}
         isLoadingPaystack={cvPayment.startPaystackCheckout.isPending}
         mpesaFlowState={cvPayment.mpesaFlowState}
         message={cvPayment.mpesaStatusMessage}
