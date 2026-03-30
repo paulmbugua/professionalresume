@@ -10,9 +10,12 @@ import {
 
 type Args = { backendUrl: string; token?: string };
 type Action = 'resume_export' | 'resume_print' | 'cover_letter_export' | 'cover_letter_print';
+const CVPRO_CANONICAL_ORIGIN = 'https://www.onedollarcvpro.com';
 
 function normalizeKenyanPhoneInput(rawPhone: string): string | null {
-  const digits = String(rawPhone || '').replace(/[^\d+]/g, '').trim();
+  const digits = String(rawPhone || '')
+    .replace(/[^\d+]/g, '')
+    .trim();
   if (!digits) return null;
   if (digits.startsWith('+254')) {
     const compact = `254${digits.slice(4)}`.replace(/[^\d]/g, '');
@@ -85,7 +88,12 @@ export function useCvPayment({ backendUrl, token }: Args) {
   const startPaystackCheckout = useMutation({
     mutationFn: async (nextPath: string) => {
       if (!token) throw new Error('Unauthorized');
-      const callbackUrl = `${window.location.origin}/paystack/callback?next=${encodeURIComponent(nextPath)}`;
+      const host = String(window.location.hostname || '').toLowerCase();
+      const callbackBase =
+        host === 'onedollarcvpro.com' || host === 'www.onedollarcvpro.com'
+          ? CVPRO_CANONICAL_ORIGIN
+          : window.location.origin;
+      const callbackUrl = `${callbackBase}/paystack/callback?next=${encodeURIComponent(nextPath)}`;
       return createCvPaystackOrder(backendUrl, token, { callbackUrl });
     },
   });
@@ -100,7 +108,10 @@ export function useCvPayment({ backendUrl, token }: Args) {
     },
   });
 
-  const ensurePaid = async (action: Action, onPaid: () => Promise<void> | void): Promise<boolean> => {
+  const ensurePaid = async (
+    action: Action,
+    onPaid: () => Promise<void> | void
+  ): Promise<boolean> => {
     if (entitlement.data?.eligible) {
       await onPaid();
       return true;
@@ -141,6 +152,14 @@ export function useCvPayment({ backendUrl, token }: Args) {
       verifyPaystack,
       cancelPayment,
     }),
-    [entitlement, modalOpen, pendingAction, initMpesaMutation, confirmMpesaMutation, startPaystackCheckout, verifyPaystack],
+    [
+      entitlement,
+      modalOpen,
+      pendingAction,
+      initMpesaMutation,
+      confirmMpesaMutation,
+      startPaystackCheckout,
+      verifyPaystack,
+    ]
   );
 }

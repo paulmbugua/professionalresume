@@ -23,16 +23,15 @@ import coverLetterRoutes from './routes/coverLetterRoutes.js';
 import cvPaymentRoutes from './routes/cvPaymentRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 
-
 // Middleware
 import {
   morganMiddleware,
   helmetMiddleware,
   errorLogger,
-  limiter,            // global soft limiter
+  limiter, // global soft limiter
   aiKeyFn,
- aiLimiterStrict,    // ⇐ use the new per-user/per-bucket limiter
-  loginLimiterFactory, 
+  aiLimiterStrict, // ⇐ use the new per-user/per-bucket limiter
+  loginLimiterFactory,
 } from './middleware/middleware.js';
 
 connectCloudinary();
@@ -60,14 +59,18 @@ const port = Number(process.env.PORT ?? 4000);
 const isProduction = process.env.NODE_ENV === 'production';
 
 // ─── 1) Environment vars ────────────────────────────────────────────────────────
-const BACKEND_URL      = process.env.BACKEND_URL      || `http://localhost:${process.env.PORT || 4000}`;
-const WEB_BACKEND_URL  = process.env.WEB_BACKEND_URL  || 'http://localhost:5173';
-const PROD_BACKEND_URL = process.env.PROD_BACKEND_URL || 'https://server.onedollarcvpro.com';
+const BACKEND_URL =
+  process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 4000}`;
+const WEB_BACKEND_URL = process.env.WEB_BACKEND_URL || 'http://localhost:5173';
+const PROD_BACKEND_URL =
+  process.env.PROD_BACKEND_URL || 'https://server.onedollarcvpro.com';
 
 // ─── 2) Allowed origins ────────────────────────────────────────────────────────
 const productionOrigins = [
   'https://onedollarcvpro.com',
   'https://www.onedollarcvpro.com',
+  'http://onedollarcvpro.com',
+  'http://www.onedollarcvpro.com',
   'https://onedollarcvpro.netlify.app',
   'https://server.onedollarcvpro.com',
   'https://admin.onedollarcvpro.com',
@@ -96,15 +99,34 @@ const developmentOrigins = [
 ];
 
 const allowedOrigins = Array.from(
-  new Set([...(isProduction ? productionOrigins : developmentOrigins), ...envOrigins]),
+  new Set([
+    ...(isProduction ? productionOrigins : developmentOrigins),
+    ...envOrigins,
+  ]),
 );
+
+function findAllowedOriginMatch(origin) {
+  if (!origin) return null;
+  return allowedOrigins.find((candidate) => candidate === origin) || null;
+}
 
 // ─── 3) CORS for ALL endpoints & preflight OPTIONS (single source of truth) ────
 const corsOptions = {
   origin: (origin, callback) => {
-    console.log('🛂 CORS origin check:', origin);
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-    console.warn('🚫 Blocked by CORS:', origin);
+    const matchedOrigin = findAllowedOriginMatch(origin);
+    const requestMeta = {
+      origin: origin || '(no origin header)',
+      matchedOrigin: matchedOrigin || '(none)',
+    };
+    if (!origin) {
+      console.log('🛂 CORS origin check (no origin header): allowing request');
+      return callback(null, true);
+    }
+    if (matchedOrigin) {
+      console.log('🛂 CORS origin check: allowed', requestMeta);
+      return callback(null, true);
+    }
+    console.warn('🚫 Blocked by CORS', requestMeta);
     return callback(new Error(`Not allowed by CORS: ${origin}`));
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -131,10 +153,29 @@ const corsOptions = {
   credentials: true,
 };
 
+app.use((req, _res, next) => {
+  const origin = String(req.headers.origin || '');
+  if (
+    isProduction &&
+    (origin === 'http://onedollarcvpro.com' ||
+      origin === 'http://www.onedollarcvpro.com')
+  ) {
+    console.warn('🔎 Incoming HTTP production origin observed', {
+      origin,
+      method: req.method,
+      path: req.originalUrl || req.url,
+      host: req.headers.host || '',
+      forwardedHost: req.headers['x-forwarded-host'] || '',
+      forwardedProto: req.headers['x-forwarded-proto'] || '',
+      referer: req.headers.referer || '',
+      userAgent: req.headers['user-agent'] || '',
+    });
+  }
+  next();
+});
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // Same options for preflight
-
 
 // ─── 4) Global middleware ───────────────────────────────────────────────────────
 app.use(helmetMiddleware);
@@ -148,7 +189,6 @@ app.use(limiter);
 
 // 🔐 Login-only rate limiting (5 attempts / 15m, skip success)
 const loginLimiter = loginLimiterFactory({ windowMs: 15 * 60_000, limit: 5 });
-
 
 app.get('/healthz', (_req, res) => res.status(200).send('ok'));
 app.get('/health', (_req, res) => {
@@ -167,7 +207,16 @@ app.get('/health', (_req, res) => {
 const io = new Server(server, {
   cors: {
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+      const matchedOrigin = findAllowedOriginMatch(origin);
+      if (!origin) return callback(null, true);
+      if (matchedOrigin) {
+        console.log('🧩 Socket CORS origin allowed', {
+          origin,
+          matchedOrigin,
+        });
+        return callback(null, true);
+      }
+      console.warn('🚫 Socket blocked by CORS', { origin });
       return callback(new Error(`Not allowed by CORS (socket): ${origin}`));
     },
     methods: ['GET', 'POST', 'PUT', 'OPTIONS'],
@@ -186,11 +235,10 @@ app.use((req, _res, next) => {
 
 // ─── 6) HTTPS redirect in production ────────────────────────────────────────────
 if (isProduction) {
-  
   app.use((req, res, next) => {
-     const skipRedirect =
+    const skipRedirect =
       req.path === '/healthz' ||
-      req.path === '/api/paypal/webhook' ||           // ← do not redirect
+      req.path === '/api/paypal/webhook' || // ← do not redirect
       req.headers['x-railway-healthcheck'];
     if (skipRedirect) {
       return next();
@@ -200,29 +248,32 @@ if (isProduction) {
   });
 }
 
-
-
 // Payments & webhooks
-app.use('/api/payment',                                paymentRoutes);
-app.use('/api/cv',                                      cvRoutes);
-app.use('/api/cv/payments',                             cvPaymentRoutes);
-app.use('/api/cover-letters',                           coverLetterRoutes);
+app.use('/api/payment', paymentRoutes);
+app.use('/api/cv', cvRoutes);
+app.use('/api/cv/payments', cvPaymentRoutes);
+app.use('/api/cover-letters', coverLetterRoutes);
 
-app.use('/api/mpesa',                                  mpesaUrlsRoutes);
+app.use('/api/mpesa', mpesaUrlsRoutes);
 
-app.use('/api/cloudinary',                             cloudinaryRoutes);
-app.use('/api/uploads',                                uploadsRoutes);
+app.use('/api/cloudinary', cloudinaryRoutes);
+app.use('/api/uploads', uploadsRoutes);
 
-app.use('/api/earnings',                               earningsRoutes);
+app.use('/api/earnings', earningsRoutes);
 app.use('/api/user', userRouter);
-app.use('/api/auth',                                   authRoutes);
+app.use('/api/auth', authRoutes);
 
-app.use('/api/ai', inflightLimiter({ keyFn: aiKeyFn, max: Number(process.env.AI_MAX_INFLIGHT || 2) }));
+app.use(
+  '/api/ai',
+  inflightLimiter({
+    keyFn: aiKeyFn,
+    max: Number(process.env.AI_MAX_INFLIGHT || 2),
+  }),
+);
 // ✅ Apply strict AI limiter to expensive AI/TTS work (per-user, per-bucket)
 
-app.use('/api/ai',                aiLimiterStrict,     aiCvRoutes);        // AI CV assistant
-app.use('/api/ai',                aiLimiterStrict,     aiCoverLetterRoutes);
-
+app.use('/api/ai', aiLimiterStrict, aiCvRoutes); // AI CV assistant
+app.use('/api/ai', aiLimiterStrict, aiCoverLetterRoutes);
 
 // Root ping
 app.get('/', (_req, res) => res.send('API Working'));
@@ -236,7 +287,9 @@ io.on('connection', (socket) => {
   socket.on('joinRoom', (profileId) => {
     if (profileId) {
       socket.join(String(profileId));
-      console.log(`Socket ${socket.id} joined room for profile ID: ${profileId}`);
+      console.log(
+        `Socket ${socket.id} joined room for profile ID: ${profileId}`,
+      );
     } else {
       console.error('joinRoom: Missing or invalid profileId');
     }
@@ -244,10 +297,17 @@ io.on('connection', (socket) => {
 
   socket.on('sendMessage', async (data, callback) => {
     const { recipientId, content, senderId, senderName } = data;
-    console.log('sendMessage data:', { senderId, recipientId, content, senderName });
+    console.log('sendMessage data:', {
+      senderId,
+      recipientId,
+      content,
+      senderName,
+    });
 
     const getProfileById = async (profileId) => {
-      const result = await pool.query('SELECT id FROM profiles WHERE id = $1', [profileId]);
+      const result = await pool.query('SELECT id FROM profiles WHERE id = $1', [
+        profileId,
+      ]);
       return result.rows.length > 0 ? result.rows[0].id : null;
     };
 
@@ -257,7 +317,13 @@ io.on('connection', (socket) => {
 
       if (!senderProfileId || !recipientProfileId) {
         console.error('Sender or recipient profile not found.');
-        return callback && callback({ status: 'error', message: 'Sender or recipient profile not found.' });
+        return (
+          callback &&
+          callback({
+            status: 'error',
+            message: 'Sender or recipient profile not found.',
+          })
+        );
       }
 
       // Find or create conversation
@@ -265,7 +331,7 @@ io.on('connection', (socket) => {
         `SELECT id FROM conversations 
          WHERE (sender_id = $1 AND recipient_id = $2)
             OR (sender_id = $2 AND recipient_id = $1)`,
-        [senderProfileId, recipientProfileId]
+        [senderProfileId, recipientProfileId],
       );
 
       let conversationId;
@@ -273,7 +339,7 @@ io.on('connection', (socket) => {
         const newConversation = await pool.query(
           `INSERT INTO conversations (sender_id, recipient_id, unread_count) 
            VALUES ($1, $2, 1) RETURNING id`,
-          [senderProfileId, recipientProfileId]
+          [senderProfileId, recipientProfileId],
         );
         conversationId = newConversation.rows[0].id;
       } else {
@@ -282,7 +348,7 @@ io.on('connection', (socket) => {
           `UPDATE conversations 
            SET unread_count = unread_count + 1, updated_at = NOW() 
            WHERE id = $1 AND recipient_id = $2`,
-          [conversationId, recipientProfileId]
+          [conversationId, recipientProfileId],
         );
       }
 
@@ -290,7 +356,7 @@ io.on('connection', (socket) => {
       await pool.query(
         `INSERT INTO messages (conversation_id, sender_id, content)
          VALUES ($1, $2, $3)`,
-        [conversationId, senderProfileId, content]
+        [conversationId, senderProfileId, content],
       );
 
       // Emit events
@@ -310,10 +376,12 @@ io.on('connection', (socket) => {
         unread: false,
       });
 
-      callback && callback({ status: 'success', message: 'Message sent successfully' });
+      callback &&
+        callback({ status: 'success', message: 'Message sent successfully' });
     } catch (error) {
       console.error('Error sending message:', error);
-      callback && callback({ status: 'error', message: 'Failed to send message' });
+      callback &&
+        callback({ status: 'error', message: 'Failed to send message' });
     }
   });
 
@@ -321,7 +389,6 @@ io.on('connection', (socket) => {
     console.log('User disconnected:', socket.id);
   });
 });
-
 
 app.use(errorLogger);
 
