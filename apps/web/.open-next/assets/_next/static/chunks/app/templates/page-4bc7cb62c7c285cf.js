@@ -1,1 +1,0 @@
-(self.webpackChunk_N_E=self.webpackChunk_N_E||[]).push([[3814],{16416:(e,s,a)=>{Promise.resolve().then(a.bind(a,53604))},53604:(e,s,a)=>{"use strict";a.d(s,{default:()=>r});var t=a(95155);a(12115);var l=a(47425);let r=()=>(0,t.jsx)(l.A,{variant:"templates"})}},e=>{e.O(0,[5498,8500,6174,3168,5773,2403,7425,8441,3794,7358],()=>e(e.s=16416)),_N_E=e.O()}]);

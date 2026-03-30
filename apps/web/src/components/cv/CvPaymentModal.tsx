@@ -35,18 +35,34 @@ const CvPaymentModal: React.FC<Props> = ({
   onPayWithMpesa,
   onRetryStatusCheck,
   onPayWithPaystack,
-  isLoadingMpesaInit,
-  isLoadingPaystack,
+  isLoadingMpesaInit = false,
+  isLoadingPaystack = false,
   mpesaFlowState = 'idle',
   message,
   error,
 }) => {
   const [method, setMethod] = useState<'PAYSTACK' | 'MPESA'>('PAYSTACK');
   const [phone, setPhone] = useState('');
-  const isWaitingForPayment = mpesaFlowState === 'stk_sent' || mpesaFlowState === 'waiting_for_payment';
-  const canRetryStatus = mpesaFlowState === 'expired' || mpesaFlowState === 'failed' || mpesaFlowState === 'cancelled';
 
-  const actionLabel = useMemo(() => pendingAction.replaceAll('_', ' '), [pendingAction]);
+  const isWaitingForPayment =
+    mpesaFlowState === 'stk_sent' || mpesaFlowState === 'waiting_for_payment';
+
+  const canRetryStatus =
+    mpesaFlowState === 'expired' ||
+    mpesaFlowState === 'failed' ||
+    mpesaFlowState === 'cancelled';
+
+  const showSpinner = isLoadingMpesaInit || isWaitingForPayment;
+
+  const actionLabel = useMemo(() => {
+    if (!pendingAction) return 'export';
+    return pendingAction.replaceAll('_', ' ');
+  }, [pendingAction]);
+
+  const handleMpesaPay = async () => {
+    const trimmedPhone = phone.trim();
+    await onPayWithMpesa(trimmedPhone);
+  };
 
   if (!isOpen) return null;
 
@@ -65,7 +81,8 @@ const CvPaymentModal: React.FC<Props> = ({
 
         <p className="mt-2 text-sm text-gray-600 dark:text-white/80">
           Pay once to unlock Resume + Cover Letter export and print forever on your account.
-          Paystack card checkout is KES {PAYSTACK_KES_AMOUNT} (≈ ${CVPRO_EXPORT_PRICE_USD}); M-Pesa STK checkout is KES {MPESA_KES_AMOUNT}.
+          Paystack card checkout is KES {PAYSTACK_KES_AMOUNT} (≈ ${CVPRO_EXPORT_PRICE_USD});
+          M-Pesa STK checkout is KES {MPESA_KES_AMOUNT}.
         </p>
 
         <p className="mt-1 text-xs text-gray-500 dark:text-white/65">
@@ -105,8 +122,8 @@ const CvPaymentModal: React.FC<Props> = ({
 
             <button
               type="button"
-              onClick={() => onPayWithMpesa(phone)}
-              disabled={Boolean(isLoadingMpesaInit)}
+              onClick={handleMpesaPay}
+              disabled={isLoadingMpesaInit}
               className="w-full rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
             >
               {isLoadingMpesaInit ? 'Initializing…' : 'Send STK Push'}
@@ -119,11 +136,13 @@ const CvPaymentModal: React.FC<Props> = ({
                   <span>Waiting for payment confirmation…</span>
                 </div>
               ) : null}
+
               <p className="text-xs text-gray-600 dark:text-white/75">
                 {isWaitingForPayment
                   ? 'Check your phone and enter your M-Pesa PIN. We will confirm automatically.'
                   : 'After sending STK push, we keep checking payment status automatically.'}
               </p>
+
               {canRetryStatus ? (
                 <button
                   type="button"
@@ -139,7 +158,7 @@ const CvPaymentModal: React.FC<Props> = ({
           <button
             type="button"
             onClick={onPayWithPaystack}
-            disabled={Boolean(isLoadingPaystack)}
+            disabled={isLoadingPaystack}
             className="mt-4 w-full rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
           >
             {isLoadingPaystack ? 'Redirecting…' : 'Continue to card checkout'}
@@ -150,7 +169,9 @@ const CvPaymentModal: React.FC<Props> = ({
           <p className="mt-3 text-sm text-emerald-700 dark:text-emerald-400">{message}</p>
         ) : null}
 
-        {error ? <p className="mt-2 text-sm text-rose-600 dark:text-rose-400">{error}</p> : null}
+        {error ? (
+          <p className="mt-2 text-sm text-rose-600 dark:text-rose-400">{error}</p>
+        ) : null}
 
         <button
           type="button"
