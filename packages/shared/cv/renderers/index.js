@@ -6,6 +6,12 @@ import {
   sanitizeRichTextHtml,
 } from './templates/helpers.js';
 import {
+  buildCvFontFaceCss,
+  getTemplateFontAudit,
+  getTemplateFontDependencies,
+  getTemplateFontStack,
+} from './templates/fonts.js';
+import {
   renderAtsCompactHtml,
   renderAtsMinimalHtml,
   renderBoldHeaderHtml,
@@ -18,7 +24,7 @@ import {
   templateMarkersById,
 } from './templates/renderers.js';
 
-export { normalizeCvDraft, sanitizeRichTextHtml, buildCssVars, paginationCss, resolveTemplateTypography, templateMarkersById };
+export { normalizeCvDraft, sanitizeRichTextHtml, buildCssVars, paginationCss, resolveTemplateTypography, templateMarkersById, buildCvFontFaceCss, getTemplateFontStack, getTemplateFontDependencies, getTemplateFontAudit };
 
 export const renderersById = {
   'ats-minimal': renderAtsMinimalHtml,
