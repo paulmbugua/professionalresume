@@ -80,6 +80,26 @@ export const confirmCvMpesaPayment = async (
   }
 };
 
+export const getCvMpesaPaymentStatus = async (
+  backendUrl: string,
+  token: string,
+  payload: { transactionId?: string; checkoutRequestId?: string },
+): Promise<{
+  paymentId: number;
+  status: 'pending' | 'success' | 'failed' | 'cancelled' | 'expired';
+  message?: string;
+}> => {
+  try {
+    const api = client(backendUrl, token);
+    const res = await api.get('/api/cv/payments/mpesa/status', {
+      params: payload,
+    });
+    return res.data;
+  } catch (err: any) {
+    throw new Error(toMessage(err));
+  }
+};
+
 export const createCvPaystackOrder = async (
   backendUrl: string,
   token: string,

@@ -377,6 +377,58 @@ export async function confirmCvMpesaPayment({ userId, transactionId, checkoutReq
   }
 }
 
+function mapMpesaFinalStatus(status, message) {
+  if (status === 'Completed') return 'success';
+  if (status !== 'Failed') return 'pending';
+
+  const normalized = String(message || '').toLowerCase();
+  if (normalized.includes('cancel')) return 'cancelled';
+  if (normalized.includes('timed out') || normalized.includes('timeout')) return 'expired';
+  return 'failed';
+}
+
+export async function getCvMpesaPaymentStatus({ userId, transactionId, checkoutRequestId }) {
+  console.info('[cv/mpesa/status] checking', {
+    userId: Number(userId),
+    transactionId: transactionId || null,
+    checkoutRequestId: checkoutRequestId || null,
+  });
+  const confirmResult = await confirmCvMpesaPayment({ userId, transactionId, checkoutRequestId });
+  const mappedStatus = mapMpesaFinalStatus(confirmResult.status, confirmResult.message);
+
+  if (mappedStatus === 'pending') {
+    const { rows } = await pool.query(
+      `SELECT created_at
+       FROM cv_payments
+       WHERE id=$1
+       LIMIT 1`,
+      [confirmResult.paymentId],
+    );
+    const createdAt = rows[0]?.created_at ? new Date(rows[0].created_at).getTime() : null;
+    if (createdAt && Date.now() - createdAt > 120_000) {
+      console.info('[cv/mpesa/status] final', {
+        paymentId: confirmResult.paymentId,
+        status: 'expired',
+      });
+      return {
+        paymentId: confirmResult.paymentId,
+        status: 'expired',
+        message: 'The M-Pesa request expired. Please retry.',
+      };
+    }
+  }
+
+  console.info('[cv/mpesa/status] final', {
+    paymentId: confirmResult.paymentId,
+    status: mappedStatus,
+  });
+  return {
+    paymentId: confirmResult.paymentId,
+    status: mappedStatus,
+    message: confirmResult.message,
+  };
+}
+
 export async function handleCvMpesaCallback(callbackPayload = {}) {
   const stkCallback = callbackPayload?.Body?.stkCallback;
   if (!stkCallback) {
