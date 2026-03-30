@@ -17,6 +17,7 @@ import {
 import type { CoverLetterDraft } from '@cvpro/shared/types';
 import CoverLetterEditorShell from '../components/cover-letter/CoverLetterEditorShell';
 import CvPaymentModal from '../components/cv/CvPaymentModal';
+import { MPESA_KES_AMOUNT, PAYSTACK_KES_AMOUNT } from '../lib/cvPaymentPricing';
 import { EMPTY_COVER_LETTER_DRAFT, normalizeCoverLetterDraft } from '../utils/coverLetterDefaults';
 import { getReturnToFromQuery } from '../lib/returnTo';
 import {
@@ -324,7 +325,7 @@ const CoverLetterBuilderPageInner: React.FC<{
         pendingAction={cvPayment.pendingAction}
         onClose={cvPayment.cancelPayment}
         onPayWithMpesa={async (phone) => {
-          trackBeginCheckout({ currency: 'KES', value: 100, purchase_type: 'export_unlock', product_type: 'cover_letter', source_page: 'cover_letter_builder' });
+          trackBeginCheckout({ currency: 'KES', value: MPESA_KES_AMOUNT, purchase_type: 'export_unlock', product_type: 'cover_letter', source_page: 'cover_letter_builder' });
           const res = await cvPayment.initMpesaMutation.mutateAsync(phone);
           setPaymentMessage(res.message || 'Waiting for M-Pesa confirmation');
         }}
@@ -335,18 +336,18 @@ const CoverLetterBuilderPageInner: React.FC<{
             trackPurchase({
               transaction_id: `mpesa-cover-${Date.now()}`,
               currency: 'KES',
-              value: 100,
+              value: MPESA_KES_AMOUNT,
               purchase_type: 'export_unlock',
               product_type: 'cover_letter',
               source_page: 'cover_letter_builder',
-              items: [{ item_id: 'cvpro-export-unlock', item_name: 'CVPro Export Unlock', price: 1, quantity: 1 }],
+              items: [{ item_id: 'cvpro-export-unlock', item_name: 'CVPro Export Unlock', price: MPESA_KES_AMOUNT, quantity: 1 }],
             });
             setPaymentMessage('Unlock successful. Export unlocked.');
           }
         }}
         onPayWithPaystack={async () => {
           const nextPath = `${window.location.pathname}?cv_action=${cvPayment.pendingAction}`;
-          trackBeginCheckout({ currency: 'USD', value: 1, purchase_type: 'export_unlock', product_type: 'cover_letter', source_page: 'cover_letter_builder', items: [{ item_id: 'cvpro-export-unlock', item_name: 'CVPro Export Unlock', price: 1, quantity: 1 }] });
+          trackBeginCheckout({ currency: 'KES', value: PAYSTACK_KES_AMOUNT, purchase_type: 'export_unlock', product_type: 'cover_letter', source_page: 'cover_letter_builder', items: [{ item_id: 'cvpro-export-unlock', item_name: 'CVPro Export Unlock', price: PAYSTACK_KES_AMOUNT, quantity: 1 }] });
           const order = await cvPayment.startPaystackCheckout.mutateAsync(nextPath);
           window.location.href = order.authorizationUrl;
         }}

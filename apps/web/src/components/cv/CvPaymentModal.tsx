@@ -1,4 +1,10 @@
 import React, { useMemo, useState } from 'react';
+import {
+  CVPRO_EXPORT_PRICE_USD,
+  CV_PAYMENT_METHOD_LABELS,
+  MPESA_KES_AMOUNT,
+  PAYSTACK_KES_AMOUNT,
+} from '../../lib/cvPaymentPricing';
 
 type Props = {
   isOpen: boolean;
@@ -45,11 +51,12 @@ const CvPaymentModal: React.FC<Props> = ({
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-3 sm:px-4">
       <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl sm:p-6 dark:border-white/10 dark:bg-slate-950">
         <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
-          Unlock exports for $1 (one-time)
+          Unlock exports (one-time)
         </h3>
 
         <p className="mt-2 text-sm text-gray-600 dark:text-white/80">
           Pay once to unlock Resume + Cover Letter export and print forever on your account.
+          Paystack card checkout is KES {PAYSTACK_KES_AMOUNT} (≈ ${CVPRO_EXPORT_PRICE_USD}); M-Pesa STK checkout is KES {MPESA_KES_AMOUNT}.
         </p>
 
         <p className="mt-1 text-xs text-gray-500 dark:text-white/65">
@@ -64,7 +71,7 @@ const CvPaymentModal: React.FC<Props> = ({
               method === 'PAYSTACK' ? activeMethodClass : inactiveMethodClass
             }`}
           >
-            Paystack (Card)
+            {CV_PAYMENT_METHOD_LABELS.paystack}
           </button>
 
           <button
@@ -74,7 +81,7 @@ const CvPaymentModal: React.FC<Props> = ({
               method === 'MPESA' ? activeMethodClass : inactiveMethodClass
             }`}
           >
-            M-Pesa (KES 100)
+            {CV_PAYMENT_METHOD_LABELS.mpesa}
           </button>
         </div>
 

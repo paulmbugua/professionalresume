@@ -170,7 +170,10 @@ export const exportCvPdf = async (
     return res.data;
   } catch (err: any) {
     if (err?.response?.status === 403) {
-      throw new Error(err?.response?.data?.error || 'Resume export is available after the one-time $1 unlock.');
+      throw new Error(
+        err?.response?.data?.error ||
+          'Resume export is available after one-time unlock payment (Paystack card: KES 130, M-Pesa: KES 100).',
+      );
     }
     throw new Error(toMessage(err));
   }
@@ -203,7 +206,10 @@ export const getCvPrintHtml = async (
     return res.data;
   } catch (err: any) {
     if (err?.response?.status === 403) {
-      throw new Error(err?.response?.data?.error || 'Resume printing is available after the one-time $1 unlock.');
+      throw new Error(
+        err?.response?.data?.error ||
+          'Resume printing is available after one-time unlock payment (Paystack card: KES 130, M-Pesa: KES 100).',
+      );
     }
     throw new Error(toMessage(err));
   }

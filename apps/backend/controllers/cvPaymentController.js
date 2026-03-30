@@ -6,9 +6,13 @@ import {
   verifyCvPaystackPayment,
   getCvExportEntitlement,
   ensureCvExportEntitlement,
-  CVPRO_EXPORT_PRICE_USD,
-  CVPRO_EXPORT_PRICE_KES,
 } from '../services/cvPaymentService.js';
+import {
+  CVPRO_EXPORT_PRICE_USD,
+  MPESA_KES_AMOUNT,
+  PAYSTACK_KES_AMOUNT,
+  PAYSTACK_KES_AMOUNT_MINOR,
+} from '../constants/cvPaymentPricing.js';
 
 function resolveError(res, error) {
   const status = error?.statusCode || 500;
@@ -21,7 +25,12 @@ function resolveError(res, error) {
 }
 
 export async function getCvPaymentConfig(_req, res) {
-  return res.json({ usdAmount: CVPRO_EXPORT_PRICE_USD, kesAmount: CVPRO_EXPORT_PRICE_KES });
+  return res.json({
+    usdAmount: CVPRO_EXPORT_PRICE_USD,
+    paystackKesAmount: PAYSTACK_KES_AMOUNT,
+    paystackKesAmountMinor: PAYSTACK_KES_AMOUNT_MINOR,
+    mpesaKesAmount: MPESA_KES_AMOUNT,
+  });
 }
 
 export async function initMpesa(req, res) {

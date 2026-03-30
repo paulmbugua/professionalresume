@@ -12,11 +12,21 @@ import {
   MPESA_ENV,
   MPESA_BASE,
 } from '../utils/mpesa.js';
-
-export const CVPRO_EXPORT_PRICE_USD = 1;
-export const CVPRO_EXPORT_PRICE_KES = 100;
-export const CV_EXPORT_PURCHASE_KIND = 'cv_export_unlock';
-export const CV_EXPORT_ENTITLEMENT_KEY = 'cv_export_unlock';
+import {
+  CVPRO_EXPORT_PRICE_USD,
+  MPESA_KES_AMOUNT,
+  PAYSTACK_KES_AMOUNT,
+  PAYSTACK_KES_AMOUNT_MINOR,
+  CV_EXPORT_PURCHASE_KIND,
+  CV_EXPORT_ENTITLEMENT_KEY,
+  expectedKesAmountForProvider,
+} from '../constants/cvPaymentPricing.js';
+export {
+  CVPRO_EXPORT_PRICE_USD,
+  MPESA_KES_AMOUNT,
+  PAYSTACK_KES_AMOUNT,
+  PAYSTACK_KES_AMOUNT_MINOR,
+};
 
 class PaymentInitError extends Error {
   constructor(message, statusCode, code, providerMessage) {
@@ -34,7 +44,8 @@ function baseMeta() {
     coverLetterExportUnlocked: true,
     sourceProduct: 'cvpro',
     usdAmount: CVPRO_EXPORT_PRICE_USD,
-    kesAmount: CVPRO_EXPORT_PRICE_KES,
+    kesAmountMpesa: MPESA_KES_AMOUNT,
+    kesAmountPaystack: PAYSTACK_KES_AMOUNT,
   };
 }
 
@@ -123,7 +134,7 @@ export async function initCvMpesaPayment({ userId, phone, requestBaseUrl }) {
     userId,
     provider: 'MPESA',
     paymentMethod: 'MPESA_STK',
-    amount: CVPRO_EXPORT_PRICE_KES,
+    amount: MPESA_KES_AMOUNT,
     currency: 'KES',
     metadata: { normalizedPhone },
   });
@@ -136,7 +147,7 @@ export async function initCvMpesaPayment({ userId, phone, requestBaseUrl }) {
       Password: mpesaPassword(timestamp),
       Timestamp: timestamp,
       TransactionType: 'CustomerPayBillOnline',
-      Amount: CVPRO_EXPORT_PRICE_KES,
+      Amount: MPESA_KES_AMOUNT,
       PartyA: normalizedPhone,
       PartyB: shortcode,
       PhoneNumber: normalizedPhone,
@@ -148,7 +159,7 @@ export async function initCvMpesaPayment({ userId, phone, requestBaseUrl }) {
     console.log('[cv/mpesa/init] sending stk push', {
       paymentId: payment.id,
       userId: Number(userId),
-      amount: CVPRO_EXPORT_PRICE_KES,
+      amount: MPESA_KES_AMOUNT,
       phone: normalizedPhone,
       callbackUrl,
       mpesaEnv: MPESA_ENV,
@@ -200,7 +211,7 @@ export async function initCvMpesaPayment({ userId, phone, requestBaseUrl }) {
       paymentId: payment.id,
       transactionId: payment.transaction_id,
       checkoutRequestId,
-      amount: CVPRO_EXPORT_PRICE_KES,
+      amount: MPESA_KES_AMOUNT,
       currency: 'KES',
       message: 'STK push sent. Complete payment on your phone.',
     };
@@ -270,6 +281,30 @@ export async function confirmCvMpesaPayment({ userId, transactionId, checkoutReq
   }
 
   const payment = rows[0];
+  const expectedAmount = expectedKesAmountForProvider(payment.provider);
+  console.log('[cv/mpesa/confirm] evaluating payment', {
+    paymentId: payment.id,
+    userId: Number(userId),
+    provider: payment.provider,
+    status: payment.status,
+    requestedAmount: Number(payment.amount || 0),
+    expectedAmount,
+    currency: payment.currency,
+    checkoutRequestId: payment.checkout_request_id || checkoutRequestId || null,
+    hasManualReceipt: Boolean(mpesaReceipt),
+  });
+
+  if (Number(payment.amount || 0) !== expectedAmount || String(payment.currency || '').toUpperCase() !== 'KES') {
+    await pool.query(
+      `UPDATE cv_payments
+       SET status='Failed', updated_at=NOW(), metadata = metadata || $2::jsonb
+       WHERE id=$1`,
+      [payment.id, JSON.stringify({ mismatchAt: 'mpesa_confirm_precheck', expectedAmount, expectedCurrency: 'KES' })],
+    );
+    const err = new Error('M-Pesa amount/currency mismatch on payment intent');
+    err.statusCode = 400;
+    throw err;
+  }
   if (payment.status === 'Completed') {
     await grantCvExportEntitlement({ userId, paymentId: payment.id });
     return { status: 'Completed', paymentId: payment.id, entitlementGranted: true };
@@ -357,6 +392,7 @@ export async function handleCvMpesaCallback(callbackPayload = {}) {
     : [];
   const mpesaReceipt = readCallbackItem(callbackItems, 'MpesaReceiptNumber');
   const amount = Number(readCallbackItem(callbackItems, 'Amount') || 0);
+  const expectedAmount = expectedKesAmountForProvider('MPESA');
 
   if (!checkoutRequestId) {
     console.warn('[cv/mpesa/callback] missing CheckoutRequestID');
@@ -391,6 +427,7 @@ export async function handleCvMpesaCallback(callbackPayload = {}) {
       resultDesc,
       mpesaReceipt,
       amount,
+      expectedAmount,
       callbackMetadata: stkCallback.CallbackMetadata || null,
       callbackProcessedAt: new Date().toISOString(),
     };
@@ -413,6 +450,32 @@ export async function handleCvMpesaCallback(callbackPayload = {}) {
     }
 
     if (resultCode === 0) {
+      if (amount > 0 && amount !== expectedAmount) {
+        await client.query(
+          `UPDATE cv_payments
+           SET status='Failed',
+               mpesa_receipt=COALESCE($2, mpesa_receipt),
+               metadata = metadata || $3::jsonb,
+               updated_at=NOW()
+           WHERE id=$1`,
+          [
+            payment.id,
+            mpesaReceipt,
+            JSON.stringify({
+              lastCallback: callbackMeta,
+              callbackResultCode: resultCode,
+              callbackResultDesc: resultDesc,
+              mismatchAt: 'mpesa_callback_success_amount_check',
+              expectedAmount,
+              verifiedAmount: amount,
+              expectedCurrency: 'KES',
+            }),
+          ],
+        );
+        await client.query('COMMIT');
+        return { processed: true, paymentId: payment.id, status: 'Failed', reason: 'amount_mismatch' };
+      }
+
       await client.query(
         `UPDATE cv_payments
          SET status='Completed',
@@ -479,13 +542,13 @@ export async function createCvPaystackOrder({ userId, callbackUrl }) {
     userId,
     provider: 'PAYSTACK',
     paymentMethod: 'PAYSTACK_HOSTED',
-    amount: CVPRO_EXPORT_PRICE_KES,
+    amount: PAYSTACK_KES_AMOUNT,
     currency: 'KES',
   });
 
   try {
     const initializePayload = {
-      amount: CVPRO_EXPORT_PRICE_KES * 100,
+      amount: PAYSTACK_KES_AMOUNT_MINOR,
       email: await getUserEmail(userId),
       currency: 'KES',
       callback_url: callbackUrl,
@@ -495,6 +558,8 @@ export async function createCvPaystackOrder({ userId, callbackUrl }) {
         cvTransactionId: payment.transaction_id,
         kind: CV_EXPORT_PURCHASE_KIND,
         sourceProduct: 'cvpro',
+        expectedAmountKesMajor: PAYSTACK_KES_AMOUNT,
+        expectedAmountKesMinor: PAYSTACK_KES_AMOUNT_MINOR,
         restrictedChannels: ['card'],
       },
     };
@@ -503,6 +568,7 @@ export async function createCvPaystackOrder({ userId, callbackUrl }) {
       paymentId: payment.id,
       userId: Number(userId),
       amountMinor: initializePayload.amount,
+      amountMajor: PAYSTACK_KES_AMOUNT,
       currency: initializePayload.currency,
       callbackUrl,
       channels: initializePayload.channels,
@@ -603,6 +669,16 @@ export async function verifyCvPaystackPayment({ userId, reference }) {
     const data = response?.data?.data || {};
     const amount = Number(data.amount || 0);
     const currency = String(data.currency || '').toUpperCase();
+    console.log('[cv/paystack/verify] verification payload', {
+      paymentId: payment.id,
+      userId: Number(userId),
+      reference,
+      verifiedAmountMinor: amount,
+      expectedAmountMinor: PAYSTACK_KES_AMOUNT_MINOR,
+      verifiedCurrency: currency,
+      expectedCurrency: 'KES',
+      status: data.status,
+    });
 
     if (String(data.status || '').toLowerCase() !== 'success') {
       await pool.query(
@@ -612,7 +688,11 @@ export async function verifyCvPaystackPayment({ userId, reference }) {
       return { status: 'Failed', paymentId: payment.id, message: 'Payment not successful yet' };
     }
 
-    if (amount !== CVPRO_EXPORT_PRICE_KES * 100 || currency !== 'KES') {
+    if (amount !== PAYSTACK_KES_AMOUNT_MINOR || currency !== 'KES') {
+      await pool.query(
+        `UPDATE cv_payments SET status='Failed', metadata = metadata || $2::jsonb, updated_at=NOW() WHERE id=$1`,
+        [payment.id, JSON.stringify({ paystackVerify: response.data, mismatchAt: 'paystack_verify_amount_currency' })],
+      );
       const err = new Error('Paystack amount/currency mismatch');
       err.statusCode = 502;
       throw err;
