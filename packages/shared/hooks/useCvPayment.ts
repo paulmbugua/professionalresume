@@ -9,7 +9,11 @@ import {
   verifyCvPaystackPayment,
 } from '@cvpro/shared/api';
 
-type Args = { backendUrl: string; token?: string };
+type Args = {
+  backendUrl: string;
+  token?: string;
+  onPaymentConfirmed?: (paymentReference: string) => void;
+};
 type Action = 'resume_export' | 'resume_print' | 'cover_letter_export' | 'cover_letter_print';
 const CVPRO_CANONICAL_ORIGIN = 'https://www.onedollarcvpro.com';
 const PENDING_MPESA_KEY = 'cv:pendingMpesaPayment';
@@ -40,7 +44,7 @@ export function useCvExportEntitlement({ backendUrl, token }: Args) {
   });
 }
 
-export function useCvPayment({ backendUrl, token }: Args) {
+export function useCvPayment({ backendUrl, token, onPaymentConfirmed }: Args) {
   const qc = useQueryClient();
   const entitlement = useCvExportEntitlement({ backendUrl, token });
   const [modalOpen, setModalOpen] = useState(false);
@@ -51,7 +55,14 @@ export function useCvPayment({ backendUrl, token }: Args) {
   const [mpesaTransactionId, setMpesaTransactionId] = useState<string | null>(null);
   const [mpesaCheckoutRequestId, setMpesaCheckoutRequestId] = useState<string | null>(null);
   const [mpesaFlowState, setMpesaFlowState] = useState<
-    'idle' | 'initiating' | 'stk_sent' | 'waiting_for_payment' | 'confirmed' | 'failed' | 'expired' | 'cancelled'
+    | 'idle'
+    | 'initiating'
+    | 'stk_sent'
+    | 'waiting_for_payment'
+    | 'confirmed'
+    | 'failed'
+    | 'expired'
+    | 'cancelled'
   >('idle');
   const [mpesaStatusMessage, setMpesaStatusMessage] = useState<string>('');
   const pollingStartedAtRef = useRef<number | null>(null);
@@ -70,7 +81,7 @@ export function useCvPayment({ backendUrl, token }: Args) {
     if (typeof window === 'undefined') return;
     window.sessionStorage.setItem(
       PENDING_MPESA_KEY,
-      JSON.stringify({ ...payload, createdAt: new Date().toISOString() }),
+      JSON.stringify({ ...payload, createdAt: new Date().toISOString() })
     );
   };
 
@@ -79,7 +90,11 @@ export function useCvPayment({ backendUrl, token }: Args) {
     window.sessionStorage.removeItem(PENDING_MPESA_KEY);
   };
 
-  const finalizeSuccessfulMpesaPayment = async () => {
+  const finalizeSuccessfulMpesaPayment = async (paymentReference?: string | number | null) => {
+    const reference = String(
+      paymentReference || mpesaTransactionId || mpesaCheckoutRequestId || ''
+    ).trim();
+    if (reference) onPaymentConfirmed?.(reference);
     clearPendingMpesa();
     await qc.invalidateQueries({ queryKey: ['cv-export-entitlement'] });
     setMpesaFlowState('confirmed');
@@ -115,7 +130,9 @@ export function useCvPayment({ backendUrl, token }: Args) {
 
       if (result.status === 'success') {
         stopPolling('success');
-        await finalizeSuccessfulMpesaPayment();
+        await finalizeSuccessfulMpesaPayment(
+          result.paymentId || transactionId || checkoutRequestId
+        );
         return;
       }
 
@@ -162,7 +179,9 @@ export function useCvPayment({ backendUrl, token }: Args) {
         stopPolling('timeout');
         clearPendingMpesa();
         setMpesaFlowState('expired');
-        setMpesaStatusMessage('Timed out waiting for M-Pesa confirmation. Tap retry to send another STK push.');
+        setMpesaStatusMessage(
+          'Timed out waiting for M-Pesa confirmation. Tap retry to send another STK push.'
+        );
         return;
       }
       void pollMpesaStatusOnce(identifiers);
@@ -217,7 +236,10 @@ export function useCvPayment({ backendUrl, token }: Args) {
     onSuccess: async (result) => {
       if (result.status === 'Completed') {
         stopPolling('manual_confirm_success');
-        await finalizeSuccessfulMpesaPayment();
+        await finalizeSuccessfulMpesaPayment(
+          result.paymentId || mpesaTransactionId || mpesaCheckoutRequestId
+        );
+        return;
       }
       setMpesaFlowState('failed');
       setMpesaStatusMessage(result.message || 'Manual confirmation failed. Please retry.');

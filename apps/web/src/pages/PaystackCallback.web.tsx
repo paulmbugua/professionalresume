@@ -7,6 +7,7 @@ import { useCvPayment } from '@cvpro/shared/hooks';
 import { restorePendingPaymentReturn } from '../lib/cvGuestSession';
 import { trackPurchase } from '../lib/analytics/events';
 import { PAYSTACK_KES_AMOUNT } from '../lib/cvPaymentPricing';
+import { trackTikTokPurchase } from '../lib/tiktokPixel';
 
 const PaystackCallbackPage: React.FC = () => {
   const router = useRouter();
@@ -47,8 +48,16 @@ const PaystackCallbackPage: React.FC = () => {
           plan_name: 'one_time_unlock',
           product_type: 'resume',
           source_page: pendingReturn?.source || 'paystack_callback',
-          items: [{ item_id: 'cvpro-export-unlock', item_name: 'CVPro Export Unlock', price: PAYSTACK_KES_AMOUNT, quantity: 1 }],
+          items: [
+            {
+              item_id: 'cvpro-export-unlock',
+              item_name: 'CVPro Export Unlock',
+              price: PAYSTACK_KES_AMOUNT,
+              quantity: 1,
+            },
+          ],
         });
+        trackTikTokPurchase(reference);
         setMessage('Payment verified. Unlock successful. Redirecting...');
         setTimeout(() => {
           router.replace(safeNextPath);

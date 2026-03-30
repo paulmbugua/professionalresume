@@ -26,6 +26,7 @@ import {
   trackUploadCvCompleted,
   trackUploadCvStarted,
 } from '../lib/analytics/events';
+import { trackTikTokPurchase } from '../lib/tiktokPixel';
 
 function pickParam(v: unknown): string | undefined {
   if (typeof v === 'string') return v;
@@ -110,7 +111,11 @@ const CoverLetterBuilderPageInner: React.FC<{
   const updateDraft = useSaveCoverLetterDraft({ backendUrl, token });
   const exportDraft = useExportCoverLetter({ backendUrl, token });
   const importFile = useImportCoverLetterFile({ backendUrl, token });
-  const cvPayment = useCvPayment({ backendUrl, token });
+  const cvPayment = useCvPayment({
+    backendUrl,
+    token,
+    onPaymentConfirmed: trackTikTokPurchase,
+  });
 
   const [exportUrl, setExportUrl] = useState<string | undefined>();
   const [lastSavedAt, setLastSavedAt] = useState<string | undefined>();
@@ -242,7 +247,10 @@ const CoverLetterBuilderPageInner: React.FC<{
       coverLetterJson: exportJson,
     });
     setExportUrl(exported.signedUrl || exported.url || undefined);
-    trackCoverLetterDownload({ source_page: 'cover_letter_builder', template_id: draft.templateId });
+    trackCoverLetterDownload({
+      source_page: 'cover_letter_builder',
+      template_id: draft.templateId,
+    });
   };
 
   const doPrint = async () => {
@@ -323,13 +331,33 @@ const CoverLetterBuilderPageInner: React.FC<{
         pendingAction={cvPayment.pendingAction}
         onClose={cvPayment.cancelPayment}
         onPayWithMpesa={async (phone) => {
-          trackBeginCheckout({ currency: 'KES', value: MPESA_KES_AMOUNT, purchase_type: 'export_unlock', product_type: 'cover_letter', source_page: 'cover_letter_builder' });
+          trackBeginCheckout({
+            currency: 'KES',
+            value: MPESA_KES_AMOUNT,
+            purchase_type: 'export_unlock',
+            product_type: 'cover_letter',
+            source_page: 'cover_letter_builder',
+          });
           await cvPayment.initMpesaMutation.mutateAsync(phone);
         }}
         onRetryStatusCheck={cvPayment.retryMpesaPolling}
         onPayWithPaystack={async () => {
           const nextPath = `${window.location.pathname}?cv_action=${cvPayment.pendingAction}`;
-          trackBeginCheckout({ currency: 'KES', value: PAYSTACK_KES_AMOUNT, purchase_type: 'export_unlock', product_type: 'cover_letter', source_page: 'cover_letter_builder', items: [{ item_id: 'cvpro-export-unlock', item_name: 'CVPro Export Unlock', price: PAYSTACK_KES_AMOUNT, quantity: 1 }] });
+          trackBeginCheckout({
+            currency: 'KES',
+            value: PAYSTACK_KES_AMOUNT,
+            purchase_type: 'export_unlock',
+            product_type: 'cover_letter',
+            source_page: 'cover_letter_builder',
+            items: [
+              {
+                item_id: 'cvpro-export-unlock',
+                item_name: 'CVPro Export Unlock',
+                price: PAYSTACK_KES_AMOUNT,
+                quantity: 1,
+              },
+            ],
+          });
           const order = await cvPayment.startPaystackCheckout.mutateAsync(nextPath);
           window.location.href = order.authorizationUrl;
         }}
@@ -351,9 +379,15 @@ const CoverLetterBuilderPageInner: React.FC<{
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file) {
-            trackUploadCvStarted({ source_page: 'cover_letter_builder', upload_type: 'cover_letter' });
+            trackUploadCvStarted({
+              source_page: 'cover_letter_builder',
+              upload_type: 'cover_letter',
+            });
             void handleImport(file, 'cover_letter').finally(() =>
-              trackUploadCvCompleted({ source_page: 'cover_letter_builder', upload_type: 'cover_letter' })
+              trackUploadCvCompleted({
+                source_page: 'cover_letter_builder',
+                upload_type: 'cover_letter',
+              })
             );
           }
           e.currentTarget.value = '';
