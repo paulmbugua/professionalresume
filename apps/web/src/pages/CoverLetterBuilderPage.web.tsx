@@ -23,7 +23,6 @@ import { getReturnToFromQuery } from '../lib/returnTo';
 import {
   trackBeginCheckout,
   trackCoverLetterDownload,
-  trackPurchase,
   trackUploadCvCompleted,
   trackUploadCvStarted,
 } from '../lib/analytics/events';
@@ -113,7 +112,6 @@ const CoverLetterBuilderPageInner: React.FC<{
   const importFile = useImportCoverLetterFile({ backendUrl, token });
   const cvPayment = useCvPayment({ backendUrl, token });
 
-  const [paymentMessage, setPaymentMessage] = useState<string>('');
   const [exportUrl, setExportUrl] = useState<string | undefined>();
   const [lastSavedAt, setLastSavedAt] = useState<string | undefined>();
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -326,24 +324,11 @@ const CoverLetterBuilderPageInner: React.FC<{
         onClose={cvPayment.cancelPayment}
         onPayWithMpesa={async (phone) => {
           trackBeginCheckout({ currency: 'KES', value: MPESA_KES_AMOUNT, purchase_type: 'export_unlock', product_type: 'cover_letter', source_page: 'cover_letter_builder' });
-          const res = await cvPayment.initMpesaMutation.mutateAsync(phone);
-          setPaymentMessage(res.message || 'Waiting for M-Pesa confirmation');
+          await cvPayment.initMpesaMutation.mutateAsync(phone);
         }}
-        onConfirmMpesa={async (payload) => {
-          const res = await cvPayment.confirmMpesaMutation.mutateAsync(payload);
-          if (res.status === 'Pending') setPaymentMessage('Waiting for M-Pesa confirmation');
-          if (res.status === 'Completed') {
-            trackPurchase({
-              transaction_id: `mpesa-cover-${Date.now()}`,
-              currency: 'KES',
-              value: MPESA_KES_AMOUNT,
-              purchase_type: 'export_unlock',
-              product_type: 'cover_letter',
-              source_page: 'cover_letter_builder',
-              items: [{ item_id: 'cvpro-export-unlock', item_name: 'CVPro Export Unlock', price: MPESA_KES_AMOUNT, quantity: 1 }],
-            });
-            setPaymentMessage('Unlock successful. Export unlocked.');
-          }
+        onRetryStatusCheck={cvPayment.retryMpesaPolling}
+        onManualConfirmMpesa={async (payload) => {
+          await cvPayment.confirmMpesaMutation.mutateAsync(payload);
         }}
         onPayWithPaystack={async () => {
           const nextPath = `${window.location.pathname}?cv_action=${cvPayment.pendingAction}`;
@@ -354,10 +339,10 @@ const CoverLetterBuilderPageInner: React.FC<{
         isLoadingMpesaInit={cvPayment.initMpesaMutation.isPending}
         isLoadingMpesaConfirm={cvPayment.confirmMpesaMutation.isPending}
         isLoadingPaystack={cvPayment.startPaystackCheckout.isPending}
-        message={paymentMessage}
+        mpesaFlowState={cvPayment.mpesaFlowState}
+        message={cvPayment.mpesaStatusMessage}
         error={
           cvPayment.initMpesaMutation.error?.message ||
-          cvPayment.confirmMpesaMutation.error?.message ||
           cvPayment.startPaystackCheckout.error?.message ||
           null
         }

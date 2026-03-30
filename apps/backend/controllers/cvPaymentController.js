@@ -2,6 +2,7 @@ import {
   createCvPaystackOrder,
   initCvMpesaPayment,
   confirmCvMpesaPayment,
+  getCvMpesaPaymentStatus,
   handleCvMpesaCallback,
   verifyCvPaystackPayment,
   getCvExportEntitlement,
@@ -55,6 +56,21 @@ export async function confirmMpesa(req, res) {
       transactionId,
       checkoutRequestId,
       mpesaReceipt,
+    });
+    return res.status(200).json(out);
+  } catch (error) {
+    return resolveError(res, error);
+  }
+}
+
+export async function mpesaStatus(req, res) {
+  try {
+    const transactionId = req.query?.transactionId || req.body?.transactionId;
+    const checkoutRequestId = req.query?.checkoutRequestId || req.body?.checkoutRequestId;
+    const out = await getCvMpesaPaymentStatus({
+      userId: req.user.id,
+      transactionId,
+      checkoutRequestId,
     });
     return res.status(200).json(out);
   } catch (error) {
