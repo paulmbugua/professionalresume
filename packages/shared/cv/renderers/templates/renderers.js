@@ -141,14 +141,14 @@ export function renderModernSidebarBlueHtml(draft = {}) {
     'modernSidebarBlueLayout'
   );
   const resolvedPhotoUrl = (d.basics?.photoUrl || '').trim() || '/assets/profile_photo.png';
-  const avatar = `<img class="avatar-img" src="${esc(resolvedPhotoUrl)}" alt="Profile photo" />`;
+  const avatar = `<img class="avatar-img" src="${esc(resolvedPhotoUrl)}" alt="Profile photo" width="86" height="108" />`;
   const withAvatar = base.replace(
     '<aside class="sidebar"><h1>',
     `<aside class="sidebar"><div class="avatar">${avatar}</div><h1>`
   );
   return withAvatar.replace(
     '</style>',
-    '.avatar{width:86px;height:108px;border-radius:10px;overflow:hidden;display:grid;place-items:center;background:rgba(255,255,255,.2);margin-bottom:14px;border:2px solid rgba(255,255,255,.55);box-shadow:0 4px 16px rgba(15,23,42,.15)}.avatar-img{width:100%;height:100%;object-fit:cover;display:block}</style>'
+    '.modernSidebarBlueLayout .sidebar{display:flex;flex-direction:column;align-items:flex-start}.modernSidebarBlueLayout .avatar{position:relative;flex:0 0 auto;align-self:flex-start;width:22.754mm;height:28.575mm;border-radius:2.646mm;overflow:hidden;background:rgba(255,255,255,.2);margin:0 0 3.704mm;border:0.529mm solid rgba(255,255,255,.55);box-shadow:0 1.058mm 4.233mm rgba(15,23,42,.15)}.modernSidebarBlueLayout .avatar-img{display:block;width:100%;height:100%;min-width:100%;min-height:100%;object-fit:cover;object-position:center}@media print{.modernSidebarBlueLayout .avatar{break-inside:avoid;page-break-inside:avoid}}</style>'
   );
 }
 
