@@ -51,7 +51,7 @@ export default function Page() {
         </article>
         <article className="rounded-2xl border border-slate-200 bg-white/90 p-4 dark:border-white/10 dark:bg-slate-900/70">
           <h2 className="text-base font-semibold">Unified checkout unlock</h2>
-          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">After your first $1 resume purchase, cover letter export is included.</p>
+          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">After your first resume unlock payment, cover letter export is included (Paystack card: KES 130, M-Pesa: KES 100).</p>
         </article>
       </section>
     </main>
