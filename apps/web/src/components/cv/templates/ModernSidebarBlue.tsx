@@ -124,9 +124,9 @@ ${cssVarBlock}
 *{box-sizing:border-box}
 body{margin:0;background:#e2e8f0;font-family:Poppins,system-ui,Segoe UI,Arial;color:var(--ink)}
 .page{width:210mm;min-height:297mm;margin:18px auto;background:var(--paper);display:grid;grid-template-columns:72mm 1fr;box-shadow:0 12px 35px rgba(2,6,23,.12)}
-aside{background:linear-gradient(180deg,var(--sidebarBg),var(--primary));color:var(--sidebarText);padding:11.5mm}
-.avatar{width:86px;height:108px;border-radius:10px;overflow:hidden;background:rgba(255,255,255,.2);display:grid;place-items:center;font-size:29px;font-weight:700;margin-bottom:14px;border:2px solid rgba(255,255,255,.55);box-shadow:0 4px 16px rgba(15,23,42,.15)}
-.avatar-img{width:100%;height:100%;object-fit:cover;display:block}
+aside{background:linear-gradient(180deg,var(--sidebarBg),var(--primary));color:var(--sidebarText);padding:11.5mm;display:flex;flex-direction:column;align-items:flex-start}
+.avatar{position:relative;flex:0 0 auto;align-self:flex-start;width:22.754mm;height:28.575mm;border-radius:2.646mm;overflow:hidden;background:rgba(255,255,255,.2);margin:0 0 3.704mm;border:.529mm solid rgba(255,255,255,.55);box-shadow:0 1.058mm 4.233mm rgba(15,23,42,.15)}
+.avatar-img{display:block;width:100%;height:100%;min-width:100%;min-height:100%;object-fit:cover;object-position:center}
 .side-name{font-size:24px;line-height:1.12;font-weight:700;margin:0 0 4px}.side-headline{margin:0 0 13px;color:var(--sideText);font-size:14px}
 .s-title{margin:0 0 8px;font-size:14px;letter-spacing:.12em;text-transform:uppercase;color:color-mix(in srgb, var(--sidebarText) 78%, white 22%);font-weight:700}
 .s-block{margin:0 0 13px}.s-block div,.s-block li{font-size:14px;line-height:1.5;color:var(--sidebarText)}
@@ -138,12 +138,13 @@ main{padding:11mm 12mm}.name{margin:0;font-size:33px;line-height:1.04;letter-spa
 .text-list{margin:0;padding-left:19px}.text-list li{font-size:14px;line-height:1.48;margin:3px 0}
 @page{size:A4;margin:12mm}
 @media print{body{background:#fff}.page{margin:0;box-shadow:none;width:auto;min-height:auto}}
+@media print{.avatar{break-inside:avoid;page-break-inside:avoid}}
 </style>
 </head>
 <body>
 <main class="page">
   <aside>
-    <div class="avatar"><img class="avatar-img" src="${esc(resolvedPhotoUrl)}" alt="Profile photo" /></div>
+    <div class="avatar"><img class="avatar-img" src="${esc(resolvedPhotoUrl)}" alt="Profile photo" width="86" height="108" /></div>
     <p class="side-name">${esc(b.name || 'Your Name')}</p>
     <p class="side-headline">${esc(b.headline || 'Professional Headline')}</p>
     <section class="s-block"><p class="s-title">Contact</p>${contact || '<div>Add contact details</div>'}</section>
