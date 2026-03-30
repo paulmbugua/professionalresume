@@ -219,6 +219,8 @@ export function useCvPayment({ backendUrl, token }: Args) {
         stopPolling('manual_confirm_success');
         await finalizeSuccessfulMpesaPayment();
       }
+      setMpesaFlowState('failed');
+      setMpesaStatusMessage(result.message || 'Manual confirmation failed. Please retry.');
     },
   });
 

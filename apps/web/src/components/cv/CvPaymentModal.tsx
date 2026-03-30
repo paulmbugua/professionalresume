@@ -113,6 +113,12 @@ const CvPaymentModal: React.FC<Props> = ({
             </button>
 
             <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-white/10 dark:bg-slate-900/80">
+              {showSpinner ? (
+                <div className="mb-2 flex items-center gap-2 text-xs text-gray-700 dark:text-white/80">
+                  <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary/40 border-t-primary" />
+                  <span>Waiting for payment confirmation…</span>
+                </div>
+              ) : null}
               <p className="text-xs text-gray-600 dark:text-white/75">
                 {isWaitingForPayment
                   ? 'Check your phone and enter your M-Pesa PIN. We will confirm automatically.'
