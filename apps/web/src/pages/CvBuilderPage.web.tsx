@@ -35,7 +35,11 @@ import {
   type PendingCvAction,
 } from '../lib/cvGuestSession';
 import { trackBeginCheckout, trackResumeDownload } from '../lib/analytics/events';
-import { trackTikTokPurchase } from '../lib/tiktokPixel';
+import {
+  trackTikTokInitiateCheckout,
+  trackTikTokPurchase,
+  trackTikTokViewContent,
+} from '../lib/tiktokPixel';
 
 const EMPTY_DRAFT: CvDraft = normalizeDraft({
   id: '',
@@ -151,6 +155,12 @@ const CvBuilderPageInner: React.FC<{
   const methods = useForm<CvDraft>({ defaultValues: EMPTY_DRAFT, mode: 'onChange' });
   const { reset, getValues, control, setValue } = methods;
   const formValues = useWatch({ control });
+
+  useEffect(() => {
+    if (!id) return;
+    trackTikTokViewContent(`resume_builder:${id}`);
+  }, [id]);
+
   const paymentRestoreSnapshot = useMemo(() => {
     if (isGuest) return null;
     const pending = restorePendingCvBuilderState();
@@ -447,6 +457,7 @@ const CvBuilderPageInner: React.FC<{
           pendingAction={cvPayment.pendingAction}
           onClose={cvPayment.cancelPayment}
           onPayWithMpesa={async (phone) => {
+            trackTikTokInitiateCheckout();
             trackBeginCheckout({
               currency: 'KES',
               value: MPESA_KES_AMOUNT,
@@ -459,6 +470,7 @@ const CvBuilderPageInner: React.FC<{
           onRetryStatusCheck={cvPayment.retryMpesaPolling}
           onPayWithPaystack={async () => {
             const nextPath = `${window.location.pathname}?cv_action=${cvPayment.pendingAction}`;
+            trackTikTokInitiateCheckout();
             trackBeginCheckout({
               currency: 'KES',
               value: PAYSTACK_KES_AMOUNT,
