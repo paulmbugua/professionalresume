@@ -1,4 +1,9 @@
 import type { CvDraft } from '@cvpro/shared/types';
+import {
+  clearGuestCvDraft,
+  loadGuestCvDraft,
+  saveGuestCvDraft,
+} from './cv/guestDraftStorage';
 
 export type PendingCvAction = 'save' | 'export' | 'print';
 export type PendingPaymentResumeAction = 'resume_export' | 'resume_print';
@@ -27,9 +32,17 @@ const removeSession = (key: string): void => {
 
 export function persistGuestCvState(draft: CvDraft): void {
   writeSession(GUEST_DRAFT_KEY, JSON.stringify(draft));
+  saveGuestCvDraft({
+    draft,
+    selectedTemplateId: draft.templateId,
+    returnTo: '/builder/guest?resumeDraft=guest',
+  });
 }
 
 export function restoreGuestCvState(): CvDraft | null {
+  const localDraft = loadGuestCvDraft();
+  if (localDraft?.draft) return localDraft.draft;
+
   const raw = readSession(GUEST_DRAFT_KEY);
   if (!raw) return null;
 
@@ -43,6 +56,7 @@ export function restoreGuestCvState(): CvDraft | null {
 
 export function clearGuestCvState(): void {
   removeSession(GUEST_DRAFT_KEY);
+  clearGuestCvDraft();
 }
 
 export function setPendingBuilderAction(action: PendingCvAction): void {

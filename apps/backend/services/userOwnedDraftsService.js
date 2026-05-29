@@ -26,9 +26,27 @@ export async function createOwnedDraft({
   templateId,
   data,
   templateColumn = 'template_key',
+  clientDraftId,
 }) {
+  if (clientDraftId) {
+    const { rows: existingRows } = await pool.query(
+      `SELECT * FROM ${table}
+       WHERE user_id = $1 AND is_deleted = FALSE AND data_json->>'clientDraftId' = $2
+       ORDER BY updated_at DESC
+       LIMIT 1`,
+      [normalizeUserId(userId), String(clientDraftId)],
+    );
+    if (existingRows[0]) return mapOwnedDraftRow(existingRows[0], { templateColumn });
+  }
+
   const id = crypto.randomUUID();
-  const dataJson = { ...data, id, userId: String(userId), templateId };
+  const dataJson = {
+    ...data,
+    id,
+    userId: String(userId),
+    templateId,
+    ...(clientDraftId ? { clientDraftId: String(clientDraftId) } : {}),
+  };
 
   const { rows } = await pool.query(
     `INSERT INTO ${table} (id, user_id, title, ${templateColumn}, data_json)

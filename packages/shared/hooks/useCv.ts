@@ -67,7 +67,7 @@ export function useCvDraft({ backendUrl, token, id }: BaseArgs & { id?: string }
 export function useCreateCvDraft({ backendUrl, token }: BaseArgs) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { templateId: string; title?: string; data?: Partial<CvDraft> }) => {
+    mutationFn: (payload: { templateId: string; title?: string; data?: Partial<CvDraft>; clientDraftId?: string }) => {
       if (!token) throw new Error('Unauthorized');
       return createCvDraft(backendUrl, token, payload);
     },

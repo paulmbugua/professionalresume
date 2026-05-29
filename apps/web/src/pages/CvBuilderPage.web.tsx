@@ -17,9 +17,8 @@ import { normalizeDraft } from '../utils/cvDefaults';
 import CvEditorShell from '../components/cv/CvEditorShell';
 import CvPaymentModal from '../components/cv/CvPaymentModal';
 import { MPESA_KES_AMOUNT, PAYSTACK_KES_AMOUNT } from '../lib/cvPaymentPricing';
-import { demoResume } from '../templates/demoResume';
+import { demoResume, hasAnyUserData } from '../templates/demoResume';
 import {
-  clearGuestCvState,
   clearPendingPaymentReturnState,
   peekPendingPaymentAction,
   persistPendingCvBuilderState,
@@ -31,9 +30,18 @@ import {
   consumePendingBuilderAction,
   persistGuestCvState,
   setBuilderAuthReason,
-  setPendingBuilderAction,
   type PendingCvAction,
 } from '../lib/cvGuestSession';
+import {
+  clearGuestCvDraft,
+  loadGuestCvDraft,
+  markGuestDraftPendingActionConsumed,
+  markGuestDraftSynced,
+  saveGuestCvDraft,
+  type GuestCvBuilderTab,
+} from '../lib/cv/guestDraftStorage';
+import { consumePendingCvAction } from '../lib/cv/guestDraftSession';
+import { redirectToAuthWithCvReturn } from '../lib/cv/guestDraftAuth';
 import { trackBeginCheckout, trackResumeDownload } from '../lib/analytics/events';
 import {
   trackTikTokInitiateCheckout,
@@ -85,11 +93,6 @@ const actionToResumeActionQuery: Record<PendingCvAction, string> = {
   print: 'resume_print',
 };
 
-const reasonByAction: Record<PendingCvAction, string> = {
-  save: 'Create an account to save your resume.',
-  export: 'Log in to export your resume.',
-  print: 'Create an account to print and keep your progress.',
-};
 
 const CvBuilderPageInner: React.FC<{
   id: string;
@@ -146,11 +149,19 @@ const CvBuilderPageInner: React.FC<{
   const [exportUrl, setExportUrl] = useState<string | undefined>();
   const [lastSavedAt, setLastSavedAt] = useState<string | undefined>();
   const [authHint, setAuthHint] = useState<string>('');
+  const [showRecoveryPrompt, setShowRecoveryPrompt] = useState(false);
+  const [restoredMessage, setRestoredMessage] = useState('');
 
   const initRef = useRef(true);
   const hydratedDraftIdRef = useRef<string | null>(null);
   const lastSavedSigRef = useRef<string>('');
   const restoredPaymentStateRef = useRef(false);
+  const builderUiRef = useRef<{ activeTab: GuestCvBuilderTab; activeSection?: string }>({
+    activeTab: 'edit',
+  });
+  const restoredGuestMetaRef = useRef(loadGuestCvDraft());
+  const migratedGuestDraftRef = useRef(false);
+  const consumedActionRef = useRef(false);
 
   const methods = useForm<CvDraft>({ defaultValues: EMPTY_DRAFT, mode: 'onChange' });
   const { reset, getValues, control, setValue } = methods;
@@ -175,6 +186,20 @@ const CvBuilderPageInner: React.FC<{
   }, []);
 
   useEffect(() => {
+    if (!isGuest || token) return;
+    const payload = loadGuestCvDraft();
+    if (!payload || payload.synced || !hasAnyUserData(payload.draft)) return;
+    if (payload.draft.id === 'guest') setShowRecoveryPrompt(true);
+  }, [isGuest, token]);
+
+  useEffect(() => {
+    if (!isGuest || !restoredGuestMetaRef.current?.scrollY) return;
+    const y = restoredGuestMetaRef.current.scrollY;
+    const timer = window.setTimeout(() => window.scrollTo({ top: y, behavior: 'smooth' }), 250);
+    return () => window.clearTimeout(timer);
+  }, [isGuest]);
+
+  useEffect(() => {
     if (isGuest || !paymentRestoreSnapshot || restoredPaymentStateRef.current) return;
 
     restoredPaymentStateRef.current = true;
@@ -197,7 +222,8 @@ const CvBuilderPageInner: React.FC<{
     initRef.current = true;
     reset(guestDraft);
     lastSavedSigRef.current = JSON.stringify(guestDraft);
-    setLastSavedAt('Saved locally');
+    setLastSavedAt('Draft saved on this device');
+    if (restoredGuestMetaRef.current) setRestoredMessage('Welcome back — your resume draft has been restored.');
   }, [isGuest, data, guestDraft, reset]);
 
   useEffect(() => {
@@ -225,9 +251,18 @@ const CvBuilderPageInner: React.FC<{
     () =>
       debounce(async (values: CvDraft) => {
         if (isGuest || !token || !resolvedBackendUrl) {
-          persistGuestCvState(values);
+          const normalized = normalizeDraft(values);
+          persistGuestCvState(normalized);
+          saveGuestCvDraft({
+            draft: normalized,
+            selectedTemplateId: normalized.templateId,
+            activeTab: builderUiRef.current.activeTab,
+            activeSection: builderUiRef.current.activeSection,
+            scrollY: typeof window !== 'undefined' ? window.scrollY : undefined,
+            returnTo: '/builder/guest?resumeDraft=guest',
+          });
           lastSavedSigRef.current = JSON.stringify(values);
-          setLastSavedAt('Saved locally');
+          setLastSavedAt('Draft saved on this device');
           return;
         }
 
@@ -260,25 +295,33 @@ const CvBuilderPageInner: React.FC<{
 
     const draftSnapshot = normalizeDraft(getValues());
     persistGuestCvState(draftSnapshot);
-    setPendingBuilderAction(action);
-    setBuilderAuthReason(reasonByAction[action]);
-
-    router.replace(`/login?returnTo=${encodeURIComponent('/builder/guest')}`);
+    setBuilderAuthReason('Create an account to save and export your resume. Your progress is safe.');
+    redirectToAuthWithCvReturn({
+      action: action === 'print' ? 'download' : action,
+      draft: draftSnapshot,
+      activeTab: builderUiRef.current.activeTab,
+      activeSection: builderUiRef.current.activeSection,
+      router,
+    });
     return false;
   };
 
   const migrateGuestDraftToServer = async (action: PendingCvAction): Promise<void> => {
-    if (!token || !resolvedBackendUrl) return;
+    if (!token || !resolvedBackendUrl || migratedGuestDraftRef.current) return;
 
-    const values = normalizeDraft(getValues());
+    migratedGuestDraftRef.current = true;
+    const stored = loadGuestCvDraft();
+    const values = normalizeDraft(stored?.draft || getValues());
     const created = await createDraft.mutateAsync({
       templateId: values.templateId || forcedTemplateId || 'ats-minimal',
       title: values.title || 'Untitled CV',
       data: values,
-    });
+      clientDraftId: stored?.clientDraftId,
+    } as any);
 
-    clearGuestCvState();
+    markGuestDraftSynced(created.id);
     clearPendingBuilderAction();
+    markGuestDraftPendingActionConsumed();
     const queryAction = actionToResumeActionQuery[action];
     router.replace(`/builder/${created.id}?resume_action=${queryAction}`);
   };
@@ -292,7 +335,7 @@ const CvBuilderPageInner: React.FC<{
     const values = getValues();
     if (!token || !resolvedBackendUrl) {
       persistGuestCvState(values);
-      setLastSavedAt('Saved locally');
+      setLastSavedAt('Draft saved on this device');
       return;
     }
 
@@ -366,10 +409,22 @@ const CvBuilderPageInner: React.FC<{
 
   useEffect(() => {
     if (!token || !resolvedBackendUrl || !isGuest) return;
-    const pending = consumePendingBuilderAction();
+    if (consumedActionRef.current) return;
+    const sessionAction = consumePendingCvAction();
+    const legacyAction = consumePendingBuilderAction();
+    const storedDraft = loadGuestCvDraft();
+    const storedAction = storedDraft?.pendingAction;
+    const normalizedStoredAction: PendingCvAction | null =
+      storedAction === 'download' ? 'print' : storedAction === 'checkout' ? 'export' : storedAction || null;
+    const pending =
+      (sessionAction === 'download' ? 'print' : sessionAction) ||
+      legacyAction ||
+      normalizedStoredAction ||
+      (storedDraft && !storedDraft.synced ? 'save' : null);
     if (!pending) return;
 
-    void migrateGuestDraftToServer(pending);
+    consumedActionRef.current = true;
+    void migrateGuestDraftToServer(pending as PendingCvAction);
   }, [isGuest, resolvedBackendUrl, token]);
 
   useEffect(() => {
@@ -432,6 +487,43 @@ const CvBuilderPageInner: React.FC<{
           {authHint}
         </div>
       )}
+      {restoredMessage && (
+        <div className="mx-auto mb-4 w-full max-w-screen-2xl rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          {restoredMessage}
+        </div>
+      )}
+      {showRecoveryPrompt && (
+        <div className="mx-auto mb-4 flex w-full max-w-screen-2xl flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <span className="font-medium">Resume draft found. Continue where you left off?</span>
+          <span className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setShowRecoveryPrompt(false)}
+              className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white"
+            >
+              Continue draft
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                clearGuestCvDraft();
+                setShowRecoveryPrompt(false);
+                const fresh = normalizeDraft({
+                  ...demoResume,
+                  id: 'guest',
+                  userId: 'guest',
+                  templateId: forcedTemplateId || demoResume.templateId,
+                } as CvDraft);
+                reset(fresh);
+                lastSavedSigRef.current = JSON.stringify(fresh);
+              }}
+              className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900"
+            >
+              Start fresh
+            </button>
+          </span>
+        </div>
+      )}
       <CvEditorShell
         draft={draft}
         validationErrors={validationErrors}
@@ -444,6 +536,12 @@ const CvBuilderPageInner: React.FC<{
         isExporting={isGuest ? false : exportCv.isPending}
         lastSavedAt={lastSavedAt}
         autoFocusAi={autoFocusAi}
+        isGuest={isGuest}
+        restoredActiveTab={restoredGuestMetaRef.current?.activeTab}
+        restoredActiveSection={restoredGuestMetaRef.current?.activeSection}
+        onBuilderUiChange={(state) => {
+          builderUiRef.current = state;
+        }}
       />
     </>
   );
