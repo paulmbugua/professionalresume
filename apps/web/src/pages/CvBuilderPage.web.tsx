@@ -29,10 +29,11 @@ import {
   consumeBuilderAuthReason,
   consumePendingBuilderAction,
   persistGuestCvState,
-  setBuilderAuthReason,
   type PendingCvAction,
 } from '../lib/cvGuestSession';
 import {
+  consumePendingBuilderContinuation,
+  createBuilderSessionHash,
   loadGuestCvDraft,
   markGuestDraftPendingActionConsumed,
   markGuestDraftSynced,
@@ -85,12 +86,6 @@ function pickParam(v: unknown): string | undefined {
   if (Array.isArray(v) && typeof v[0] === 'string') return v[0];
   return undefined;
 }
-
-const actionToResumeActionQuery: Record<PendingCvAction, string> = {
-  save: 'resume_save',
-  export: 'resume_export',
-  print: 'resume_print',
-};
 
 const CvBuilderPageInner: React.FC<{
   id: string;
@@ -157,6 +152,7 @@ const CvBuilderPageInner: React.FC<{
   const restoredGuestMetaRef = useRef(loadGuestCvDraft());
   const migratedGuestDraftRef = useRef(false);
   const consumedActionRef = useRef(false);
+  const syncedDraftIdRef = useRef<string | undefined>(restoredGuestMetaRef.current?.syncedDraftId);
 
   const methods = useForm<CvDraft>({ defaultValues: EMPTY_DRAFT, mode: 'onChange' });
   const { reset, getValues, control, setValue } = methods;
@@ -183,12 +179,22 @@ const CvBuilderPageInner: React.FC<{
 
   useEffect(() => {
     const restoredMeta = restoredGuestMetaRef.current;
-    if (!restoredMeta?.scrollY) return;
-    if (!isGuest && restoredMeta.syncedDraftId !== id) return;
+    const scrollY = restoredMeta?.scrollPosition?.windowY ?? restoredMeta?.scrollY;
+    if (typeof scrollY !== 'number') return;
+    if (!isGuest && restoredMeta?.syncedDraftId !== id) return;
 
-    const y = restoredMeta.scrollY;
-    const timer = window.setTimeout(() => window.scrollTo({ top: y, behavior: 'smooth' }), 250);
-    return () => window.clearTimeout(timer);
+    let frameOne = 0;
+    let frameTwo = 0;
+    frameOne = window.requestAnimationFrame(() => {
+      frameTwo = window.requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollY, behavior: 'auto' });
+        consumePendingBuilderContinuation();
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(frameOne);
+      window.cancelAnimationFrame(frameTwo);
+    };
   }, [id, isGuest]);
 
   useEffect(() => {
@@ -214,6 +220,7 @@ const CvBuilderPageInner: React.FC<{
     initRef.current = true;
     reset(guestDraft);
     lastSavedSigRef.current = JSON.stringify(guestDraft);
+    if (token && restoredGuestMetaRef.current?.sessionHash) consumePendingBuilderContinuation();
     if (!token) setLastSavedAt('Draft saved on this device');
   }, [isGuest, data, guestDraft, reset, token]);
 
@@ -241,23 +248,48 @@ const CvBuilderPageInner: React.FC<{
   const debouncedSave = useMemo(
     () =>
       debounce(async (values: CvDraft) => {
+        const normalized = normalizeDraft(values);
         if (isGuest || !token || !resolvedBackendUrl) {
-          const normalized = normalizeDraft(values);
           persistGuestCvState(normalized);
+          const scrollPosition = {
+            windowY: typeof window !== 'undefined' ? window.scrollY : undefined,
+            builderPanelY:
+              typeof document !== 'undefined'
+                ? document.querySelector<HTMLElement>('[data-cv-builder-panel]')?.scrollTop
+                : undefined,
+            previewY:
+              typeof document !== 'undefined'
+                ? document.querySelector<HTMLElement>('[data-cv-preview-scroll]')?.scrollTop
+                : undefined,
+          };
+          const sessionHash = createBuilderSessionHash(normalized, {
+            activeTab: builderUiRef.current.activeTab,
+            activeSection: builderUiRef.current.activeSection,
+            scrollPosition,
+          });
           saveGuestCvDraft({
             draft: normalized,
             selectedTemplateId: normalized.templateId,
             activeTab: builderUiRef.current.activeTab,
             activeSection: builderUiRef.current.activeSection,
-            scrollY: typeof window !== 'undefined' ? window.scrollY : undefined,
-            returnTo: '/builder/guest?resumeDraft=guest',
+            scrollY: scrollPosition.windowY,
+            scrollPosition,
+            editorState: { activeSection: builderUiRef.current.activeSection },
+            previewState: { selectedTemplateId: normalized.templateId },
+            sessionHash,
+            returnTo: '/builder/guest',
+            synced: Boolean(syncedDraftIdRef.current),
+            syncedDraftId: syncedDraftIdRef.current,
           });
+          if (token && resolvedBackendUrl && syncedDraftIdRef.current) {
+            await updateDraft.mutateAsync({ id: syncedDraftIdRef.current, payload: normalized });
+          }
           lastSavedSigRef.current = JSON.stringify(values);
-          setLastSavedAt('Draft saved on this device');
+          setLastSavedAt(token ? undefined : 'Draft saved on this device');
           return;
         }
 
-        const updated = await updateDraft.mutateAsync({ id, payload: values });
+        const updated = await updateDraft.mutateAsync({ id, payload: normalized });
         lastSavedSigRef.current = JSON.stringify(values);
         setLastSavedAt(
           updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined
@@ -286,9 +318,6 @@ const CvBuilderPageInner: React.FC<{
 
     const draftSnapshot = normalizeDraft(getValues());
     persistGuestCvState(draftSnapshot);
-    setBuilderAuthReason(
-      'Create an account to save and export your resume. Your progress is safe.'
-    );
     redirectToAuthWithCvReturn({
       action: action === 'print' ? 'download' : action,
       draft: draftSnapshot,
@@ -312,17 +341,18 @@ const CvBuilderPageInner: React.FC<{
       clientDraftId: stored?.clientDraftId,
     } as any);
 
+    syncedDraftIdRef.current = created.id;
     markGuestDraftSynced(created.id);
     clearPendingBuilderAction();
     markGuestDraftPendingActionConsumed();
+    consumePendingBuilderContinuation();
 
-    if (action === 'save') {
-      router.replace(`/builder/${created.id}`);
-      return;
+    if (action === 'export') {
+      await handleExportForDraft(created.id);
     }
-
-    const queryAction = actionToResumeActionQuery[action];
-    router.replace(`/builder/${created.id}?resume_action=${queryAction}`);
+    if (action === 'print') {
+      window.open(`/print/${created.id}`, '_blank', 'noopener,noreferrer');
+    }
   };
 
   const handleManualSave = async () => {
@@ -334,24 +364,32 @@ const CvBuilderPageInner: React.FC<{
     const values = getValues();
     if (!token || !resolvedBackendUrl) {
       persistGuestCvState(values);
-      setLastSavedAt('Draft saved on this device');
+      setLastSavedAt(token ? undefined : 'Draft saved on this device');
       return;
     }
 
-    const updated = await updateDraft.mutateAsync({ id, payload: values });
+    const updated = await updateDraft.mutateAsync({
+      id: syncedDraftIdRef.current || id,
+      payload: values,
+    });
     lastSavedSigRef.current = JSON.stringify(values);
     setLastSavedAt(updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined);
   };
 
-  const doExport = async () => {
+  const handleExportForDraft = async (draftId: string) => {
     if (!token || !resolvedBackendUrl) return;
-    const exported = await exportCv.mutateAsync({ draftId: id, cvJson: getValues() });
+    const exported = await exportCv.mutateAsync({ draftId, cvJson: getValues() });
     setExportUrl(exported.signedUrl || exported.url || undefined);
     trackResumeDownload({ source_page: 'cv_builder', template_id: draft.templateId });
   };
 
+  const doExport = async () => {
+    const draftId = syncedDraftIdRef.current || id;
+    await handleExportForDraft(draftId);
+  };
+
   const doPrint = async () => {
-    window.open(`/print/${id}`, '_blank', 'noopener,noreferrer');
+    window.open(`/print/${syncedDraftIdRef.current || id}`, '_blank', 'noopener,noreferrer');
   };
 
   const persistPaymentReturnState = (resumeAction: 'resume_export' | 'resume_print') => {
@@ -500,6 +538,7 @@ const CvBuilderPageInner: React.FC<{
         isGuest={isGuest}
         restoredActiveTab={restoredGuestMetaRef.current?.activeTab}
         restoredActiveSection={restoredGuestMetaRef.current?.activeSection}
+        restoredScrollPosition={restoredGuestMetaRef.current?.scrollPosition}
         onBuilderUiChange={(state) => {
           builderUiRef.current = state;
         }}

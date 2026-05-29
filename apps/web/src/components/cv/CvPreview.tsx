@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { CvDraft } from '@cvpro/shared/types';
 import { resolvePreviewDraft } from '../../templates/demoResume';
 import { templateRegistryById, templateRegistry } from '../../templates/registry';
@@ -12,6 +12,7 @@ type Props = {
   draft: CvDraft;
   showLiveBadge?: boolean;
   resumeSourceHint?: 'saved' | 'demo' | 'live';
+  restoredScrollY?: number;
 };
 
 const hasPdfJunk = (draft: CvDraft) => {
@@ -49,7 +50,13 @@ const hasPdfJunk = (draft: CvDraft) => {
   return hits >= 6;
 };
 
-const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSourceHint }) => {
+const CvPreview: React.FC<Props> = ({
+  draft,
+  showLiveBadge = false,
+  resumeSourceHint,
+  restoredScrollY,
+}) => {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const [iframeHeight, setIframeHeight] = useState<number>(1400);
   const resolved = resolvePreviewDraft(draft);
   const previewDraft = useMemo<CvDraft>(
@@ -135,6 +142,21 @@ const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSource
   }, [previewDraft]);
 
   useEffect(() => {
+    if (typeof restoredScrollY !== 'number') return;
+    let frameOne = 0;
+    let frameTwo = 0;
+    frameOne = window.requestAnimationFrame(() => {
+      frameTwo = window.requestAnimationFrame(() => {
+        if (scrollRef.current) scrollRef.current.scrollTop = restoredScrollY;
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(frameOne);
+      window.cancelAnimationFrame(frameTwo);
+    };
+  }, [restoredScrollY, html, iframeHeight]);
+
+  useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       const data: any = e.data;
       if (!data || data.__cv_iframe_resize !== true) return;
@@ -184,7 +206,11 @@ const CvPreview: React.FC<Props> = ({ draft, showLiveBadge = false, resumeSource
         </div>
       )}
 
-      <div className="cv-page h-full min-h-0 w-full overflow-auto rounded-2xl bg-white text-gray-900 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.4)]">
+      <div
+        ref={scrollRef}
+        data-cv-preview-scroll
+        className="cv-page h-full min-h-0 w-full overflow-auto rounded-2xl bg-white text-gray-900 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.4)]"
+      >
         {blockedDueToCorruption ? (
           <div className="p-6 text-sm text-rose-600">
             <p className="font-semibold">Imported resume data looks corrupted.</p>
