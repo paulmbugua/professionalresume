@@ -347,12 +347,13 @@ const CvBuilderPageInner: React.FC<{
     markGuestDraftPendingActionConsumed();
     consumePendingBuilderContinuation();
 
-    if (action === 'export') {
-      await handleExportForDraft(created.id);
-    }
-    if (action === 'print') {
-      window.open(`/print/${created.id}`, '_blank', 'noopener,noreferrer');
-    }
+    const actionQuery =
+      action === 'export'
+        ? '?cv_action=resume_export'
+        : action === 'print'
+          ? '?cv_action=resume_print'
+          : '';
+    router.replace(`/builder/${created.id}${actionQuery}`);
   };
 
   const handleManualSave = async () => {
