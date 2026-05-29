@@ -17,7 +17,7 @@ import { normalizeDraft } from '../utils/cvDefaults';
 import CvEditorShell from '../components/cv/CvEditorShell';
 import CvPaymentModal from '../components/cv/CvPaymentModal';
 import { MPESA_KES_AMOUNT, PAYSTACK_KES_AMOUNT } from '../lib/cvPaymentPricing';
-import { demoResume, hasAnyUserData } from '../templates/demoResume';
+import { demoResume } from '../templates/demoResume';
 import {
   clearPendingPaymentReturnState,
   peekPendingPaymentAction,
@@ -33,7 +33,6 @@ import {
   type PendingCvAction,
 } from '../lib/cvGuestSession';
 import {
-  clearGuestCvDraft,
   loadGuestCvDraft,
   markGuestDraftPendingActionConsumed,
   markGuestDraftSynced,
@@ -93,7 +92,6 @@ const actionToResumeActionQuery: Record<PendingCvAction, string> = {
   print: 'resume_print',
 };
 
-
 const CvBuilderPageInner: React.FC<{
   id: string;
   backendUrl?: string;
@@ -148,9 +146,6 @@ const CvBuilderPageInner: React.FC<{
 
   const [exportUrl, setExportUrl] = useState<string | undefined>();
   const [lastSavedAt, setLastSavedAt] = useState<string | undefined>();
-  const [authHint, setAuthHint] = useState<string>('');
-  const [showRecoveryPrompt, setShowRecoveryPrompt] = useState(false);
-  const [restoredMessage, setRestoredMessage] = useState('');
 
   const initRef = useRef(true);
   const hydratedDraftIdRef = useRef<string | null>(null);
@@ -181,23 +176,20 @@ const CvBuilderPageInner: React.FC<{
   }, [id, isGuest]);
 
   useEffect(() => {
-    const reason = consumeBuilderAuthReason();
-    if (reason) setAuthHint(reason);
+    // Auth-return draft restoration is intentionally silent. Clear any prior auth reason so
+    // returning users do not see a stale post-login banner in the builder.
+    consumeBuilderAuthReason();
   }, []);
 
   useEffect(() => {
-    if (!isGuest || token) return;
-    const payload = loadGuestCvDraft();
-    if (!payload || payload.synced || !hasAnyUserData(payload.draft)) return;
-    if (payload.draft.id === 'guest') setShowRecoveryPrompt(true);
-  }, [isGuest, token]);
+    const restoredMeta = restoredGuestMetaRef.current;
+    if (!restoredMeta?.scrollY) return;
+    if (!isGuest && restoredMeta.syncedDraftId !== id) return;
 
-  useEffect(() => {
-    if (!isGuest || !restoredGuestMetaRef.current?.scrollY) return;
-    const y = restoredGuestMetaRef.current.scrollY;
+    const y = restoredMeta.scrollY;
     const timer = window.setTimeout(() => window.scrollTo({ top: y, behavior: 'smooth' }), 250);
     return () => window.clearTimeout(timer);
-  }, [isGuest]);
+  }, [id, isGuest]);
 
   useEffect(() => {
     if (isGuest || !paymentRestoreSnapshot || restoredPaymentStateRef.current) return;
@@ -222,9 +214,8 @@ const CvBuilderPageInner: React.FC<{
     initRef.current = true;
     reset(guestDraft);
     lastSavedSigRef.current = JSON.stringify(guestDraft);
-    setLastSavedAt('Draft saved on this device');
-    if (restoredGuestMetaRef.current) setRestoredMessage('Welcome back — your resume draft has been restored.');
-  }, [isGuest, data, guestDraft, reset]);
+    if (!token) setLastSavedAt('Draft saved on this device');
+  }, [isGuest, data, guestDraft, reset, token]);
 
   useEffect(() => {
     if (!data || isGuest) return;
@@ -295,7 +286,9 @@ const CvBuilderPageInner: React.FC<{
 
     const draftSnapshot = normalizeDraft(getValues());
     persistGuestCvState(draftSnapshot);
-    setBuilderAuthReason('Create an account to save and export your resume. Your progress is safe.');
+    setBuilderAuthReason(
+      'Create an account to save and export your resume. Your progress is safe.'
+    );
     redirectToAuthWithCvReturn({
       action: action === 'print' ? 'download' : action,
       draft: draftSnapshot,
@@ -322,6 +315,12 @@ const CvBuilderPageInner: React.FC<{
     markGuestDraftSynced(created.id);
     clearPendingBuilderAction();
     markGuestDraftPendingActionConsumed();
+
+    if (action === 'save') {
+      router.replace(`/builder/${created.id}`);
+      return;
+    }
+
     const queryAction = actionToResumeActionQuery[action];
     router.replace(`/builder/${created.id}?resume_action=${queryAction}`);
   };
@@ -415,7 +414,11 @@ const CvBuilderPageInner: React.FC<{
     const storedDraft = loadGuestCvDraft();
     const storedAction = storedDraft?.pendingAction;
     const normalizedStoredAction: PendingCvAction | null =
-      storedAction === 'download' ? 'print' : storedAction === 'checkout' ? 'export' : storedAction || null;
+      storedAction === 'download'
+        ? 'print'
+        : storedAction === 'checkout'
+          ? 'export'
+          : storedAction || null;
     const pending =
       (sessionAction === 'download' ? 'print' : sessionAction) ||
       legacyAction ||
@@ -482,48 +485,6 @@ const CvBuilderPageInner: React.FC<{
     </div>
   ) : (
     <>
-      {authHint && (
-        <div className="mx-auto mb-4 w-full max-w-screen-2xl rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-          {authHint}
-        </div>
-      )}
-      {restoredMessage && (
-        <div className="mx-auto mb-4 w-full max-w-screen-2xl rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-          {restoredMessage}
-        </div>
-      )}
-      {showRecoveryPrompt && (
-        <div className="mx-auto mb-4 flex w-full max-w-screen-2xl flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <span className="font-medium">Resume draft found. Continue where you left off?</span>
-          <span className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setShowRecoveryPrompt(false)}
-              className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white"
-            >
-              Continue draft
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                clearGuestCvDraft();
-                setShowRecoveryPrompt(false);
-                const fresh = normalizeDraft({
-                  ...demoResume,
-                  id: 'guest',
-                  userId: 'guest',
-                  templateId: forcedTemplateId || demoResume.templateId,
-                } as CvDraft);
-                reset(fresh);
-                lastSavedSigRef.current = JSON.stringify(fresh);
-              }}
-              className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900"
-            >
-              Start fresh
-            </button>
-          </span>
-        </div>
-      )}
       <CvEditorShell
         draft={draft}
         validationErrors={validationErrors}
