@@ -5,9 +5,39 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useShopContext } from '@cvpro/shared/context';
 import { useCreateCvDraft } from '@cvpro/shared/hooks';
 import { normalizeDraft } from '../utils/cvDefaults';
+import type { CvDraft } from '@cvpro/shared/types';
 import { demoResume } from '../templates/demoResume';
 import { persistGuestCvState } from '../lib/cvGuestSession';
-import { trackBuilderStarted, trackUploadCvCompleted, trackUploadCvStarted } from '../lib/analytics/events';
+import {
+  trackBuilderStarted,
+  trackUploadCvCompleted,
+  trackUploadCvStarted,
+} from '../lib/analytics/events';
+
+const buildInitialDraft = (templateId: string, importedData?: Partial<CvDraft>): CvDraft => {
+  const hasImport = Boolean(importedData);
+  return normalizeDraft({
+    ...demoResume,
+    ...(importedData || {}),
+    templateId,
+    id: 'guest',
+    userId: 'guest',
+    title:
+      importedData?.title ||
+      (hasImport ? `${importedData?.basics?.name || 'Imported'} CV` : demoResume.title),
+    updatedAt: new Date().toISOString(),
+    meta: hasImport
+      ? {
+          ...(demoResume.meta || {}),
+          ...(importedData?.meta || {}),
+          isDemoSeeded: false,
+          hasImportedCv: true,
+          importedAt: importedData?.meta?.importedAt || new Date().toISOString(),
+          importMode: importedData?.meta?.importMode || 'replace',
+        }
+      : demoResume.meta,
+  } as CvDraft);
+};
 
 const CvBuilderNew: React.FC = () => {
   const params = useSearchParams();
@@ -44,18 +74,14 @@ const CvBuilderNew: React.FC = () => {
         }
       }
 
-      const guestDraft = normalizeDraft({
-        ...demoResume,
-        ...(importedData || {}),
-        templateId,
-        id: 'guest',
-        userId: 'guest',
-        title: importedData?.title || demoResume.title,
-        updatedAt: new Date().toISOString(),
-      } as any);
+      const guestDraft = buildInitialDraft(templateId, importedData);
 
       persistGuestCvState(guestDraft);
-      trackBuilderStarted({ source_page: importFromUpload ? 'upload_flow' : 'templates_page', template_id: templateId, product_type: 'resume' });
+      trackBuilderStarted({
+        source_page: importFromUpload ? 'upload_flow' : 'templates_page',
+        template_id: templateId,
+        product_type: 'resume',
+      });
       setStatus('Opening guest builder...');
       const guestTarget = aiStart
         ? `/builder/guest?templateId=${encodeURIComponent(templateId)}&aiStart=1`
@@ -81,7 +107,7 @@ const CvBuilderNew: React.FC = () => {
       try {
         let importedData: any | undefined;
         if (importFromUpload && typeof window !== 'undefined') {
-        trackUploadCvStarted({ source_page: 'builder_new', upload_type: 'resume' });
+          trackUploadCvStarted({ source_page: 'builder_new', upload_type: 'resume' });
           const raw = window.sessionStorage.getItem('cvpro:imported-draft');
           if (raw) {
             importedData = JSON.parse(raw);
@@ -96,10 +122,11 @@ const CvBuilderNew: React.FC = () => {
           imported: Boolean(importedData),
         });
 
+        const initialDraft = importedData ? buildInitialDraft(templateId, importedData) : undefined;
         const draft = await createDraft.mutateAsync({
           templateId,
-          title: 'Untitled CV',
-          ...(importedData ? { data: importedData } : {}),
+          title: initialDraft?.title || 'Untitled CV',
+          ...(initialDraft ? { data: initialDraft } : {}),
         });
 
         if (cancelled) return;
@@ -107,7 +134,11 @@ const CvBuilderNew: React.FC = () => {
         console.log('[CvBuilderNew] created draft', { id: draft?.id });
         setStatus('Opening editor...');
 
-        trackBuilderStarted({ source_page: importFromUpload ? 'upload_flow' : 'templates_page', template_id: templateId, product_type: 'resume' });
+        trackBuilderStarted({
+          source_page: importFromUpload ? 'upload_flow' : 'templates_page',
+          template_id: templateId,
+          product_type: 'resume',
+        });
         const editorTarget = aiStart ? `/builder/${draft.id}?aiStart=1` : `/builder/${draft.id}`;
         router.replace(editorTarget);
       } catch (e: any) {

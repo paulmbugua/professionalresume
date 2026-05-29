@@ -5,7 +5,10 @@ function normalizeUserId(userId) {
   return Number(userId);
 }
 
-export function mapOwnedDraftRow(row, { templateColumn = 'template_key' } = {}) {
+export function mapOwnedDraftRow(
+  row,
+  { templateColumn = 'template_key' } = {},
+) {
   const data = row.data_json || {};
   return {
     id: row.id,
@@ -36,7 +39,34 @@ export async function createOwnedDraft({
        LIMIT 1`,
       [normalizeUserId(userId), String(clientDraftId)],
     );
-    if (existingRows[0]) return mapOwnedDraftRow(existingRows[0], { templateColumn });
+    if (existingRows[0]) {
+      const existing = existingRows[0];
+      const dataJson = {
+        ...data,
+        id: existing.id,
+        userId: String(userId),
+        templateId,
+        clientDraftId: String(clientDraftId),
+      };
+      const { rows } = await pool.query(
+        `UPDATE ${table}
+          SET title = $1,
+              ${templateColumn} = $2,
+              data_json = $3::jsonb,
+              version = version + 1,
+              updated_at = NOW()
+          WHERE id = $4 AND user_id = $5 AND is_deleted = FALSE
+          RETURNING *`,
+        [
+          title,
+          templateId,
+          JSON.stringify(dataJson),
+          existing.id,
+          normalizeUserId(userId),
+        ],
+      );
+      return mapOwnedDraftRow(rows[0], { templateColumn });
+    }
   }
 
   const id = crypto.randomUUID();
@@ -115,7 +145,9 @@ export async function updateOwnedDraft({
   titleFallback = 'Untitled Draft',
   loadDraft,
 }) {
-  const current = await loadDraft(userId, draftId);
+  const current = loadDraft
+    ? await loadDraft(userId, draftId)
+    : await getOwnedDraft({ table, userId, draftId, templateColumn });
   if (!current) return null;
 
   const merged = {

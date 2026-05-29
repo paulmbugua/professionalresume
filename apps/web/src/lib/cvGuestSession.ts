@@ -1,9 +1,5 @@
 import type { CvDraft } from '@cvpro/shared/types';
-import {
-  clearGuestCvDraft,
-  loadGuestCvDraft,
-  saveGuestCvDraft,
-} from './cv/guestDraftStorage';
+import { clearGuestCvDraft, loadGuestCvDraft, saveGuestCvDraft } from './cv/guestDraftStorage';
 
 export type PendingCvAction = 'save' | 'export' | 'print';
 export type PendingPaymentResumeAction = 'resume_export' | 'resume_print';
@@ -35,7 +31,7 @@ export function persistGuestCvState(draft: CvDraft): void {
   saveGuestCvDraft({
     draft,
     selectedTemplateId: draft.templateId,
-    returnTo: '/builder/guest?resumeDraft=guest',
+    returnTo: '/builder/guest',
   });
 }
 

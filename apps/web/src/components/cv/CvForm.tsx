@@ -7,6 +7,7 @@ import { demoResume, hasAnyUserData } from '../../templates/demoResume';
 import { stripHtml } from '../../utils/cvRichText';
 import { parseUploadedCv } from '../../utils/cvParseApi';
 import { improveExperienceEntry } from '../../utils/cvImproveApi';
+import { createBuilderSessionHash, saveGuestCvDraft } from '../../lib/cv/guestDraftStorage';
 import { normalizeSectionOrder, normalizeSectionVisibility } from '../../utils/cvDefaults';
 
 const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
@@ -895,6 +896,34 @@ const CvForm: React.FC<{
       },
     };
 
+    const sessionHash = createBuilderSessionHash(nextDraft, {
+      activeSection: nextExperience.length ? 'experience' : 'basics',
+      importMode: mode,
+      hasImportedCv: true,
+    });
+    saveGuestCvDraft({
+      draft: nextDraft,
+      selectedTemplateId: nextDraft.templateId,
+      activeTab: 'edit',
+      activeSection: nextExperience.length ? 'experience' : 'basics',
+      scrollY: typeof window !== 'undefined' ? window.scrollY : undefined,
+      scrollPosition: {
+        windowY: typeof window !== 'undefined' ? window.scrollY : undefined,
+        builderPanelY:
+          typeof document !== 'undefined'
+            ? document.querySelector<HTMLElement>('[data-cv-builder-panel]')?.scrollTop
+            : undefined,
+        previewY:
+          typeof document !== 'undefined'
+            ? document.querySelector<HTMLElement>('[data-cv-preview-scroll]')?.scrollTop
+            : undefined,
+      },
+      editorState: { activeSection: nextExperience.length ? 'experience' : 'basics' },
+      previewState: { selectedTemplateId: nextDraft.templateId, hasImportedCv: true },
+      sessionHash,
+      returnTo: '/builder/guest',
+    });
+
     debugCvImport('FORM_APPLY_NEXT_DRAFT', nextDraft);
     debugCvImport('FORM_APPLY_NEXT_EXPERIENCE', nextExperience);
 
@@ -1490,7 +1519,7 @@ const CvForm: React.FC<{
           </div>
         }
       >
-          <div className="space-y-4">
+        <div className="space-y-4">
           <div className="mb-3 flex items-center justify-between gap-3">
             <p className="text-xs text-gray-500 dark:text-white/60">
               Add roles you want included. Remove the rest. You can improve duties with AI.
