@@ -310,7 +310,10 @@ const pillGray = `${pillBtn} border-gray-200 bg-white text-gray-700 hover:bg-gra
 const pillDanger = `${pillBtn} border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100`;
 const pillPrimary = `${pillBtn} border-transparent bg-primary text-white hover:opacity-90`;
 
-const CvForm: React.FC = () => {
+const CvForm: React.FC<{
+  restoredActiveSection?: string;
+  onActiveSectionChange?: (section: string) => void;
+}> = ({ restoredActiveSection, onActiveSectionChange }) => {
   const { register, control, setValue, getValues, reset } = useFormContext<CvDraft>();
   const { backendUrl, token } = useShopContext() as any;
 
@@ -358,17 +361,20 @@ const CvForm: React.FC = () => {
   const certificationsField = useFieldArray({ control, name: 'certifications' });
 
   const [open, setOpen] = useState<Record<string, boolean>>(() => ({
-    basics: true,
-    summary: false,
-    skills: false,
-    experience: false,
-    education: false,
-    projects: false,
-    certifications: false,
-    extras: false,
+    basics: !restoredActiveSection || restoredActiveSection === 'basics',
+    summary: restoredActiveSection === 'summary',
+    skills: restoredActiveSection === 'skills',
+    experience: restoredActiveSection === 'experience',
+    education: restoredActiveSection === 'education',
+    projects: restoredActiveSection === 'projects',
+    certifications: restoredActiveSection === 'certifications',
+    extras: restoredActiveSection === 'extras',
     photo: false,
   }));
-  const toggle = (k: string) => setOpen((p) => ({ ...p, [k]: !p[k] }));
+  const toggle = (k: string) => {
+    setOpen((p) => ({ ...p, [k]: !p[k] }));
+    onActiveSectionChange?.(k);
+  };
 
   const setSectionVisible = (key: CvSectionKey, visible: boolean) => {
     setValue(`sectionVisibility.${key}`, visible as any, {

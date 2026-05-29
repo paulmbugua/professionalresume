@@ -95,6 +95,7 @@ export const createDraftSchema = Joi.object({
   templateId: Joi.string().required(),
   title: Joi.string().allow('').optional(),
   data: Joi.object().optional(),
+  clientDraftId: Joi.string().max(120).optional(),
 });
 
 export const draftPatchSchema = Joi.object({

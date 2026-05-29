@@ -83,7 +83,7 @@ export const getCvDraft = async (
 export const createCvDraft = async (
   backendUrl: string,
   token: string,
-  payload: { templateId: string; title?: string; data?: Partial<CvDraft> },
+  payload: { templateId: string; title?: string; data?: Partial<CvDraft>; clientDraftId?: string },
 ): Promise<CvDraft> => {
   try {
     const api = client(backendUrl, token);

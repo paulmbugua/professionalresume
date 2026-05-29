@@ -29,6 +29,10 @@ type Props = {
   isExporting?: boolean;
   lastSavedAt?: string;
   autoFocusAi?: boolean;
+  isGuest?: boolean;
+  restoredActiveTab?: 'edit' | 'preview';
+  restoredActiveSection?: string;
+  onBuilderUiChange?: (state: { activeTab: 'edit' | 'preview'; activeSection?: string }) => void;
 };
 
 const CvEditorShell: React.FC<Props> = ({
@@ -43,9 +47,13 @@ const CvEditorShell: React.FC<Props> = ({
   isExporting,
   lastSavedAt,
   autoFocusAi,
+  isGuest,
+  restoredActiveTab,
+  restoredActiveSection,
+  onBuilderUiChange,
 }) => {
   const { setValue, control } = useFormContext<CvDraft>();
-  const [activeTab, setActiveTab] = useState<'edit' | 'preview'>('edit');
+  const [activeTab, setActiveTab] = useState<'edit' | 'preview'>(restoredActiveTab || 'edit');
   const [isDesignOpen, setIsDesignOpen] = useState(false);
 
   const liveDraft = useWatch({ control }) as CvDraft | undefined;
@@ -68,6 +76,10 @@ const CvEditorShell: React.FC<Props> = ({
     liveTemplateId;
 
   const templateHeaderTitle = templateDisplayName;
+
+  useEffect(() => {
+    onBuilderUiChange?.({ activeTab, activeSection: restoredActiveSection });
+  }, [activeTab, onBuilderUiChange, restoredActiveSection]);
 
   useEffect(() => {
     if (!isDesignOpen) return;
@@ -129,7 +141,13 @@ const CvEditorShell: React.FC<Props> = ({
             {templateHeaderTitle}
           </h2>
           <p className="text-xs text-gray-500 dark:text-white/60">
-            {lastSavedAt ? `Last saved ${lastSavedAt}` : 'Autosaving enabled'}
+            {isGuest
+              ? lastSavedAt
+                ? `${lastSavedAt} · Create an account to save permanently`
+                : 'Draft saved on this device · Create an account to save permanently'
+              : lastSavedAt
+                ? `Saved to your account ${lastSavedAt}`
+                : 'Saved to your account'}
           </p>
           <TemplateFillSlider />
         </div>
@@ -210,7 +228,12 @@ const CvEditorShell: React.FC<Props> = ({
         <div
           className={`${activeTab === 'preview' ? 'hidden' : 'block'} min-w-0 space-y-6 xl:block print:hidden`}
         >
-          <CvForm />
+          <CvForm
+            restoredActiveSection={restoredActiveSection}
+            onActiveSectionChange={(activeSection) =>
+              onBuilderUiChange?.({ activeTab, activeSection })
+            }
+          />
 
           <SectionManager
             sectionOrder={previewDraft.sectionOrder}

@@ -95,6 +95,7 @@ export async function createDraftForUser(userId, payload) {
     title: payload.title?.trim() || 'Untitled CV',
     templateId: payload.templateId,
     data: normalized,
+    clientDraftId: payload.clientDraftId,
   });
 }
 
