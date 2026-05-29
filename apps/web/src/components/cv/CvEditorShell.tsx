@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import type { CvDraft, CvSectionKey } from '@cvpro/shared/types';
 import CvForm from './CvForm';
@@ -32,6 +32,7 @@ type Props = {
   isGuest?: boolean;
   restoredActiveTab?: 'edit' | 'preview';
   restoredActiveSection?: string;
+  restoredScrollPosition?: { windowY?: number; builderPanelY?: number; previewY?: number };
   onBuilderUiChange?: (state: { activeTab: 'edit' | 'preview'; activeSection?: string }) => void;
 };
 
@@ -50,11 +51,13 @@ const CvEditorShell: React.FC<Props> = ({
   isGuest,
   restoredActiveTab,
   restoredActiveSection,
+  restoredScrollPosition,
   onBuilderUiChange,
 }) => {
   const { setValue, control } = useFormContext<CvDraft>();
   const [activeTab, setActiveTab] = useState<'edit' | 'preview'>(restoredActiveTab || 'edit');
   const [isDesignOpen, setIsDesignOpen] = useState(false);
+  const builderPanelRef = useRef<HTMLDivElement | null>(null);
 
   const liveDraft = useWatch({ control }) as CvDraft | undefined;
   const previewDraft = useMemo(
@@ -80,6 +83,30 @@ const CvEditorShell: React.FC<Props> = ({
   useEffect(() => {
     onBuilderUiChange?.({ activeTab, activeSection: restoredActiveSection });
   }, [activeTab, onBuilderUiChange, restoredActiveSection]);
+
+  useEffect(() => {
+    if (!restoredScrollPosition) return;
+    let frameOne = 0;
+    let frameTwo = 0;
+    frameOne = window.requestAnimationFrame(() => {
+      frameTwo = window.requestAnimationFrame(() => {
+        if (typeof restoredScrollPosition.windowY === 'number') {
+          window.scrollTo({ top: restoredScrollPosition.windowY, behavior: 'auto' });
+        }
+        if (builderPanelRef.current && typeof restoredScrollPosition.builderPanelY === 'number') {
+          builderPanelRef.current.scrollTop = restoredScrollPosition.builderPanelY;
+        }
+        const preview = document.querySelector<HTMLElement>('[data-cv-preview-scroll]');
+        if (preview && typeof restoredScrollPosition.previewY === 'number') {
+          preview.scrollTop = restoredScrollPosition.previewY;
+        }
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(frameOne);
+      window.cancelAnimationFrame(frameTwo);
+    };
+  }, [restoredScrollPosition]);
 
   useEffect(() => {
     if (!isDesignOpen) return;
@@ -142,9 +169,7 @@ const CvEditorShell: React.FC<Props> = ({
           </h2>
           <p className="text-xs text-gray-500 dark:text-white/60">
             {isGuest
-              ? lastSavedAt
-                ? `${lastSavedAt} · Create an account to save permanently`
-                : 'Draft saved on this device · Create an account to save permanently'
+              ? 'Keep editing — your workspace will continue after sign-in'
               : lastSavedAt
                 ? `Saved to your account ${lastSavedAt}`
                 : 'Saved to your account'}
@@ -226,6 +251,8 @@ const CvEditorShell: React.FC<Props> = ({
 
       <div className="grid min-h-0 gap-6 xl:grid-cols-[minmax(340px,460px)_minmax(0,1fr)] xl:gap-8">
         <div
+          ref={builderPanelRef}
+          data-cv-builder-panel
           className={`${activeTab === 'preview' ? 'hidden' : 'block'} min-w-0 space-y-6 xl:block print:hidden`}
         >
           <CvForm
@@ -251,7 +278,12 @@ const CvEditorShell: React.FC<Props> = ({
             <div className="flex h-full min-h-0 flex-col rounded-2xl border border-gray-200 bg-white/70 p-3 shadow-sm backdrop-blur sm:p-4 dark:border-white/10 dark:bg-white/5 print:border-none print:bg-transparent print:p-0">
               <TemplateErrorBoundary>
                 <div className="flex-1 min-h-0 overflow-hidden">
-                  <CvPreview draft={previewDraft} showLiveBadge resumeSourceHint={resumeSource} />
+                  <CvPreview
+                    draft={previewDraft}
+                    showLiveBadge
+                    resumeSourceHint={resumeSource}
+                    restoredScrollY={restoredScrollPosition?.previewY}
+                  />
                 </div>
               </TemplateErrorBoundary>
             </div>

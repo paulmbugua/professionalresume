@@ -11,12 +11,12 @@ import { useShopContext } from '@cvpro/shared/context';
 import CustomGoogleButtonLogin from '@/components/auth/CustomGoogleButtonLogin.web';
 import { DEFAULT_RETURN_TO, getReturnToFromQuery, sanitizeInternalReturnTo } from '../lib/returnTo';
 import { trackLogin, trackSignUp } from '../lib/analytics/events';
+import { hasPendingBuilderContinuation, loadGuestCvDraft } from '../lib/cv/guestDraftStorage';
 
 type AuthMode = 'Login' | 'Sign Up';
 type ResetMode = 'idle' | 'requesting' | 'verifying';
 
 const RETURN_TO_SS_KEY = 'auth:returnTo';
-const CV_AUTH_REASON_SS_KEY = 'auth:cvReason';
 
 const safeSessionGet = (k: string) => {
   try {
@@ -66,6 +66,15 @@ const LoginPage: React.FC = () => {
   }, []);
   const clearReturnTo = useCallback(() => safeSessionRemove(RETURN_TO_SS_KEY), []);
 
+  const getAuthDestination = useCallback(
+    (dest?: string | null) => {
+      const builderSession = loadGuestCvDraft();
+      if (hasPendingBuilderContinuation() && builderSession?.draft) return '/builder/guest';
+      return sanitizeInternalReturnTo(dest || getReturnTo(), DEFAULT_RETURN_TO);
+    },
+    [getReturnTo]
+  );
+
   const { token } = useShopContext() as any;
 
   const {
@@ -77,15 +86,15 @@ const LoginPage: React.FC = () => {
     resetPasswordWithOTP,
   } = useAuth({
     navigateFn: (dest) => {
-      const target = sanitizeInternalReturnTo(dest || getReturnTo());
+      const target = getAuthDestination(dest);
       clearReturnTo();
       router.replace(target);
     },
   });
 
   useEffect(() => {
-    if (token) router.replace(getReturnTo() || DEFAULT_RETURN_TO);
-  }, [router, token, getReturnTo]);
+    if (token) router.replace(getAuthDestination());
+  }, [router, token, getAuthDestination]);
 
   useEffect(() => {
     const authCode = (searchParams?.get('authCode') || '').trim();
@@ -106,7 +115,7 @@ const LoginPage: React.FC = () => {
       .then(() => {
         if (cancelled) return;
         trackLogin({ auth_method: 'google', source_page: computedReturnTo });
-        router.replace(getReturnTo() || DEFAULT_RETURN_TO);
+        router.replace(getAuthDestination());
       })
       .catch((err: any) => {
         if (cancelled) return;
@@ -124,7 +133,7 @@ const LoginPage: React.FC = () => {
     handleGoogleOAuthCode,
     handleGoogleLoginFailure,
     computedReturnTo,
-    getReturnTo,
+    getAuthDestination,
     router,
   ]);
 
@@ -143,13 +152,6 @@ const LoginPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [authReason, setAuthReason] = useState<string>('');
-
-  useEffect(() => {
-    const reason = safeSessionGet(CV_AUTH_REASON_SS_KEY) || '';
-    if (reason) setAuthReason(reason);
-  }, []);
-
   const clearErrors = () => setError(null);
 
   const emailFormTitle = useMemo(
@@ -171,7 +173,7 @@ const LoginPage: React.FC = () => {
         }
         await loginWithEmail({ email: email.trim(), password });
         trackLogin({ auth_method: 'email', source_page: computedReturnTo });
-        router.replace(getReturnTo() || DEFAULT_RETURN_TO);
+        router.replace(getAuthDestination());
         return;
       }
 
@@ -191,7 +193,7 @@ const LoginPage: React.FC = () => {
       } as any);
 
       trackSignUp({ auth_method: 'email', source_page: computedReturnTo });
-      router.replace(getReturnTo() || DEFAULT_RETURN_TO);
+      router.replace(getAuthDestination());
     } catch (err: any) {
       setError(err?.message || 'Unable to authenticate.');
     } finally {
@@ -303,12 +305,6 @@ const LoginPage: React.FC = () => {
           <p className="mt-2 text-sm text-gray-500 dark:text-white/60">
             Continue building resumes with live preview, drafts, and PDF export.
           </p>
-
-          {authReason && (
-            <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
-              {authReason}
-            </div>
-          )}
 
           {error && (
             <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
@@ -538,9 +534,7 @@ const LoginPage: React.FC = () => {
           </div>
 
           <div className="flex justify-center">
-            <CustomGoogleButtonLogin
-              returnTo={getReturnTo()}
-            />
+            <CustomGoogleButtonLogin returnTo={getReturnTo()} />
           </div>
 
           <p className="mt-6 text-center text-xs text-gray-500 dark:text-white/50">
