@@ -2,7 +2,39 @@ import {
   normalizeCoverLetterRenderModel,
   normalizeCoverLetterTemplateId,
 } from '../renderModel.js';
+import { buildCvFontFaceCss } from '../../../cv/renderers/templates/fonts.js';
 
+const COVER_LETTER_FONT_STACKS = {
+  'classic-letter': "'Elegant Serif', Georgia, 'Times New Roman', 'Liberation Serif', serif",
+  'professional-blue-letterhead': "'Inter', 'Segoe UI', 'Liberation Sans', Arial, sans-serif",
+  'clean-modern-header': "'Inter', 'Segoe UI', 'Liberation Sans', Arial, sans-serif",
+  'dark-header-corporate': "'Inter', 'Segoe UI', 'Liberation Sans', Arial, sans-serif",
+  'minimal-wide-name-header': "'Inter', 'Segoe UI', 'Liberation Sans', Arial, sans-serif",
+  'plain-re-subject': "Arial, 'Helvetica Neue', 'Liberation Sans', sans-serif",
+  'simple-everyday-formal': "Calibri, 'Segoe UI', 'Liberation Sans', Arial, sans-serif",
+  'premium-elegant-business': "'Elegant Serif', Georgia, 'Times New Roman', 'Liberation Serif', serif",
+};
+
+const COVER_LETTER_FONT_DEPENDENCIES = {
+  'classic-letter': ['elegantSerif'],
+  'professional-blue-letterhead': ['inter'],
+  'clean-modern-header': ['inter'],
+  'dark-header-corporate': ['inter'],
+  'minimal-wide-name-header': ['inter'],
+  'plain-re-subject': [],
+  'simple-everyday-formal': ['inter'],
+  'premium-elegant-business': ['elegantSerif'],
+};
+
+function getCoverLetterFontStack(templateId) {
+  return COVER_LETTER_FONT_STACKS[String(templateId || '').trim()] || COVER_LETTER_FONT_STACKS['professional-blue-letterhead'];
+}
+
+function getCoverLetterFontFaceCss(templateId) {
+  return buildCvFontFaceCss({
+    fontKeys: COVER_LETTER_FONT_DEPENDENCIES[String(templateId || '').trim()] || ['inter'],
+  });
+}
 const esc = (value) =>
   String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -82,11 +114,15 @@ function buildTemplateColorVars(model) {
 }
 
 function metaLines(c) {
-  return [c.applicantEmail, c.applicantPhone, c.applicantLocation].filter(Boolean).map(esc).join(' · ');
+  return [c.applicantEmail, c.applicantPhone, c.applicantLocation].filter(Boolean).map(esc).join(' &middot; ');
 }
 
 function recipientBlock(c) {
-  const rows = [c.recipientName, c.recipientTitle, c.companyName, c.companyAddress].filter(Boolean);
+  const addressLines = String(c.companyAddress || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const rows = [c.recipientName, c.recipientTitle, c.companyName, ...addressLines].filter(Boolean);
   if (!rows.length) {
     return '<p class="cl-placeholder">Recipient details (name, title, company, address)</p>';
   }
@@ -96,7 +132,7 @@ function recipientBlock(c) {
 function bodyBlock(c) {
   const paragraphs = [c.opening, ...c.paragraphs, c.closingParagraph].filter(Boolean);
   if (!paragraphs.length) {
-    return '<div class="cl-body"><p class="cl-placeholder">Write 2–4 concise paragraphs that connect your results to the role.</p></div>';
+    return '<div class="cl-body"><p class="cl-placeholder">Write 2-4 concise paragraphs that connect your results to the role.</p></div>';
   }
 
   return `<div class="cl-body">${paragraphs
@@ -106,7 +142,9 @@ function bodyBlock(c) {
 
 function doc(model, body, css, markerClass) {
   const vars = buildTemplateColorVars(model);
+  const fontFaceCss = getCoverLetterFontFaceCss(model.templateId);
   return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><style>
+${fontFaceCss}
 @page{size:A4;margin:0}
 html,body{margin:0;padding:0;background:var(--cl-page-bg);color:var(--cl-text);-webkit-print-color-adjust:exact;print-color-adjust:exact}
 *{box-sizing:border-box}
@@ -124,7 +162,7 @@ body{font-family:var(--cl-font-family);line-height:var(--cl-line-height);font-si
 .cl-divider{height:1px;background:var(--cl-divider-color);margin:5mm 0 0}
 @media print{html,body,*{-webkit-print-color-adjust:exact;print-color-adjust:exact}html,body{background:var(--cl-paper-bg)}.cl-page{margin:0;box-shadow:none;break-inside:avoid-page;page-break-inside:avoid}}
 :root{
-  --cl-font-family:${esc(model.style.fontFamily)};
+  --cl-font-family:${esc(getCoverLetterFontStack(model.templateId))};
   --cl-font-size:${model.style.fontSize}px;
   --cl-line-height:${model.style.lineHeight};
   --cl-accent:${esc(model.style.accentColor)};
@@ -149,7 +187,7 @@ function renderCommon(model, extras = '') {
     <header class="cl-header">
       <h1 class="cl-header-name">${esc(c.applicantName || 'Your Name')}</h1>
       <p class="cl-header-title">${esc(c.applicantTitle || c.applicantHeadline || c.roleTitle || 'Professional Title')}</p>
-      <p class="cl-meta">${metaLines(c) || '<span class="cl-placeholder">email · phone · location</span>'}</p>
+      <p class="cl-meta">${metaLines(c) || '<span class="cl-placeholder">email &middot; phone &middot; location</span>'}</p>
     </header>
     ${extras}
     <p class="cl-date">${esc(c.dateText || c.date || 'Date')}</p>
@@ -166,7 +204,7 @@ export function renderClassicLetterHtml(draft = {}) {
   return doc(
     model,
     renderCommon(model),
-    '.classicLetter{background:var(--cl-page-bg)}.classicLetter .cl-page,.classicLetter{font-family:Cambria,"Times New Roman",Georgia,serif}.classicLetter .cl-header-name{font-size:28px}.classicLetter .cl-header-title{font-size:13px;letter-spacing:.02em;text-transform:uppercase}',
+    '.classicLetter{background:var(--cl-page-bg)}.classicLetter .cl-page,.classicLetter{font-family:var(--cl-font-family)}.classicLetter .cl-header-name{font-size:28px}.classicLetter .cl-header-title{font-size:13px;letter-spacing:.02em;text-transform:uppercase}',
     'classicLetter',
   );
 }
@@ -196,7 +234,7 @@ export function renderDarkHeaderCorporateHtml(draft = {}) {
   const c = model.content;
   return doc(
     model,
-    `<div class="cl-corporate-header"><h1 class="cl-header-name">${esc(c.applicantName || 'Your Name')}</h1><p class="cl-header-title">${esc(c.applicantTitle || c.applicantHeadline || c.roleTitle || 'Professional Title')}</p><p class="cl-meta">${metaLines(c) || '<span class="cl-placeholder">email · phone · location</span>'}</p></div>${renderCommon({ ...model, content: { ...c, applicantName: '', applicantHeadline: '' } })}`,
+    `<div class="cl-corporate-header"><h1 class="cl-header-name">${esc(c.applicantName || 'Your Name')}</h1><p class="cl-header-title">${esc(c.applicantTitle || c.applicantHeadline || c.roleTitle || 'Professional Title')}</p><p class="cl-meta">${metaLines(c) || '<span class="cl-placeholder">email &middot; phone &middot; location</span>'}</p></div>${renderCommon({ ...model, content: { ...c, applicantName: '', applicantHeadline: '' } })}`,
     '.darkHeaderCorporate{padding-top:0}.darkHeaderCorporate .cl-corporate-header{margin:0 -17mm 5mm;background:color-mix(in srgb, var(--cl-accent) 55%, #0f172a);color:var(--cl-header-text);padding:11mm 17mm}.darkHeaderCorporate .cl-corporate-header .cl-header-name{color:var(--cl-header-text)}.darkHeaderCorporate .cl-corporate-header .cl-header-title,.darkHeaderCorporate .cl-corporate-header .cl-meta{color:var(--cl-header-muted)}.darkHeaderCorporate .cl-corporate-header .cl-meta{padding-top:1.5mm;border-top:1px solid var(--cl-header-divider)}.darkHeaderCorporate .cl-header{display:none}',
     'darkHeaderCorporate',
   );
@@ -217,7 +255,7 @@ export function renderPlainReSubjectHtml(draft = {}) {
   return doc(
     model,
     renderCommon({ ...model, content: { ...model.content, subject: model.content.subject || 'Application for the advertised role' } }),
-    '.plainReSubject .cl-page,.plainReSubject{font-family:Arial,Helvetica,sans-serif}.plainReSubject .cl-subject{font-weight:600;text-transform:none;color:var(--cl-accent)}',
+    '.plainReSubject .cl-page,.plainReSubject{font-family:var(--cl-font-family)}.plainReSubject .cl-subject{font-weight:600;text-transform:none;color:var(--cl-accent)}',
     'plainReSubject',
   );
 }
@@ -227,7 +265,7 @@ export function renderSimpleEverydayFormalHtml(draft = {}) {
   return doc(
     model,
     renderCommon(model),
-    '.simpleEverydayFormal .cl-page,.simpleEverydayFormal{font-family:Calibri,"Segoe UI",Arial,sans-serif}.simpleEverydayFormal .cl-header-title{font-size:13px}',
+    '.simpleEverydayFormal .cl-page,.simpleEverydayFormal{font-family:var(--cl-font-family)}.simpleEverydayFormal .cl-header-title{font-size:13px}',
     'simpleEverydayFormal',
   );
 }
@@ -237,7 +275,7 @@ export function renderPremiumElegantBusinessHtml(draft = {}) {
   return doc(
     model,
     renderCommon(model, '<div class="cl-elegant-rule"></div>'),
-    '.premiumElegantBusiness .cl-page,.premiumElegantBusiness{font-family:Georgia,"Times New Roman",serif}.premiumElegantBusiness .cl-elegant-rule{height:2px;background:linear-gradient(90deg,var(--cl-accent),color-mix(in srgb, var(--cl-accent) 35%, #fff));margin:4mm 0 0}.premiumElegantBusiness .cl-header-title{letter-spacing:.03em;text-transform:uppercase;font-size:12px}',
+    '.premiumElegantBusiness .cl-page,.premiumElegantBusiness{font-family:var(--cl-font-family)}.premiumElegantBusiness .cl-elegant-rule{height:2px;background:linear-gradient(90deg,var(--cl-accent),color-mix(in srgb, var(--cl-accent) 35%, #fff));margin:4mm 0 0}.premiumElegantBusiness .cl-header-title{letter-spacing:.03em;text-transform:uppercase;font-size:12px}',
     'premiumElegantBusiness',
   );
 }
@@ -263,3 +301,4 @@ export const templateMarkersById = {
 };
 
 export { normalizeCoverLetterTemplateId };
+

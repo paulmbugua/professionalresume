@@ -161,6 +161,54 @@ const CoverLetterForm: React.FC = () => {
           />
         </div>
       </section>
+      <section className={section}>
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+            Recipient details
+          </h3>
+          <p className="text-sm text-slate-500 dark:text-slate-300">
+            Add the hiring manager, company, and mailing address shown in the letter header.
+          </p>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className={label}>Recipient name</label>
+            <input
+              className={input}
+              placeholder="Jane Smith"
+              {...register('recipient.name')}
+            />
+          </div>
+
+          <div>
+            <label className={label}>Recipient title</label>
+            <input
+              className={input}
+              placeholder="Hiring Manager"
+              {...register('recipient.title')}
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className={label}>Company</label>
+          <input
+            className={input}
+            placeholder="Acme Ltd"
+            {...register('recipient.company')}
+          />
+        </div>
+
+        <div>
+          <label className={label}>Address</label>
+          <textarea
+            className={`${input} min-h-[96px]`}
+            placeholder={`123 Business Road\nNairobi, Kenya`}
+            {...register('recipient.address')}
+          />
+        </div>
+      </section>
 
       <section className={section}>
         <div className="flex items-center justify-between gap-3">
@@ -294,3 +342,4 @@ const CoverLetterForm: React.FC = () => {
 };
 
 export default CoverLetterForm;
+

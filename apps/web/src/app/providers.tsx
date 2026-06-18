@@ -1,7 +1,7 @@
-'use client';
+﻿'use client';
 
-import React, { useMemo, useState } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import React, { useMemo } from 'react';
+import { AppQueryProvider } from '@cvpro/shared/utils/queryClient';
 import ShopContextProvider from '@cvpro/shared/context/ShopContext';
 import { ThemeProvider } from '@cvpro/shared/hooks';
 import { logResolvedBackendUrl, resolveBackendUrl } from '../lib/backendUrl';
@@ -16,7 +16,6 @@ const Providers = ({ children }: { children: React.ReactNode }) => {
   const backendUrl = resolveBackendUrl(process.env.NEXT_PUBLIC_BACKEND_URL);
   logResolvedBackendUrl('providers', backendUrl);
 
-  // Create storage only once; guard window/localStorage just in case.
   const storage: AsyncStorageLike = useMemo(
     () => ({
       getItem: async (k: string) =>
@@ -33,28 +32,14 @@ const Providers = ({ children }: { children: React.ReactNode }) => {
     []
   );
 
-  // ✅ Create QueryClient once per app lifetime (prevents remount issues)
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            staleTime: 5 * 60 * 1000,
-            retry: 2,
-            refetchOnWindowFocus: false,
-          },
-        },
-      })
-  );
-
   return (
-    <QueryClientProvider client={queryClient}>
+    <AppQueryProvider>
       <ShopContextProvider backendUrl={backendUrl} storage={storage}>
         <ThemeProvider applyToDocument storageKey="cvpro-theme">
           {children}
         </ThemeProvider>
       </ShopContextProvider>
-    </QueryClientProvider>
+    </AppQueryProvider>
   );
 };
 

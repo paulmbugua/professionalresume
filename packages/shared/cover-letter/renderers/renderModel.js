@@ -37,6 +37,13 @@ function firstString(...values) {
   return '';
 }
 
+function normalizeAddressLines(...values) {
+  return values
+    .filter((value) => typeof value === 'string' && value.trim())
+    .map((value) => value.trim())
+    .join('\n');
+}
+
 function normalizeParagraphs(raw) {
   if (Array.isArray(raw)) {
     return raw.map((line) => String(line || '').trim()).filter(Boolean);
@@ -71,6 +78,7 @@ export function normalizeCoverLetterRenderModel(draft = {}) {
     draft.paragraphs ||
     draft.letterBody;
   const paragraphs = normalizeParagraphs(paragraphSource);
+  const recipientAddress = normalizeAddressLines(recipient.addressLine1, recipient.addressLine2);
 
   const applicantName = asString(
     firstString(
@@ -152,6 +160,7 @@ export function normalizeCoverLetterRenderModel(draft = {}) {
       companyAddress: asString(
         firstString(
           recipient.address,
+          recipientAddress,
           recipient.addressLine1,
           legacyContent.companyAddress,
           draft.companyAddress,
@@ -217,3 +226,4 @@ export function toCoverLetterExportJson(draft = {}) {
 }
 
 export const DEFAULT_COVER_LETTER_STYLE = DEFAULT_STYLE;
+

@@ -1,4 +1,5 @@
-import type { Metadata } from 'next';
+﻿import type { Metadata } from 'next';
+import Script from 'next/script';
 import LandingPage from '../pages/Landing.web';
 import { buildFaqSchema, buildPageMetadata } from '../lib/seo';
 
@@ -37,8 +38,14 @@ const homepageFaq = buildFaqSchema([
 export default function Page() {
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(homepageFaq) }} />
+      <Script
+        id="cvpro-homepage-faq-ld"
+        type="application/ld+json"
+        strategy="afterInteractive"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(homepageFaq) }}
+      />
       <LandingPage />
     </>
   );
 }
+

@@ -1,4 +1,5 @@
-import type { Metadata } from 'next';
+﻿import type { Metadata } from 'next';
+import Script from 'next/script';
 import '../index.css';
 import Providers from './providers';
 import CvTopNav from '../components/cv/CvTopNav';
@@ -36,8 +37,6 @@ export const metadata: Metadata = {
   manifest: '/site.webmanifest',
 };
 
-
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const themeInitScript = `
     (function () {
@@ -57,17 +56,23 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
-        <script
+        <Script id="cvpro-theme-init" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <Script
+          id="cvpro-organization-ld"
           type="application/ld+json"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationLd) }}
         />
-        <script
+        <Script
+          id="cvpro-website-ld"
           type="application/ld+json"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteLd) }}
         />
-        <script
+        <Script
+          id="cvpro-software-ld"
           type="application/ld+json"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareLd) }}
         />
       </head>
