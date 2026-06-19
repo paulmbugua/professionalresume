@@ -226,11 +226,30 @@ export async function htmlToPdfBuffer(html) {
   };
 
   const assertPdf = (pdfBuffer) => {
-    if (!pdfBuffer || pdfBuffer.length < 30000) {
-      throw new Error('PDF buffer too small; HTML→PDF likely failed');
+    const buffer = Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer || []);
+
+    if (buffer.length < 1024) {
+      throw new Error('PDF buffer is empty or truncated; HTML-to-PDF likely failed');
     }
-    console.info('exportPdf pdfBytes=', pdfBuffer.length);
-    return pdfBuffer;
+
+    const pdfText = buffer.toString('latin1');
+    const hasPdfHeader = pdfText.startsWith('%PDF-');
+    const hasPageMarker = /\/Type\s*\/Page\b/.test(pdfText);
+    const hasEofMarker = pdfText.includes('%%EOF');
+
+    if (!hasPdfHeader || !hasPageMarker) {
+      throw new Error(
+        `PDF buffer failed validation; header=${hasPdfHeader}, page=${hasPageMarker}, eof=${hasEofMarker}, bytes=${buffer.length}`,
+      );
+    }
+
+    console.info('exportPdf pdfBytes=', {
+      bytes: buffer.length,
+      hasPdfHeader,
+      hasPageMarker,
+      hasEofMarker,
+    });
+    return buffer;
   };
 
   const resolveFallbackExecutablePath = () => {
