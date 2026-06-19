@@ -164,6 +164,26 @@ const CoverLetterForm: React.FC = () => {
       <section className={section}>
         <div>
           <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+            Date
+          </h3>
+          <p className="text-sm text-slate-500 dark:text-slate-300">
+            Set the date shown above the recipient details in the exported letter.
+          </p>
+        </div>
+
+        <div>
+          <label className={label}>Letter date</label>
+          <input
+            className={input}
+            placeholder="June 18, 2026"
+            {...register('letter.date')}
+          />
+        </div>
+      </section>
+
+      <section className={section}>
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
             Recipient details
           </h3>
           <p className="text-sm text-slate-500 dark:text-slate-300">
