@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
+import { FileText, FileUp, Minus, Plus, Sparkles, Type } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import type { CoverLetterDraft } from '@cvpro/shared/types';
 import CoverLetterForm from './CoverLetterForm';
@@ -56,6 +57,16 @@ const CoverLetterEditorShell: React.FC<Props> = ({
     .join('\n\n')
     .trim();
   const closingText = previewDraft.body.closing?.trim() ?? '';
+  const fontSize = Math.round(previewDraft.style.fontSize || 15);
+
+  const setFontSize = (nextSize: number) => {
+    const clamped = Math.min(24, Math.max(10, nextSize));
+    setValue('style.fontSize', clamped, {
+      shouldDirty: true,
+      shouldTouch: true,
+      shouldValidate: true,
+    });
+  };
 
   const handleImproveOpening = () => {
     trackAiAssistUsed({
@@ -120,6 +131,31 @@ const CoverLetterEditorShell: React.FC<Props> = ({
           </div>
 
           <div className="flex w-full flex-wrap items-center gap-2 xl:w-auto xl:justify-end">
+            <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2 py-1 shadow-sm dark:border-white/10 dark:bg-white/5">
+              <Type className="h-4 w-4 text-slate-500 dark:text-slate-300" aria-hidden="true" />
+              <button
+                type="button"
+                onClick={() => setFontSize(fontSize - 1)}
+                className="grid h-8 w-8 place-items-center rounded-lg text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 dark:text-slate-200 dark:hover:bg-white/10 dark:hover:text-white"
+                aria-label="Decrease cover letter font size"
+                title="Decrease font size"
+              >
+                <Minus className="h-4 w-4" aria-hidden="true" />
+              </button>
+              <div className="min-w-12 text-center text-xs font-bold tabular-nums text-slate-700 dark:text-slate-100">
+                {fontSize}px
+              </div>
+              <button
+                type="button"
+                onClick={() => setFontSize(fontSize + 1)}
+                className="grid h-8 w-8 place-items-center rounded-lg text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 dark:text-slate-200 dark:hover:bg-white/10 dark:hover:text-white"
+                aria-label="Increase cover letter font size"
+                title="Increase font size"
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+
             <button
               type="button"
               onClick={onPrint}
@@ -184,19 +220,33 @@ const CoverLetterEditorShell: React.FC<Props> = ({
             </button>
 
             {onImportCoverLetter || onImportResume ? (
-              <details className="relative">
-                <summary className="cursor-pointer list-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:bg-white/5 dark:text-slate-100">
-                  {isImporting ? 'Importing…' : 'Import / AI Assist'}
+              <details className="group relative">
+                <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl border border-cyan-300 bg-cyan-50 px-3 py-2 text-sm font-bold text-cyan-950 shadow-sm transition hover:border-cyan-400 hover:bg-cyan-100 dark:border-cyan-400/40 dark:bg-cyan-400/10 dark:text-cyan-50 dark:hover:bg-cyan-400/20">
+                  <span className="grid h-7 w-7 place-items-center rounded-lg bg-cyan-600 text-white shadow-sm dark:bg-cyan-400 dark:text-cyan-950">
+                    <Sparkles className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <span>{isImporting ? 'Importing...' : 'Import / AI Assist'}</span>
+                  <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-cyan-700 dark:bg-cyan-950/50 dark:text-cyan-200">
+                    Smart
+                  </span>
                 </summary>
 
-                <div className="absolute left-0 right-0 z-50 mt-2 min-w-[220px] rounded-xl border border-slate-200 bg-white p-2 shadow-xl sm:left-auto sm:right-0 dark:border-white/10 dark:bg-slate-900">
+                <div className="absolute left-0 right-0 z-50 mt-2 min-w-[260px] overflow-hidden rounded-xl border border-slate-200 bg-white p-2 shadow-xl sm:left-auto sm:right-0 dark:border-white/10 dark:bg-slate-900">
                   {onImportCoverLetter ? (
                     <button
                       type="button"
                       onClick={onImportCoverLetter}
-                      className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-white/5"
+                      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-cyan-50 dark:hover:bg-cyan-400/10"
                     >
-                      Upload cover letter
+                      <FileText className="h-4 w-4 text-cyan-700 dark:text-cyan-300" aria-hidden="true" />
+                      <span>
+                        <span className="block text-sm font-semibold text-slate-900 dark:text-white">
+                          Upload cover letter
+                        </span>
+                        <span className="block text-xs text-slate-500 dark:text-slate-300">
+                          Fill this draft from an existing letter
+                        </span>
+                      </span>
                     </button>
                   ) : null}
 
@@ -204,9 +254,17 @@ const CoverLetterEditorShell: React.FC<Props> = ({
                     <button
                       type="button"
                       onClick={onImportResume}
-                      className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-white/5"
+                      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-cyan-50 dark:hover:bg-cyan-400/10"
                     >
-                      Re-extract from resume
+                      <FileUp className="h-4 w-4 text-cyan-700 dark:text-cyan-300" aria-hidden="true" />
+                      <span>
+                        <span className="block text-sm font-semibold text-slate-900 dark:text-white">
+                          Build from resume
+                        </span>
+                        <span className="block text-xs text-slate-500 dark:text-slate-300">
+                          Extract details and let AI map the letter
+                        </span>
+                      </span>
                     </button>
                   ) : null}
                 </div>
