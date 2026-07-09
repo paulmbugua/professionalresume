@@ -69,8 +69,12 @@ const LoginPage: React.FC = () => {
   const getAuthDestination = useCallback(
     (dest?: string | null) => {
       const builderSession = loadGuestCvDraft();
-      if (hasPendingBuilderContinuation() && builderSession?.draft) return '/builder/guest';
-      return sanitizeInternalReturnTo(dest || getReturnTo(), DEFAULT_RETURN_TO);
+      const sanitizedDest = sanitizeInternalReturnTo(dest || getReturnTo(), DEFAULT_RETURN_TO);
+      const isBuilderReturn = sanitizedDest === '/builder/guest';
+      if ((hasPendingBuilderContinuation() || isBuilderReturn) && builderSession?.draft) {
+        return '/builder/guest';
+      }
+      return sanitizedDest;
     },
     [getReturnTo]
   );
@@ -534,7 +538,7 @@ const LoginPage: React.FC = () => {
           </div>
 
           <div className="flex justify-center">
-            <CustomGoogleButtonLogin returnTo={getReturnTo()} />
+            <CustomGoogleButtonLogin returnTo={getAuthDestination(getReturnTo())} />
           </div>
 
           <p className="mt-6 text-center text-xs text-gray-500 dark:text-white/50">

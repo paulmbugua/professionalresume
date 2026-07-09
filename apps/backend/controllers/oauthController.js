@@ -19,6 +19,40 @@ const APP_FRONTEND_URL =
 const createToken = (id) =>
   jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '1d' });
 
+function getAllowedFrontendHosts() {
+  const configured = new URL(APP_FRONTEND_URL).host.toLowerCase();
+  const hosts = new Set([configured]);
+  if (configured.startsWith('www.')) {
+    hosts.add(configured.slice(4));
+  } else {
+    hosts.add(`www.${configured}`);
+  }
+  if (!isProd) {
+    hosts.add('localhost:3000');
+    hosts.add('127.0.0.1:3000');
+  }
+  return hosts;
+}
+
+function sanitizeFrontendOrigin(raw, fallback = APP_FRONTEND_URL) {
+  try {
+    const fallbackUrl = new URL(fallback);
+    const candidate = new URL(String(raw || fallback));
+    if (candidate.protocol !== 'https:' && candidate.protocol !== 'http:') {
+      return fallbackUrl.origin;
+    }
+    if (isProd && candidate.protocol !== 'https:') {
+      return fallbackUrl.origin;
+    }
+    if (!getAllowedFrontendHosts().has(candidate.host.toLowerCase())) {
+      return fallbackUrl.origin;
+    }
+    return candidate.origin;
+  } catch {
+    return new URL(fallback).origin;
+  }
+}
+
 function sanitizeInternalPath(raw, fallback = '/builder') {
   const input = String(raw || '').trim();
   if (!input) return fallback;
@@ -60,9 +94,9 @@ function clearCookieHeader(name) {
   return parts.join('; ');
 }
 
-function frontendUrl(pathname, params = {}) {
-  const base = new URL(APP_FRONTEND_URL);
+function frontendUrl(pathname, params = {}, frontendOrigin = APP_FRONTEND_URL) {
   const path = pathname.startsWith('/') ? pathname : `/${pathname}`;
+  const base = new URL(sanitizeFrontendOrigin(frontendOrigin));
   const url = new URL(path, base);
   Object.entries(params).forEach(([k, v]) => {
     if (typeof v === 'string' && v.length) url.searchParams.set(k, v);
@@ -87,7 +121,9 @@ function consumeOAuthCode(code) {
 }
 
 async function upsertGoogleUser({ email, displayName, googleId }) {
-  const emailNorm = String(email || '').trim().toLowerCase();
+  const emailNorm = String(email || '')
+    .trim()
+    .toLowerCase();
   const { rows } = await pool.query(
     `
     INSERT INTO users (name, email, google_id, role)
@@ -107,17 +143,36 @@ async function upsertGoogleUser({ email, displayName, googleId }) {
 
 export async function startGoogleOAuth(req, res) {
   const returnTo = sanitizeInternalPath(req.query?.returnTo, '/builder');
+  const frontendOrigin = sanitizeFrontendOrigin(req.query?.frontendOrigin);
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const callbackUrl = process.env.GOOGLE_CALLBACK_URL;
-  if (!clientId || !callbackUrl || !process.env.GOOGLE_CLIENT_SECRET || !process.env.JWT_SECRET) {
-    return res.redirect(frontendUrl('/login', { authError: 'google_oauth_unavailable', returnTo }));
+  if (
+    !clientId ||
+    !callbackUrl ||
+    !process.env.GOOGLE_CLIENT_SECRET ||
+    !process.env.JWT_SECRET
+  ) {
+    return res.redirect(
+      frontendUrl(
+        '/login',
+        { authError: 'google_oauth_unavailable', returnTo },
+        frontendOrigin,
+      ),
+    );
   }
 
   const state = crypto.randomBytes(24).toString('hex');
-  oauthStateStore.set(state, { returnTo, expiresAt: now() + OAUTH_STATE_TTL_MS });
+  oauthStateStore.set(state, {
+    returnTo,
+    frontendOrigin,
+    expiresAt: now() + OAUTH_STATE_TTL_MS,
+  });
 
-  res.setHeader('Set-Cookie', buildSetCookie(OAUTH_STATE_COOKIE, state, OAUTH_STATE_TTL_MS / 1000));
+  res.setHeader(
+    'Set-Cookie',
+    buildSetCookie(OAUTH_STATE_COOKIE, state, OAUTH_STATE_TTL_MS / 1000),
+  );
 
   const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   authUrl.searchParams.set('client_id', clientId);
@@ -141,17 +196,41 @@ export async function handleGoogleOAuthCallback(req, res) {
 
   const safeState = consumeValidOAuthState(callbackState);
   const returnTo = sanitizeInternalPath(safeState?.returnTo, '/builder');
+  const frontendOrigin = sanitizeFrontendOrigin(safeState?.frontendOrigin);
 
   if (oauthError) {
-    return res.redirect(frontendUrl('/login', { authError: oauthError, returnTo }));
+    return res.redirect(
+      frontendUrl(
+        '/login',
+        { authError: oauthError, returnTo },
+        frontendOrigin,
+      ),
+    );
   }
 
-  if (!callbackState || !stateCookie || callbackState !== stateCookie || !safeState) {
-    return res.redirect(frontendUrl('/login', { authError: 'oauth_state_mismatch', returnTo }));
+  if (
+    !callbackState ||
+    !stateCookie ||
+    callbackState !== stateCookie ||
+    !safeState
+  ) {
+    return res.redirect(
+      frontendUrl(
+        '/login',
+        { authError: 'oauth_state_mismatch', returnTo },
+        frontendOrigin,
+      ),
+    );
   }
 
   if (!code) {
-    return res.redirect(frontendUrl('/login', { authError: 'missing_oauth_code', returnTo }));
+    return res.redirect(
+      frontendUrl(
+        '/login',
+        { authError: 'missing_oauth_code', returnTo },
+        frontendOrigin,
+      ),
+    );
   }
 
   try {
@@ -168,36 +247,79 @@ export async function handleGoogleOAuthCallback(req, res) {
     });
 
     if (!tokenResp.ok) {
-      return res.redirect(frontendUrl('/login', { authError: 'google_token_exchange_failed', returnTo }));
+      return res.redirect(
+        frontendUrl(
+          '/login',
+          { authError: 'google_token_exchange_failed', returnTo },
+          frontendOrigin,
+        ),
+      );
     }
 
     const tokenJson = await tokenResp.json();
     const accessToken = String(tokenJson?.access_token || '');
     if (!accessToken) {
-      return res.redirect(frontendUrl('/login', { authError: 'google_access_token_missing', returnTo }));
+      return res.redirect(
+        frontendUrl(
+          '/login',
+          { authError: 'google_access_token_missing', returnTo },
+          frontendOrigin,
+        ),
+      );
     }
 
-    const profileResp = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const profileResp = await fetch(
+      'https://www.googleapis.com/oauth2/v3/userinfo',
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+    );
     if (!profileResp.ok) {
-      return res.redirect(frontendUrl('/login', { authError: 'google_profile_fetch_failed', returnTo }));
+      return res.redirect(
+        frontendUrl(
+          '/login',
+          { authError: 'google_profile_fetch_failed', returnTo },
+          frontendOrigin,
+        ),
+      );
     }
 
     const profile = await profileResp.json();
-    const email = String(profile?.email || '').trim().toLowerCase();
+    const email = String(profile?.email || '')
+      .trim()
+      .toLowerCase();
     const emailVerified = Boolean(profile?.email_verified);
     const googleId = String(profile?.sub || '');
-    const name = String(profile?.name || '').trim().slice(0, 80);
+    const name = String(profile?.name || '')
+      .trim()
+      .slice(0, 80);
 
     if (!email) {
-      return res.redirect(frontendUrl('/login', { authError: 'google_email_missing', returnTo }));
+      return res.redirect(
+        frontendUrl(
+          '/login',
+          { authError: 'google_email_missing', returnTo },
+          frontendOrigin,
+        ),
+      );
     }
     if (!emailVerified) {
-      return res.redirect(frontendUrl('/login', { authError: 'google_email_unverified', returnTo }));
+      return res.redirect(
+        frontendUrl(
+          '/login',
+          { authError: 'google_email_unverified', returnTo },
+          frontendOrigin,
+        ),
+      );
     }
     if (!googleId) {
-      return res.redirect(frontendUrl('/login', { authError: 'google_subject_missing', returnTo }));
+      return res.redirect(
+        frontendUrl(
+          '/login',
+          { authError: 'google_subject_missing', returnTo },
+          frontendOrigin,
+        ),
+      );
     }
 
     const user = await upsertGoogleUser({ email, displayName: name, googleId });
@@ -208,24 +330,40 @@ export async function handleGoogleOAuthCallback(req, res) {
       expiresAt: now() + OAUTH_CODE_TTL_MS,
     });
 
-    return res.redirect(frontendUrl('/login', { authCode, returnTo }));
+    return res.redirect(
+      frontendUrl('/login', { authCode, returnTo }, frontendOrigin),
+    );
   } catch (error) {
     console.error('[google-oauth/callback] error', error);
-    return res.redirect(frontendUrl('/login', { authError: 'google_callback_failed', returnTo }));
+    return res.redirect(
+      frontendUrl(
+        '/login',
+        { authError: 'google_callback_failed', returnTo },
+        frontendOrigin,
+      ),
+    );
   }
 }
 
 export async function exchangeGoogleAuthCode(req, res) {
   const code = String(req.body?.code || '').trim();
   if (!code) {
-    return res.status(400).json({ success: false, message: 'Missing auth code' });
+    return res
+      .status(400)
+      .json({ success: false, message: 'Missing auth code' });
   }
   const saved = consumeOAuthCode(code);
   if (!saved) {
-    return res.status(400).json({ success: false, message: 'Invalid or expired auth code' });
+    return res
+      .status(400)
+      .json({ success: false, message: 'Invalid or expired auth code' });
   }
 
-  return res.json({ success: true, token: saved.token, message: 'Google login successful' });
+  return res.json({
+    success: true,
+    token: saved.token,
+    message: 'Google login successful',
+  });
 }
 
 setInterval(() => {

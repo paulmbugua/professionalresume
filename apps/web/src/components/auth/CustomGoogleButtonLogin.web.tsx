@@ -24,6 +24,9 @@ export default function CustomGoogleButtonLogin({
 
       const params = new URLSearchParams();
       params.set('returnTo', safeReturnTo);
+      if (typeof window !== 'undefined') {
+        params.set('frontendOrigin', window.location.origin);
+      }
 
       const url = `${backendUrl}/api/auth/google?${params.toString()}`;
       window.location.assign(url);
