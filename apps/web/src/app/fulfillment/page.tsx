@@ -3,11 +3,11 @@ import FulfillmentPolicyPage from '../../pages/FulfillmentPolicy';
 import { buildBreadcrumbSchema, buildPageMetadata } from '../../lib/seo';
 
 export const metadata: Metadata = buildPageMetadata({
-  title: 'Fulfillment Policy | CVPro',
+  title: 'Fulfillment Policy | ProfessionalResume.co.ke',
   description:
-    'Understand how CVPro fulfills digital resume/CV and cover letter services after payment, including access timing and support steps.',
+    'Understand how ProfessionalResume.co.ke fulfills digital resume/CV and cover letter services after payment, including access timing and support steps.',
   path: '/fulfillment',
-  keywords: ['CVPro fulfillment policy', 'digital service delivery', 'resume builder access'],
+  keywords: ['ProfessionalResume.co.ke fulfillment policy', 'digital service delivery', 'resume builder access'],
 });
 
 const breadcrumbSchema = buildBreadcrumbSchema([

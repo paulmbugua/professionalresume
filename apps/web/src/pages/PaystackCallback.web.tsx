@@ -51,7 +51,7 @@ const PaystackCallbackPage: React.FC = () => {
           items: [
             {
               item_id: 'cvpro-export-unlock',
-              item_name: 'CVPro Export Unlock',
+              item_name: 'ProfessionalResume Export Unlock',
               price: PAYSTACK_KES_AMOUNT,
               quantity: 1,
             },
@@ -72,7 +72,7 @@ const PaystackCallbackPage: React.FC = () => {
   return (
     <div className="mx-auto flex min-h-[60vh] w-full max-w-screen-md items-center justify-center px-6 py-12 text-center">
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <h1 className="text-xl font-semibold text-gray-900">CVPro payment callback</h1>
+        <h1 className="text-xl font-semibold text-gray-900">ProfessionalResume.co.ke payment callback</h1>
         <p className="mt-2 text-sm text-gray-600">{message}</p>
       </div>
     </div>

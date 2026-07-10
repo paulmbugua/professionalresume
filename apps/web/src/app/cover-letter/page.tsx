@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { buildBreadcrumbSchema, buildPageMetadata } from '../../lib/seo';
 
 export const metadata: Metadata = buildPageMetadata({
-  title: 'Cover Letter Builder | Match Your Resume in Minutes | CVPro',
+  title: 'Cover Letter Builder | Match Your Resume in Minutes | ProfessionalResume.co.ke',
   description:
     'Create polished cover letters that match your CV. Use templates, AI-assisted writing, and instant export after resume purchase.',
   path: '/cover-letter',
@@ -27,7 +27,7 @@ export default function Page() {
           Build a job-winning cover letter that matches your resume
         </h1>
         <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300 sm:text-base">
-          CVPro helps you create tailored cover letters quickly using structured templates and guided sections.
+          ProfessionalResume.co.ke helps you create tailored cover letters quickly using structured templates and guided sections.
           Pair it with your resume for a complete application package.
         </p>
         <div className="mt-6 flex flex-wrap gap-3">

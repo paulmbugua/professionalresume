@@ -3,11 +3,11 @@ import ComplaintsFeedbackPage from '../../pages/ComplaintsFeedback';
 import { buildBreadcrumbSchema, buildPageMetadata } from '../../lib/seo';
 
 export const metadata: Metadata = buildPageMetadata({
-  title: 'Complaints & Feedback | CVPro',
+  title: 'Complaints & Feedback | ProfessionalResume.co.ke',
   description:
-    'Contact CVPro with service complaints, billing concerns, technical issues, account concerns, and product feedback.',
+    'Contact ProfessionalResume.co.ke with service complaints, billing concerns, technical issues, account concerns, and product feedback.',
   path: '/complaints-feedback',
-  keywords: ['CVPro complaints', 'CVPro feedback', 'resume builder support'],
+  keywords: ['ProfessionalResume.co.ke complaints', 'ProfessionalResume.co.ke feedback', 'resume builder support'],
 });
 
 const breadcrumbSchema = buildBreadcrumbSchema([

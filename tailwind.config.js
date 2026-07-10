@@ -7,21 +7,22 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        primary: "#A259FF",
-        secondary: "#8B30FF",
-        plum: "#2A1E5C",
-        softPink: "#FF70A6",
-        softGray: "#FDF7F3",
+        primary: "#0052CC",
+        secondary: "#0EA5E9",
+        plum: "#0F172A",
+        softPink: "#F97316",
+        softGray: "#F8FAFC",
         mutedGray: "#A8A6B8",
         darkText: "#333333",
-        gold: "#FFD700",
+        gold: "#F97316",
+        success: "#10B981",
       },
       fontFamily: {
-        sans: ["Poppins", "sans-serif"],
-        display: ["Montserrat", "sans-serif"],
+        sans: ["Inter", "DM Sans", "Poppins", "sans-serif"],
+        display: ["Poppins", "Inter", "sans-serif"],
       },
       boxShadow: {
-        soft: "0 4px 8px rgba(162, 89, 255, 0.3)",
+        soft: "0 4px 14px rgba(0, 82, 204, 0.18)",
       },
       borderRadius: {
         lg: "12px",

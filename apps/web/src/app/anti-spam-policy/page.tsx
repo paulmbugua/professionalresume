@@ -3,11 +3,11 @@ import AntiSpamPolicyPage from '../../pages/AntiSpamPolicy';
 import { buildBreadcrumbSchema, buildPageMetadata } from '../../lib/seo';
 
 export const metadata: Metadata = buildPageMetadata({
-  title: 'Anti-Spam Policy | CVPro',
+  title: 'Anti-Spam Policy | ProfessionalResume.co.ke',
   description:
-    'Review CVPro anti-spam commitments, permitted communications, unsubscribe expectations, and abuse reporting instructions.',
+    'Review ProfessionalResume.co.ke anti-spam commitments, permitted communications, unsubscribe expectations, and abuse reporting instructions.',
   path: '/anti-spam-policy',
-  keywords: ['CVPro anti-spam policy', 'email compliance', 'onedollarcvpro support'],
+  keywords: ['ProfessionalResume.co.ke anti-spam policy', 'email compliance', 'professionalresume support'],
 });
 
 const breadcrumbSchema = buildBreadcrumbSchema([

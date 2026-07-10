@@ -159,7 +159,7 @@ const LoginPage: React.FC = () => {
   const clearErrors = () => setError(null);
 
   const emailFormTitle = useMemo(
-    () => (authMode === 'Login' ? 'Log in to CVPro' : 'Create your CVPro account'),
+    () => (authMode === 'Login' ? 'Log in to ProfessionalResume.co.ke' : 'Create your ProfessionalResume.co.ke account'),
     [authMode]
   );
 
@@ -263,7 +263,7 @@ const LoginPage: React.FC = () => {
       <div className="relative z-10 grid w-full max-w-5xl gap-8 rounded-3xl border border-white/60 bg-white/70 p-4 shadow-2xl backdrop-blur-xl md:grid-cols-2 md:p-8 dark:border-white/10 dark:bg-black/30">
         <section className="hidden flex-col justify-between rounded-2xl bg-slate-900/85 p-8 text-white md:flex dark:bg-black/20">
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-white/60">CVPro</p>
+            <p className="text-xs uppercase tracking-[0.3em] text-white/60">ProfessionalResume.co.ke</p>
             <h1 className="mt-3 text-3xl font-semibold leading-tight">
               Build an ATS-friendly CV in minutes.
             </h1>

@@ -207,6 +207,70 @@ export function renderCompactOnePagerHtml(draft = {}) {
   );
 }
 
+export function renderExecutiveBandHtml(draft = {}) {
+  const d = normalizeCvDraft(draft);
+  const m = renderSectionMap(d);
+  const mainKeys = ['experience', 'projects'];
+  const sideKeys = ['skills', 'education', 'certifications', 'extras'];
+  const main = mainKeys.map((k) => (sectionVisible(d, k) ? m[k] || '' : '')).join('');
+  const side = sideKeys.map((k) => (sectionVisible(d, k) ? m[k] || '' : '')).join('');
+  return doc(
+    d,
+    `<main class="page executiveBandLayout"><div class="topline"></div><header><div><h1>${esc(d.basics.name || 'Your Name')}</h1><p class="headline">${esc(d.basics.headline || '')}</p></div><p class="contact">${contactLine(d.basics)}</p></header>${sectionVisible(d, 'summary') ? `<section class="summaryBand">${m.summary || ''}</section>` : ''}<div class="grid"><section class="maincol">${main}</section><aside class="sidecol">${side}</aside></div></main>`,
+    `${TYPOGRAPHY_BASE}body{background:#eef2f7;font-family:var(--fontFamily);color:var(--textColor)}.executiveBandLayout{padding:0}.topline{height:6mm;background:linear-gradient(90deg,var(--primary),var(--accent))}header{padding:11mm 13mm 7mm;display:grid;grid-template-columns:1fr 62mm;gap:10mm;border-bottom:1px solid #dbe3ee}header h1{font-size:var(--resolvedNameSize)}.headline{margin:4px 0 0;color:var(--mutedTextColor);font-size:var(--resolvedHeadlineSize)}.contact{text-align:right;margin:0;color:var(--mutedTextColor);font-size:var(--resolvedMetaSize)}.summaryBand{padding:7mm 13mm;background:#f8fafc;border-bottom:1px solid #e2e8f0}.summaryBand section{margin:0}.grid{display:grid;grid-template-columns:1fr 62mm;gap:10mm;padding:8mm 13mm 12mm}.maincol h2{color:var(--primary)}.sidecol{border-left:1px solid #dbe3ee;padding-left:8mm}.sidecol h2{color:var(--accent)}h2{margin:0 0 5px;letter-spacing:.13em}ul{margin:4px 0 0;padding-left:17px}.item{break-inside:avoid}`
+  );
+}
+
+export function renderSkillMatrixHtml(draft = {}) {
+  const d = normalizeCvDraft(draft);
+  const m = renderSectionMap(d);
+  const sections = ['summary', 'experience', 'projects', 'education', 'certifications', 'extras']
+    .map((k) => (sectionVisible(d, k) ? m[k] || '' : ''))
+    .join('');
+  const skills = d.skills?.length
+    ? `<section class="matrixSkills"><h2>Core Skills</h2><div>${d.skills.map((skill) => `<span>${esc(skill)}</span>`).join('')}</div></section>`
+    : '';
+  return doc(
+    d,
+    `<main class="page skillMatrixLayout"><header><h1>${esc(d.basics.name || 'Your Name')}</h1><p>${esc(d.basics.headline || '')}</p><p class="muted">${contactLine(d.basics)}</p></header>${skills}<div class="content">${sections}</div></main>`,
+    `${TYPOGRAPHY_BASE}body{background:#f3f4f6;font-family:var(--fontFamily);color:var(--textColor)}.skillMatrixLayout{padding:11mm 12mm}.skillMatrixLayout header{display:grid;grid-template-columns:1fr;gap:2px;border-bottom:2px solid var(--primary);padding-bottom:6mm}.skillMatrixLayout header p{margin:2px 0 0;font-size:var(--resolvedHeadlineSize)}.matrixSkills{margin:7mm 0;padding:6mm;background:#f8fafc;border:1px solid #dbe3ee}.matrixSkills h2{margin:0 0 5px;color:var(--primary)}.matrixSkills div{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 6px}.matrixSkills span{font-size:var(--resolvedBodySize);line-height:1.35;border-bottom:1px solid #e2e8f0;padding-bottom:2px}.content h2{color:var(--accent);border-bottom:1px solid #dbe3ee;padding-bottom:4px;margin:0 0 5px}ul{margin:4px 0 0;padding-left:17px}.item{break-inside:avoid}`
+  );
+}
+
+export function renderAcademicCompactHtml(draft = {}) {
+  const d = normalizeCvDraft(draft);
+  const m = renderSectionMap(d);
+  const order = ['summary', 'education', 'certifications', 'projects', 'experience', 'skills', 'extras'];
+  const sections = order.map((k) => (sectionVisible(d, k) ? m[k] || '' : '')).join('');
+  return doc(
+    d,
+    `<main class="page academicCompactLayout"><header><h1>${esc(d.basics.name || 'Your Name')}</h1><p>${esc(d.basics.headline || '')}</p><p class="muted">${contactLine(d.basics)}</p></header>${sections}</main>`,
+    `${TYPOGRAPHY_BASE}body{background:#f8fafc;font-family:var(--fontFamily);color:#111827}.academicCompactLayout{padding:12mm 14mm}.academicCompactLayout header{text-align:left;border-bottom:1.5px solid #111827;padding-bottom:7px;margin-bottom:8mm}.academicCompactLayout header p{margin:3px 0 0;font-size:var(--resolvedHeadlineSize)}h2{margin:0 0 5px;border-bottom:1px solid #cbd5e1;padding-bottom:4px;letter-spacing:.14em;color:#374151}.item{margin-bottom:6px}ul{margin:3px 0 0;padding-left:16px}.muted{color:#4b5563}`
+  );
+}
+
+export function renderProjectForwardHtml(draft = {}) {
+  const d = normalizeCvDraft(draft);
+  const m = renderSectionMap(d);
+  const order = ['summary', 'projects', 'skills', 'experience', 'education', 'certifications', 'extras'];
+  const sections = order.map((k) => (sectionVisible(d, k) ? m[k] || '' : '')).join('');
+  return doc(
+    d,
+    `<main class="page projectForwardLayout"><header><div><p class="label">Project-forward resume</p><h1>${esc(d.basics.name || 'Your Name')}</h1><p class="headline">${esc(d.basics.headline || '')}</p></div><p class="contact">${contactLine(d.basics)}</p></header><section class="content">${sections}</section></main>`,
+    `${TYPOGRAPHY_BASE}body{background:#eef2ff;font-family:var(--fontFamily);color:var(--textColor)}.projectForwardLayout{padding:0}.projectForwardLayout header{display:grid;grid-template-columns:1fr 70mm;gap:8mm;padding:11mm 12mm;background:#f8fafc;border-bottom:4px solid var(--accent)}.label{margin:0 0 3px;color:var(--accent);font-size:var(--resolvedMetaSize);font-weight:700;text-transform:uppercase;letter-spacing:.16em}.headline{margin:3px 0 0;color:var(--mutedTextColor);font-size:var(--resolvedHeadlineSize)}.contact{text-align:right;color:var(--mutedTextColor);font-size:var(--resolvedMetaSize);margin:0}.content{padding:9mm 12mm 12mm}.content h2{color:var(--primary);border-left:4px solid var(--accent);padding-left:6px;margin:0 0 5px;letter-spacing:.12em}.content section:nth-of-type(2){background:#f8fafc;border:1px solid #dbe3ee;padding:5mm;margin-bottom:6mm}ul{margin:4px 0 0;padding-left:17px}.item{break-inside:avoid}`
+  );
+}
+
+export function renderOperationsLedgerHtml(draft = {}) {
+  const d = normalizeCvDraft(draft);
+  const m = renderSectionMap(d);
+  const sections = joinSections(d, m);
+  return doc(
+    d,
+    `<main class="page operationsLedgerLayout"><header><h1>${esc(d.basics.name || 'Your Name')}</h1><p>${esc(d.basics.headline || '')}</p><p class="muted">${contactLine(d.basics)}</p></header><div class="ledger">${sections}</div></main>`,
+    `${TYPOGRAPHY_BASE}body{background:#f4f7f6;font-family:var(--fontFamily);color:#10201c}.operationsLedgerLayout{padding:11mm 12mm}.operationsLedgerLayout header{border:1px solid #b8c7c1;padding:7mm;background:#fbfdfc}.operationsLedgerLayout header p{margin:3px 0 0;font-size:var(--resolvedHeadlineSize)}.ledger{margin-top:7mm}.ledger section{display:grid;grid-template-columns:35mm 1fr;gap:7mm;border-top:1px solid #cbd8d3;padding-top:5mm;margin-bottom:5mm}.ledger h2{margin:0;color:#315f52;letter-spacing:.14em}.ledger section>*:not(h2){grid-column:2}.ledger section>h2+article,.ledger section>h2+p,.ledger section>h2+ul{margin-top:0}.item{break-inside:avoid}ul{margin:4px 0 0;padding-left:17px}.muted{color:#526b63}`
+  );
+}
 export const templateMarkersById = {
   'modern-sidebar': ['data-template-id="modern-sidebar"', 'modernSidebarLayout', '--sidebarBg:'],
   'modern-sidebar-blue': [
@@ -221,4 +285,9 @@ export const templateMarkersById = {
   'elegant-serif': ['data-template-id="elegant-serif"', 'elegantSerifLayout'],
   'creative-timeline': ['data-template-id="creative-timeline"', 'creativeTimelineLayout'],
   'compact-one-pager': ['data-template-id="compact-one-pager"', 'compactOnePagerLayout'],
+  'executive-band': ['data-template-id="executive-band"', 'executiveBandLayout'],
+  'skill-matrix': ['data-template-id="skill-matrix"', 'skillMatrixLayout'],
+  'academic-compact': ['data-template-id="academic-compact"', 'academicCompactLayout'],
+  'project-forward': ['data-template-id="project-forward"', 'projectForwardLayout'],
+  'operations-ledger': ['data-template-id="operations-ledger"', 'operationsLedgerLayout'],
 };

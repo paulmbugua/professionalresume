@@ -210,7 +210,7 @@ export function TemplatesCarousel({
         disabled={page <= 0}
         className={`${navButtonClass} left-0`}
       >
-        ‹
+        â€¹
       </button>
 
       <button
@@ -220,7 +220,7 @@ export function TemplatesCarousel({
         disabled={page >= pageCount - 1}
         className={`${navButtonClass} right-0`}
       >
-        ›
+        â€º
       </button>
 
       <div className="mx-9 grid gap-4 sm:mx-10 md:grid-cols-2 lg:grid-cols-4">
@@ -285,17 +285,17 @@ export function CoverLettersPromoSection({
     {
       title: 'Premium AI support',
       body: 'Use built-in AI assist to tailor every paragraph to your role, tone, and experience in seconds.',
-      icon: <IconChip tone="purple">✨</IconChip>,
+      icon: <IconChip tone="purple">âœ¨</IconChip>,
     },
     {
       title: 'Ready to print or download',
       body: 'Export polished cover letters as print-ready, downloadable files whenever you are ready to apply.',
-      icon: <IconChip tone="blue">⬇️</IconChip>,
+      icon: <IconChip tone="blue">â¬‡ï¸</IconChip>,
     },
     {
       title: 'Included after your first resume',
       body: 'Cover letters are included at no extra cost after your first $1 resume purchase.',
-      icon: <IconChip tone="emerald">💎</IconChip>,
+      icon: <IconChip tone="emerald">ðŸ’Ž</IconChip>,
     },
   ];
 
@@ -309,12 +309,10 @@ export function CoverLettersPromoSection({
                 Premium cover letters
               </p>
               <h2 className="mt-3 text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
-                Turn your resume into a complete application package
+                Turn your CV into a complete Kenyan and international application package
               </h2>
               <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300 sm:text-base">
-                Create professional cover letters with AI assist, then print or download your final
-                version instantly. Once you purchase your first resume for $1, cover letters are
-                included for free in your account.
+                Create professional cover letters with AI assist for Kenyan employers, NGOs, government applications, county roles, UN agencies, and international opportunities.
               </p>
 
               <div className="mt-6 flex flex-wrap gap-3">
@@ -356,32 +354,32 @@ export function WhyChooseSection() {
     {
       title: 'Time-saving solutions',
       body: "Don't believe that resume building can take minutes? Let us prove it and handle the details while you focus on your job hunt.",
-      icon: <IconChip tone="neutral">⏱️</IconChip>,
+      icon: <IconChip tone="neutral">â±ï¸</IconChip>,
     },
     {
       title: 'HR-approved templates',
       body: 'Make a resume using templates designed with input from hiring professionals who know what works.',
-      icon: <IconChip tone="neutral">🧑‍💼</IconChip>,
+      icon: <IconChip tone="neutral">ðŸ§‘â€ðŸ’¼</IconChip>,
     },
     {
       title: 'ATS-friendly',
-      body: 'Beat the ATS — the system that screens resumes. Get noticed by employers and stand out where it counts!',
-      icon: <IconChip tone="emerald">✅</IconChip>,
+      body: 'Beat the ATS â€” the system that screens resumes. Get noticed by employers and stand out where it counts!',
+      icon: <IconChip tone="emerald">âœ…</IconChip>,
     },
     {
       title: 'Designs for every level',
-      body: 'Explore templates that match your path — for your first job, a career change, or a move into leadership role.',
-      icon: <IconChip tone="orange">📄</IconChip>,
+      body: 'Explore templates that match your path â€” for your first job, a career change, or a move into leadership role.',
+      icon: <IconChip tone="orange">ðŸ“„</IconChip>,
     },
     {
       title: 'AI-powered tool',
       body: 'Write faster and better with smart keyword guidance and targeted content suggestions.',
-      icon: <IconChip tone="purple">✨</IconChip>,
+      icon: <IconChip tone="purple">âœ¨</IconChip>,
     },
     {
       title: 'Security first',
       body: 'Keep your personal data protected with our trusted, industry-standard security measures.',
-      icon: <IconChip tone="amber">🔒</IconChip>,
+      icon: <IconChip tone="amber">ðŸ”’</IconChip>,
     },
   ];
 
@@ -389,7 +387,7 @@ export function WhyChooseSection() {
     <section className="bg-site py-12 dark:bg-slate-950 sm:py-16">
       <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
         <h2 className="text-center text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
-          Why choose our AI-powered resume builder
+          Why choose Kenya's AI-powered career platform
         </h2>
 
         <div className="mx-auto mt-8 grid max-w-5xl gap-4 sm:mt-10 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -418,27 +416,27 @@ export function StepsSection({ onCta }: { onCta: () => void }) {
   const steps = [
     {
       n: '01',
-      icon: '📄',
+      icon: 'ðŸ“„',
       title: 'Upload your CV or create a new one',
-      body: 'Use your current version or start fresh — we’ll help with suggestions and structure.',
+      body: 'Use your current version or start fresh â€” weâ€™ll help with suggestions and structure.',
     },
     {
       n: '02',
-      icon: '✍️',
+      icon: 'âœï¸',
       title: 'Enter your personal details',
-      body: 'Fill in your profile, education, skills, and experience — we’ll handle the layout.',
+      body: 'Fill in your profile, education, skills, and experience â€” weâ€™ll handle the layout.',
     },
     {
       n: '03',
-      icon: '🧩',
+      icon: 'ðŸ§©',
       title: 'Choose any template you like',
-      body: 'Customize the look — fonts, spacing, and colors — while staying ATS-friendly.',
+      body: 'Customize the look â€” fonts, spacing, and colors â€” while staying ATS-friendly.',
     },
     {
       n: '04',
-      icon: '⬇️',
+      icon: 'â¬‡ï¸',
       title: 'Download your resume',
-      body: 'Save your final draft — the first step in your job search is already done.',
+      body: 'Save your final draft â€” the first step in your job search is already done.',
     },
   ];
 
@@ -446,7 +444,7 @@ export function StepsSection({ onCta }: { onCta: () => void }) {
     <section className="bg-site pb-14 pt-8 dark:bg-slate-950 sm:pb-16 sm:pt-10">
       <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
         <h2 className="text-center text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
-          4 easy steps to create a resume
+          4 easy steps to create a professional CV
         </h2>
 
         <div className="mt-8 grid gap-5 sm:mt-10 sm:gap-6 md:grid-cols-2 lg:grid-cols-4">
@@ -479,7 +477,7 @@ export function StepsSection({ onCta }: { onCta: () => void }) {
 
         <div className="mt-10 flex justify-center">
           <button onClick={onCta} className={primaryButtonClass}>
-            Create my resume
+            Create my CV
           </button>
         </div>
       </div>
@@ -490,19 +488,19 @@ export function StepsSection({ onCta }: { onCta: () => void }) {
 export function FAQSection({ onCta }: { onCta: () => void }) {
   const faqs = [
     {
-      q: 'What is CVPro?',
-      a: 'CVPro helps you create clean, ATS-friendly resumes with modern templates and optional AI writing support.',
+      q: 'What is ProfessionalResume.co.ke?',
+      a: 'ProfessionalResume.co.ke helps you create clean, ATS-friendly resumes with modern templates and optional AI writing support.',
     },
     {
-      q: 'How do I create a resume using CVPro?',
+      q: 'How do I create a resume using ProfessionalResume.co.ke?',
       a: 'Pick a template, add your details, refine with AI suggestions, then export a PDF.',
     },
     {
-      q: 'Are CVPro templates ATS-friendly?',
-      a: 'Yes — templates are built with clean structure and consistent headings to parse well.',
+      q: 'Are ProfessionalResume.co.ke templates ATS-friendly?',
+      a: 'Yes â€” templates are built with clean structure and consistent headings to parse well.',
     },
     {
-      q: 'Is CVPro available as subscription or one-time purchase?',
+      q: 'Is ProfessionalResume.co.ke available as subscription or one-time purchase?',
       a: 'This depends on your plan. You can offer either model and keep access inside your account.',
     },
     {
@@ -538,7 +536,7 @@ export function FAQSection({ onCta }: { onCta: () => void }) {
 
           <div className="mt-8 flex justify-center">
             <button onClick={onCta} className={primaryButtonClass}>
-              Create my resume
+              Create my CV
             </button>
           </div>
         </div>
@@ -557,11 +555,11 @@ export function SiteFooter() {
               <span className="flex size-7 items-center justify-center rounded-lg bg-slate-900 text-white dark:bg-white/10 dark:text-white">
                 R
               </span>
-              <span>CVPro</span>
+              <span>ProfessionalResume.co.ke</span>
             </div>
 
             <p className="mt-3 max-w-md text-sm leading-6 text-slate-600 dark:text-white/70">
-              Build a clean, ATS-friendly resume with modern templates and a fast editing workflow.
+              Build a Kenya-ready, ATS-friendly CV with AI writing support, cover letters, career coaching, and export-ready templates.
             </p>
           </div>
 
@@ -569,7 +567,7 @@ export function SiteFooter() {
             <div className="flex flex-col gap-2">
               <div className="text-sm font-semibold">Contact Us</div>
               <a
-                href="mailto:support@onedollarcvpro.com"
+                href="mailto:support@professionalresume.co.ke"
                 className="text-sm text-slate-600 hover:text-slate-900 dark:text-white/70 dark:hover:text-white"
               >
                 Support
@@ -624,7 +622,7 @@ export function SiteFooter() {
         </div>
 
         <div className="mt-8 text-xs text-slate-500 dark:text-white/60">
-          © {new Date().getFullYear()} CVPro.
+          &copy; {new Date().getFullYear()} ProfessionalResume.co.ke.
         </div>
       </div>
     </footer>

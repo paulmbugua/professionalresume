@@ -9,10 +9,10 @@ const Navbar: React.FC<Props> = ({ onLogout }) => {
   return (
     <div className="flex items-center justify-between py-3 px-[4%] bg-white/80 backdrop-blur panel dark:bg-white/5">
       <div className="flex items-center gap-3">
-        <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-softPink to-secondary" />
+        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#0052CC] text-xs font-extrabold text-white">PR</div>
         <div className="leading-tight">
-          <p className="font-semibold app-heading m-0">DayBreak Learner</p>
-          <p className="text-xs text-mutedGray dark:text-darkTextSecondary -mt-0.5">Admin Panel</p>
+          <p className="font-semibold app-heading m-0">ProfessionalResume.co.ke</p>
+          <p className="text-xs text-mutedGray dark:text-darkTextSecondary -mt-0.5">Career Platform Admin</p>
         </div>
       </div>
 

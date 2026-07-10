@@ -69,7 +69,7 @@ export async function listTemplatesFromDb() {
     id: r.id,
     name: r.name,
     description: r.description || '',
-    category: 'CVPro',
+    category: 'ProfessionalResume.co.ke',
     isAtsFriendly: true,
     previewImage: r.previewImage || undefined,
     componentKey: r.id,

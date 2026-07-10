@@ -3,8 +3,8 @@ import CvDraftsPage from '../../pages/CvDrafts.web';
 import { buildPageMetadata } from '../../lib/seo';
 
 export const metadata: Metadata = buildPageMetadata({
-  title: 'My Resume Drafts | CVPro',
-  description: 'Private dashboard for your resume drafts and recent CV projects in CVPro.',
+  title: 'My Resume Drafts | ProfessionalResume.co.ke',
+  description: 'Private dashboard for your resume drafts and recent CV projects in ProfessionalResume.co.ke.',
   path: '/builder',
   noIndex: true,
 });

@@ -3,9 +3,9 @@ import CvTemplatesPage from '../../pages/CvTemplates.web';
 import { buildBreadcrumbSchema, buildPageMetadata } from '../../lib/seo';
 
 export const metadata: Metadata = buildPageMetadata({
-  title: 'Resume Templates | ATS-Friendly CV Designs | CVPro',
+  title: 'Resume Templates | ATS-Friendly CV Designs | ProfessionalResume.co.ke',
   description:
-    'Browse professional ATS-friendly resume templates by style and job level. Preview layouts and start editing instantly in CVPro.',
+    'Browse professional ATS-friendly resume templates by style and job level. Preview layouts and start editing instantly in ProfessionalResume.co.ke.',
   path: '/templates',
   keywords: ['resume templates', 'ats cv template', 'professional resume design', 'cv templates online'],
 });

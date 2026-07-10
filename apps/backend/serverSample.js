@@ -34,7 +34,7 @@ process.on('unhandledRejection', err => {
 
 const app          = express()
 const server       = http.createServer(app)
-const port         = Number(process.env.PORT ?? 4000)
+const port         = Number(process.env.PORT ?? 4006)
 const isProduction = process.env.NODE_ENV === 'production'
 
 // ─── 1) Environment vars ─────────────────────────────────────────────────────────
@@ -68,7 +68,7 @@ const developmentOrigins = [
   'http://localhost:5173',
   'http://localhost:8081',
   'http://192.168.165.47:8081',
-  'http://192.168.137.1:4000',
+  'http://192.168.137.1:4006',
   'http://localhost:19006',
   'http://localhost:19000',          // Expo web
   'https://b743-37-211-202-186.ngrok-free.app',

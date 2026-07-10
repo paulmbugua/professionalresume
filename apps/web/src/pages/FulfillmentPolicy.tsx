@@ -10,7 +10,7 @@ export default function FulfillmentPolicyPage() {
     <SupportPageLayout
       eyebrow="Policy"
       title="Fulfillment Policy"
-      description="This Fulfillment Policy explains how CVPro delivers its digital resume/CV and cover letter services after payment."
+      description="This Fulfillment Policy explains how ProfessionalResume.co.ke delivers its digital resume/CV and cover letter services after payment."
       lastUpdated={lastUpdated}
       sections={[
         {
@@ -18,7 +18,7 @@ export default function FulfillmentPolicyPage() {
           title: 'Digital services only',
           body: (
             <p>
-              CVPro sells digital services for creating, editing, and exporting resumes/CVs and cover
+              ProfessionalResume.co.ke sells digital services for creating, editing, and exporting resumes/CVs and cover
               letters. We do not ship physical products.
             </p>
           ),
@@ -51,7 +51,7 @@ export default function FulfillmentPolicyPage() {
           title: 'If you experience access issues',
           body: (
             <p>
-              If access is not available after payment, contact support@onedollarcvpro.com with your
+              If access is not available after payment, contact support@professionalresume.co.ke with your
               account email and payment reference. We will investigate and restore access or guide next
               steps as quickly as possible.
             </p>

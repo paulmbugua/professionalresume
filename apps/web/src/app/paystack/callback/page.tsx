@@ -3,8 +3,8 @@ import PaystackCallbackPage from '../../../pages/PaystackCallback.web';
 import { buildPageMetadata } from '../../../lib/seo';
 
 export const metadata: Metadata = buildPageMetadata({
-  title: 'Payment Verification | CVPro',
-  description: 'Secure payment verification callback for CVPro checkout.',
+  title: 'Payment Verification | ProfessionalResume.co.ke',
+  description: 'Secure payment verification callback for ProfessionalResume.co.ke checkout.',
   path: '/paystack/callback',
   noIndex: true,
 });

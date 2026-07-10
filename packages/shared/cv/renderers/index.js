@@ -18,6 +18,11 @@ import {
   renderCompactOnePagerHtml,
   renderCreativeTimelineHtml,
   renderElegantSerifHtml,
+  renderExecutiveBandHtml,
+  renderSkillMatrixHtml,
+  renderAcademicCompactHtml,
+  renderProjectForwardHtml,
+  renderOperationsLedgerHtml,
   renderModernSidebarBlueHtml,
   renderModernSidebarHtml,
   renderModernTealHtml,
@@ -36,6 +41,11 @@ export const renderersById = {
   'elegant-serif': renderElegantSerifHtml,
   'creative-timeline': renderCreativeTimelineHtml,
   'compact-one-pager': renderCompactOnePagerHtml,
+  'executive-band': renderExecutiveBandHtml,
+  'skill-matrix': renderSkillMatrixHtml,
+  'academic-compact': renderAcademicCompactHtml,
+  'project-forward': renderProjectForwardHtml,
+  'operations-ledger': renderOperationsLedgerHtml,
 };
 
 export function renderCvHtmlByTemplate(draft = {}) {

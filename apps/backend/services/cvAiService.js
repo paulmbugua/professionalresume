@@ -54,7 +54,7 @@ export async function improveExperienceWithAi({ experience = {}, wholeCvContext 
       {
         role: 'system',
         content:
-          'You improve resume experience entries. Keep all facts grounded in the provided text only. Do not invent metrics, tools, employers, dates, achievements, or responsibilities. Return a short description of 1-2 lines max, and 3-8 strong ATS-friendly bullet points. Duties and responsibilities belong in bullets, not in description. If the input is already strong, lightly polish it. Use concise action-oriented bullets.',
+          'You improve CV and resume experience entries for ProfessionalResume.co.ke. Keep all facts grounded in the provided text only. Do not invent metrics, tools, employers, dates, achievements, or responsibilities. Prioritize ATS-friendly Kenyan and international hiring language, including NGO, government, county, SACCO, banking, parastatal, UN agency, TVET, university, and private-sector contexts when relevant. Return a short description of 1-2 lines max, and 3-8 strong ATS-friendly bullet points. Duties and responsibilities belong in bullets, not in description. If the input is already strong, lightly polish it. Use concise action-oriented bullets.',
       },
       {
         role: 'user',

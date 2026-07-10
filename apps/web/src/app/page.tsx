@@ -1,37 +1,37 @@
 ﻿import type { Metadata } from 'next';
 import Script from 'next/script';
 import LandingPage from '../pages/Landing.web';
+import { brand, seoKeywords } from '../lib/brand';
 import { buildFaqSchema, buildPageMetadata } from '../lib/seo';
 
 export const metadata: Metadata = buildPageMetadata({
-  title: 'CVPro | Build an ATS Resume & Cover Letter That Gets Interviews',
+  title: `${brand.name} | Build a Professional CV That Gets You Hired`,
   description:
-    'Create a professional resume online with ATS-ready templates, AI suggestions, and one-time $1 export unlock. Build faster and apply with confidence.',
+    'Kenya-focused AI CV builder, resume optimizer, cover letter generator, ATS checker, templates, interview coach, and career dashboard.',
   path: '/',
   keywords: [
-    'ats resume builder',
-    'resume templates',
-    'online cv maker',
-    'cover letter generator',
-    'resume builder with ai',
+    ...seoKeywords,
+    'Kenyan resume builder',
+    'AI CV builder Kenya',
+    'M-Pesa CV downloads',
   ],
 });
 
 const homepageFaq = buildFaqSchema([
   {
-    question: 'What is CVPro?',
+    question: `What is ${brand.name}?`,
     answer:
-      'CVPro helps you create ATS-friendly resumes with modern templates, AI writing support, and export-ready formatting.',
+      `${brand.name} is a Kenya-focused AI career platform for CVs, resumes, cover letters, ATS optimization, templates, interview practice, and career coaching.`,
   },
   {
-    question: 'How do I create a resume using CVPro?',
+    question: `How do I create a CV using ${brand.name}?`,
     answer:
-      'Pick a template, add your details, improve content with AI assistance, and export your final resume.',
+      'Pick a Kenya-ready template, import or enter your details, improve content with AI, check ATS fit, and export your final CV.',
   },
   {
-    question: 'Are CVPro templates ATS-friendly?',
+    question: `Are ${brand.name} templates ATS-friendly?`,
     answer:
-      'Yes. CVPro templates are structured for applicant tracking systems and clear recruiter readability.',
+      'Yes. The templates use clean headings, readable structure, and recruiter-friendly formatting for Kenyan and international roles.',
   },
 ]);
 

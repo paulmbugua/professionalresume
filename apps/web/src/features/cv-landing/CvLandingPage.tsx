@@ -45,35 +45,35 @@ const CAROUSEL_TEMPLATE_IDS = [
 ];
 
 const brandLogos = [
-  { label: 'Costco', src: '/brands/costco.svg' },
-  { label: 'Disney', src: '/brands/disney.svg' },
-  { label: "McDonald's", src: '/brands/mcdonalds.svg' },
-  { label: 'Nestlé', src: '/brands/nestle.svg' },
-  { label: 'Netflix', src: '/brands/netflix.svg' },
-  { label: 'PepsiCo', src: '/brands/pepsico.svg' },
-  { label: 'Walmart', src: '/brands/walmart.svg' },
-  { label: 'Amazon', src: '/brands/amazon.svg' },
-  { label: 'Costco', src: '/brands/costco.svg' },
-  { label: 'Disney', src: '/brands/disney.svg' },
-  { label: "McDonald's", src: '/brands/mcdonalds.svg' },
-  { label: 'Nestlé', src: '/brands/nestle.svg' },
+  { label: 'Safaricom' },
+  { label: 'Equity Bank' },
+  { label: 'KCB Bank' },
+  { label: 'Co-operative Bank' },
+  { label: 'Kenya Airways' },
+  { label: 'KRA' },
+  { label: 'UN Kenya' },
+  { label: 'Aga Khan University Hospital' },
+  { label: 'Safaricom' },
+  { label: 'Equity Bank' },
+  { label: 'KCB Bank' },
+  { label: 'Co-operative Bank' },
 ];
 
 const testimonials = [
   {
-    name: 'Clara Schneider',
-    time: '4 hours ago',
-    body: 'Thank you CVPro! I think I’ve never seen resume building this simple.',
+    name: 'Amina Wanjiku',
+    time: 'Nairobi',
+    body: 'The Kenyan CV structure and ATS suggestions helped me tailor my application for a county government role.',
   },
   {
-    name: 'Arthur James',
-    time: '6 hours ago',
-    body: 'I’ve been writing my own resume for too long... this made it so much easier.',
+    name: 'Brian Otieno',
+    time: 'Kisumu',
+    body: 'I imported my old CV, picked a clean template, and had a stronger NGO application package within minutes.',
   },
   {
-    name: 'Emma Novak',
-    time: '12 hours ago',
-    body: 'Amazing service. Easy to use and great templates.',
+    name: 'Grace Mutua',
+    time: 'Diaspora',
+    body: 'The platform made it easier to balance Kenyan experience with international resume expectations.',
   },
 ];
 
@@ -193,22 +193,22 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
 
               <div className="mt-6 flex flex-wrap items-center gap-3">
                 <button onClick={improveResume} className={secondaryButtonClass}>
-                  Improve my resume
+                  Optimize my CV
                 </button>
 
                 <button onClick={createNewResume} className={primaryButtonClass}>
-                  Create new resume
+                  Create new CV
                 </button>
                 <Link href="/cover-letter" className={secondaryButtonClass}>
-                  Cover letter (free after $1 resume purchase)
+                  Cover letter builder
                 </Link>
               </div>
 
               <div className="mt-7 grid grid-cols-3 gap-4 sm:flex sm:gap-10">
                 {[
-                  { value: '1,311', label: 'resumes created today' },
-                  { value: '×2.2', label: 'more interview invitations' },
-                  { value: '+43%', label: 'higher chance of getting a job' },
+                  { value: '47', label: 'Kenyan counties supported' },
+                  { value: '100+', label: 'CV and cover letter templates' },
+                  { value: '3', label: 'languages planned' },
                 ].map((item) => (
                   <div key={item.label} className="rounded-2xl px-3 py-2 sm:px-0 sm:py-0">
                     <div className="text-base font-semibold text-slate-900 dark:text-white sm:text-lg">
@@ -319,10 +319,10 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
         <div className="w-full bg-site pb-10 dark:bg-slate-950">
           <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
             <div className="text-center text-xs font-semibold text-slate-500 dark:text-slate-300">
-              Our customers have been hired at<sup>1</sup>
+              Build CVs for opportunities across<sup>1</sup>
             </div>
             <div className="mt-2 text-center text-[11px] text-slate-400 dark:text-slate-500">
-              <sup>1</sup> Company names and logos are used for illustrative purposes only.
+              Kenyan employers, NGOs, government bodies, banks, SACCOs, UN agencies, and global employers.
             </div>
           </div>
 
@@ -337,7 +337,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
         <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
           <div className="text-center">
             <h2 className="text-xl font-extrabold text-slate-900 dark:text-white sm:text-2xl">
-              OneDollarCvPro, as told by our users
+              ProfessionalResume.co.ke, as told by Kenyan job seekers
             </h2>
           </div>
         </div>
@@ -388,7 +388,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
         <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
           <div className="text-center">
             <h2 className="text-xl font-extrabold text-slate-900 dark:text-white sm:text-2xl">
-              Resume templates that get you noticed — and hired
+              Kenya-ready CV templates for every career path
             </h2>
           </div>
 

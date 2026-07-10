@@ -45,7 +45,7 @@ export function trackTikTokViewContent(eventKey: string = 'resume_builder'): voi
   trackTikTokEvent('ViewContent', {
     content_id: 'resume_builder',
     content_type: 'product',
-    content_name: 'OneDollarCVPro Resume Builder',
+    content_name: 'ProfessionalResume.co.ke Resume Builder',
   });
 }
 
@@ -53,7 +53,7 @@ export function trackTikTokInitiateCheckout(): void {
   trackTikTokEvent('InitiateCheckout', {
     content_id: 'resume_export',
     content_type: 'product',
-    content_name: 'OneDollarCVPro Resume Purchase',
+    content_name: 'ProfessionalResume.co.ke Resume Purchase',
     currency: 'USD',
     value: 1,
   });
@@ -69,7 +69,7 @@ export function trackTikTokPurchase(reference: string) {
       {
         content_id: 'resume_export',
         content_type: 'product',
-        content_name: 'OneDollarCVPro Resume Purchase',
+        content_name: 'ProfessionalResume.co.ke Resume Purchase',
       },
     ],
   });

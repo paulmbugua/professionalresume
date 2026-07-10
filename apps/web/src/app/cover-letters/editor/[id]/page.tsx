@@ -3,8 +3,8 @@ import CoverLetterBuilderPage from '../../../../pages/CoverLetterBuilderPage.web
 import { buildPageMetadata } from '../../../../lib/seo';
 
 export const metadata: Metadata = buildPageMetadata({
-  title: 'Cover Letter Editor | CVPro',
-  description: 'Private cover letter editing workspace in CVPro.',
+  title: 'Cover Letter Editor | ProfessionalResume.co.ke',
+  description: 'Private cover letter editing workspace in ProfessionalResume.co.ke.',
   path: '/cover-letters/editor/[id]',
   noIndex: true,
 });

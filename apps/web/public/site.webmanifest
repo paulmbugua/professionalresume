@@ -1,10 +1,10 @@
 {
-  "name": "CVPro",
-  "short_name": "CVPro",
+  "name": "ProfessionalResume.co.ke",
+  "short_name": "ProfessionalResume",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#2563eb",
+  "background_color": "#F8FAFC",
+  "theme_color": "#0052CC",
   "icons": [
     {
       "src": "/favicon.png",

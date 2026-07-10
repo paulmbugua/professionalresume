@@ -8,6 +8,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: absoluteUrl('/'), lastModified: now, changeFrequency: 'daily', priority: 1 },
     { url: absoluteUrl('/templates'), lastModified: now, changeFrequency: 'daily', priority: 0.9 },
     { url: absoluteUrl('/cover-letter'), lastModified: now, changeFrequency: 'weekly', priority: 0.8 },
+    { url: absoluteUrl('/ats-checker'), lastModified: now, changeFrequency: 'weekly', priority: 0.85 },
+    { url: absoluteUrl('/career-resources'), lastModified: now, changeFrequency: 'weekly', priority: 0.8 },
+    { url: absoluteUrl('/pricing'), lastModified: now, changeFrequency: 'weekly', priority: 0.75 },
+    { url: absoluteUrl('/blog'), lastModified: now, changeFrequency: 'daily', priority: 0.8 },
     {
       url: absoluteUrl('/cover-letters/templates'),
       lastModified: now,

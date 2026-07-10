@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 
-const FALLBACK_SITE_URL = 'https://www.onedollarcvpro.com';
+import { brand, paymentMethods, platformCapabilities, seoKeywords } from './brand';
+
+const FALLBACK_SITE_URL = brand.siteUrl;
 
 export function getSiteUrl(): string {
   const fromEnv =
@@ -47,8 +49,8 @@ export function buildPageMetadata(params: {
       url: canonical,
       title: params.title,
       description: params.description,
-      siteName: 'CVPro',
-      images: [{ url: absoluteUrl(DEFAULT_OG_IMAGE), width: 1200, height: 630, alt: 'CVPro resume builder preview' }],
+      siteName: brand.name,
+      images: [{ url: absoluteUrl(DEFAULT_OG_IMAGE), width: 1200, height: 630, alt: `${brand.name} CV builder preview` }],
     },
     twitter: {
       card: 'summary_large_image',
@@ -64,8 +66,8 @@ export function buildOrganizationSchema() {
   return {
     '@context': 'https://schema.org',
     '@type': 'Organization',
-    name: 'CVPro',
-    alternateName: 'OneDollarCVPro',
+    name: brand.name,
+    alternateName: brand.shortName,
     url: siteUrl,
     logo: absoluteUrl('/assets/logo.png'),
     sameAs: [],
@@ -77,14 +79,14 @@ export function buildWebsiteSchema() {
   return {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
-    name: 'CVPro',
-    alternateName: 'OneDollarCVPro',
+    name: brand.name,
+    alternateName: brand.shortName,
     url: siteUrl,
-    description: 'ATS-friendly resume builder with templates, AI writing assistance, and cover letter tools.',
+    description: brand.description,
     potentialAction: {
       '@type': 'SearchAction',
-      target: `${siteUrl}/templates`,
-      'query-input': 'required name=template',
+      target: `${siteUrl}/blog?search={search_term_string}`,
+      'query-input': 'required name=search_term_string',
     },
   };
 }
@@ -93,17 +95,17 @@ export function buildSoftwareApplicationSchema() {
   return {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
-    name: 'CVPro Resume Builder',
+    name: `${brand.name} AI Career Platform`,
     applicationCategory: 'BusinessApplication',
     operatingSystem: 'Web',
+    featureList: platformCapabilities,
+    keywords: seoKeywords.join(', '),
     offers: {
       '@type': 'Offer',
-      price: '1',
-      priceCurrency: 'USD',
-      description: 'One-time unlock for resume export; cover letters included after purchase.',
+      priceCurrency: 'KES',
+      description: `Career document plans with ${paymentMethods.join(', ')} support.`,
     },
-    description:
-      'Create ATS-friendly resumes and cover letters with modern templates, AI assistance, and print-ready exports.',
+    description: brand.description,
     url: absoluteUrl('/'),
   };
 }

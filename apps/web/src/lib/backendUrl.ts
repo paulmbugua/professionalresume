@@ -1,10 +1,12 @@
-const PROD_BACKEND_URL = 'https://server.onedollarcvpro.com';
-const DEV_BACKEND_URL = 'http://localhost:4000';
+import { brand } from './brand';
+
+const PROD_BACKEND_URL = brand.backendUrl;
+const DEV_BACKEND_URL = 'http://localhost:4006';
 
 const PRODUCTION_HOST_PATTERNS = [
-  'onedollarcvpro.com',
-  'www.onedollarcvpro.com',
-  'server.onedollarcvpro.com',
+  'professionalresume.co.ke',
+  'www.professionalresume.co.ke',
+  'server.professionalresume.co.ke',
 ];
 
 const isDev = process.env.NODE_ENV !== 'production';

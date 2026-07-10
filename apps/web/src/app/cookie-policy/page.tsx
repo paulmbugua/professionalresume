@@ -3,11 +3,11 @@ import CookiePolicyPage from '../../pages/CookiePolicy.web';
 import { buildBreadcrumbSchema, buildPageMetadata } from '../../lib/seo';
 
 export const metadata: Metadata = buildPageMetadata({
-  title: 'Cookie Policy | CVPro',
+  title: 'Cookie Policy | ProfessionalResume.co.ke',
   description:
-    'Read how CVPro uses cookies for essential functionality, analytics, preferences, and security across the resume and cover letter platform.',
+    'Read how ProfessionalResume.co.ke uses cookies for essential functionality, analytics, preferences, and security across the resume and cover letter platform.',
   path: '/cookie-policy',
-  keywords: ['CVPro cookie policy', 'resume builder cookies', 'onedollarcvpro cookies'],
+  keywords: ['ProfessionalResume.co.ke cookie policy', 'resume builder cookies', 'professionalresume cookies'],
 });
 
 const breadcrumbSchema = buildBreadcrumbSchema([

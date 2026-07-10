@@ -115,7 +115,7 @@ export async function initCvMpesaPayment({ userId, phone, requestBaseUrl }) {
   const callbackUrl = resolveStkCallbackUrl({ product: 'cvpro' });
   if (!callbackUrl) {
     throw new PaymentInitError(
-      'M-Pesa callback URL is not configured for CVPro.',
+      'M-Pesa callback URL is not configured for ProfessionalResume.co.ke.',
       500,
       'MPESA_CALLBACK_URL_MISSING',
     );
@@ -153,7 +153,7 @@ export async function initCvMpesaPayment({ userId, phone, requestBaseUrl }) {
       PhoneNumber: normalizedPhone,
       CallBackURL: callbackUrl,
       AccountReference: 'CVPRO_EXPORT_UNLOCK',
-      TransactionDesc: 'CVPro export unlock',
+      TransactionDesc: 'ProfessionalResume.co.ke export unlock',
     };
 
     console.log('[cv/mpesa/init] sending stk push', {

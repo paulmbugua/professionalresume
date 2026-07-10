@@ -3,9 +3,9 @@ import CoverLetterTemplatesPage from '../../../pages/CoverLetterTemplates.web';
 import { buildBreadcrumbSchema, buildPageMetadata } from '../../../lib/seo';
 
 export const metadata: Metadata = buildPageMetadata({
-  title: 'Cover Letter Templates | Professional Job Application Designs | CVPro',
+  title: 'Cover Letter Templates | Professional Job Application Designs | ProfessionalResume.co.ke',
   description:
-    'Preview and choose professional cover letter templates, then launch into the CVPro editor with your selected style.',
+    'Preview and choose professional cover letter templates, then launch into the ProfessionalResume.co.ke editor with your selected style.',
   path: '/cover-letters/templates',
   keywords: ['cover letter templates', 'professional cover letter design', 'application letter builder'],
 });

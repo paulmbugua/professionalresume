@@ -31,6 +31,11 @@ export const templateThemeDefaults = {
     sidebarText: '#eff6ff',
     accent: '#93c5fd',
   },
+  'executive-band': { primary: '#1e293b', accent: '#0f766e' },
+  'skill-matrix': { primary: '#334155', accent: '#2563eb', sectionBg: '#eff6ff' },
+  'academic-compact': { primary: '#374151', accent: '#7c2d12' },
+  'project-forward': { primary: '#312e81', accent: '#4f46e5', sectionBg: '#eef2ff' },
+  'operations-ledger': { primary: '#315f52', accent: '#0f766e', sectionBg: '#f0fdfa' },
 };
 
 const DEFAULT_TYPOGRAPHY = {
@@ -129,6 +134,11 @@ const templateTypographyDefaults = {
     name: 28.5,
     lineHeight: 1.41,
   },
+  'executive-band': { body: 11.4, meta: 10.8, h3: 12.5, sectionTitle: 11.6, headline: 12.8, name: 31, lineHeight: 1.45 },
+  'skill-matrix': { body: 11.3, meta: 10.8, h3: 12.4, sectionTitle: 11.6, headline: 12.6, name: 30, lineHeight: 1.42 },
+  'academic-compact': { body: 11.6, meta: 11, h3: 12.5, sectionTitle: 11.7, headline: 12.6, name: 31.5, lineHeight: 1.48 },
+  'project-forward': { body: 11.4, meta: 10.8, h3: 12.5, sectionTitle: 11.7, headline: 12.7, name: 30.5, lineHeight: 1.44 },
+  'operations-ledger': { body: 11.3, meta: 10.8, h3: 12.4, sectionTitle: 11.5, headline: 12.6, name: 30, lineHeight: 1.43 },
 };
 
 const HEX_COLOR_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;

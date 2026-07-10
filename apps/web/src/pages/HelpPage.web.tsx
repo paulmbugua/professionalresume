@@ -44,7 +44,7 @@ const helpGroups = [
     id: 'payments',
     title: 'Payments',
     items: [
-      'CVPro is built around affordable $1 resume/CV unlocking for fast job applications.',
+      'ProfessionalResume.co.ke is built around affordable $1 resume/CV unlocking for fast job applications.',
       'Ensure checkout details are correct before confirming payment.',
       'Keep your receipt/reference handy in case support follow-up is required.',
     ],
@@ -71,7 +71,7 @@ const helpGroups = [
 
 const faqItems = [
   {
-    question: 'How quickly can I create a resume on CVPro?',
+    question: 'How quickly can I create a resume on ProfessionalResume.co.ke?',
     answer:
       'Most users can create or significantly improve a resume in minutes using templates and guided AI assistance.',
   },
@@ -81,14 +81,14 @@ const faqItems = [
       'Yes. You can continue editing your drafts and export updated versions from your account based on your available access.',
   },
   {
-    question: 'Does CVPro support both resume and CV formats?',
+    question: 'Does ProfessionalResume.co.ke support both resume and CV formats?',
     answer:
-      'Yes. CVPro supports professional resume/CV creation with flexible sections so you can tailor output by job market and role.',
+      'Yes. ProfessionalResume.co.ke supports professional resume/CV creation with flexible sections so you can tailor output by job market and role.',
   },
   {
     question: 'What if my download does not work after payment?',
     answer:
-      'Email support@onedollarcvpro.com with your account email and payment reference. We will verify access and help restore export functionality promptly.',
+      'Email support@professionalresume.co.ke with your account email and payment reference. We will verify access and help restore export functionality promptly.',
   },
   {
     question: 'How do I report a bug or share product feedback?',
@@ -105,7 +105,7 @@ export default function HelpPage() {
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600 dark:text-blue-300">Support</p>
           <h1 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">Help Center</h1>
           <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300 sm:text-base">
-            CVPro helps you create, edit, optimize, and export professional resumes/CVs and cover
+            ProfessionalResume.co.ke helps you create, edit, optimize, and export professional resumes/CVs and cover
             letters quickly at a low cost. Use this page for quick answers and support pathways.
           </p>
           <p className="mt-5 inline-flex rounded-full border border-slate-200/80 bg-white/90 px-3 py-1 text-xs font-medium text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
@@ -133,7 +133,7 @@ export default function HelpPage() {
         <section className="mt-8 rounded-2xl border border-blue-200/80 bg-blue-50/80 p-6 dark:border-blue-400/30 dark:bg-blue-500/10">
           <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Need direct support?</h2>
           <p className="mt-2 text-sm text-slate-700 dark:text-slate-200 sm:text-base">
-            Email <a className="font-semibold text-blue-700 dark:text-blue-200" href="mailto:support@onedollarcvpro.com">support@onedollarcvpro.com</a>. Include your account email,
+            Email <a className="font-semibold text-blue-700 dark:text-blue-200" href="mailto:support@professionalresume.co.ke">support@professionalresume.co.ke</a>. Include your account email,
             screenshots, and payment reference if relevant so we can respond efficiently.
           </p>
           <p className="mt-3 text-sm text-slate-700 dark:text-slate-200 sm:text-base">

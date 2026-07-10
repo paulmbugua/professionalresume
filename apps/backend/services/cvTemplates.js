@@ -62,4 +62,38 @@ export const cvTemplates = [
     isAtsFriendly: true,
     componentKey: 'CompactOnePager',
   },
-];
+  {
+    id: 'executive-band',
+    name: 'Executive Band',
+    category: 'Executive',
+    isAtsFriendly: true,
+    componentKey: 'ExecutiveBand',
+  },
+  {
+    id: 'skill-matrix',
+    name: 'Skill Matrix',
+    category: 'ATS',
+    isAtsFriendly: true,
+    componentKey: 'SkillMatrix',
+  },
+  {
+    id: 'academic-compact',
+    name: 'Academic Compact',
+    category: 'Classic',
+    isAtsFriendly: true,
+    componentKey: 'AcademicCompact',
+  },
+  {
+    id: 'project-forward',
+    name: 'Project Forward',
+    category: 'Modern',
+    isAtsFriendly: true,
+    componentKey: 'ProjectForward',
+  },
+  {
+    id: 'operations-ledger',
+    name: 'Operations Ledger',
+    category: 'Professional',
+    isAtsFriendly: true,
+    componentKey: 'OperationsLedger',
+  },];

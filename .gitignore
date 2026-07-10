@@ -87,3 +87,20 @@ apps/web/.next/cache/
 # Next.js build output
 apps/web/.next/
 
+# Environment files - keep real secrets local
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Google/Firebase/local credential files
+*.credentials.json
+*credentials*.json
+*secret*.json
+*service-account*.json
+*serviceAccount*.json
+tts-runner-*.json
+google-services.json
+GoogleService-Info.plist

@@ -64,7 +64,7 @@ export default function SupportPageLayout({
           <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{contactTitle}</h2>
           <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">{contactDescription}</p>
           <p className="mt-3 text-sm font-semibold text-blue-700 dark:text-blue-200">
-            <a href="mailto:support@onedollarcvpro.com">support@onedollarcvpro.com</a>
+            <a href="mailto:support@professionalresume.co.ke">support@professionalresume.co.ke</a>
           </p>
           <div className="mt-4 flex flex-wrap gap-3 text-sm">
             <Link href="/help" className="text-blue-700 underline underline-offset-4 hover:text-blue-800 dark:text-blue-200 dark:hover:text-blue-100">

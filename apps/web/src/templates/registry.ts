@@ -14,6 +14,11 @@ import ModernTeal from '../components/cv/templates/ModernTeal';
 import ModernSidebarBlue from '../components/cv/templates/ModernSidebarBlue';
 
 import AtsCompact from '../components/cv/templates/AtsCompact';
+import ExecutiveBand from '../components/cv/templates/ExecutiveBand';
+import SkillMatrix from '../components/cv/templates/SkillMatrix';
+import AcademicCompact from '../components/cv/templates/AcademicCompact';
+import ProjectForward from '../components/cv/templates/ProjectForward';
+import OperationsLedger from '../components/cv/templates/OperationsLedger';
 
 export type TemplateMeta = CvTemplate & {
   description?: string;
@@ -126,7 +131,61 @@ export const templateRegistry: TemplateMeta[] = [
     component: CompactOnePager,
     renderHtml: renderersById['compact-one-pager'],
   },
-];
+  {
+    id: 'executive-band',
+    name: 'Executive Band',
+    category: 'Executive',
+    isAtsFriendly: true,
+    componentKey: 'ExecutiveBand',
+    description: 'Polished executive layout with a strong top band and clean ATS-readable sections.',
+    tags: ['executive', 'ats', 'leadership'],
+    component: ExecutiveBand,
+    renderHtml: renderersById['executive-band'],
+  },
+  {
+    id: 'skill-matrix',
+    name: 'Skill Matrix',
+    category: 'ATS',
+    isAtsFriendly: true,
+    componentKey: 'SkillMatrix',
+    description: 'Skills-first resume with a structured matrix and clean single-column experience flow.',
+    tags: ['ats', 'skills', 'technical'],
+    component: SkillMatrix,
+    renderHtml: renderersById['skill-matrix'],
+  },
+  {
+    id: 'academic-compact',
+    name: 'Academic Compact',
+    category: 'Classic',
+    isAtsFriendly: true,
+    componentKey: 'AcademicCompact',
+    description: 'Formal academic and credential-focused layout for education-heavy resumes.',
+    tags: ['academic', 'classic', 'ats'],
+    component: AcademicCompact,
+    renderHtml: renderersById['academic-compact'],
+  },
+  {
+    id: 'project-forward',
+    name: 'Project Forward',
+    category: 'Modern',
+    isAtsFriendly: true,
+    componentKey: 'ProjectForward',
+    description: 'Project-led resume for builders, analysts, engineers, and portfolio-driven roles.',
+    tags: ['projects', 'modern', 'ats'],
+    component: ProjectForward,
+    renderHtml: renderersById['project-forward'],
+  },
+  {
+    id: 'operations-ledger',
+    name: 'Operations Ledger',
+    category: 'Professional',
+    isAtsFriendly: true,
+    componentKey: 'OperationsLedger',
+    description: 'Calm ledger-style resume for operations, finance, admin, and process roles.',
+    tags: ['operations', 'professional', 'ats'],
+    component: OperationsLedger,
+    renderHtml: renderersById['operations-ledger'],
+  },];
 
 export const templateRegistryList: CvTemplate[] = templateRegistry.map(
   ({ component, renderHtml, ...rest }) => rest

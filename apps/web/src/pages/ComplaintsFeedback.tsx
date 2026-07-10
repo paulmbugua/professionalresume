@@ -10,10 +10,10 @@ export default function ComplaintsFeedbackPage() {
     <SupportPageLayout
       eyebrow="Support"
       title="Complaints & Feedback"
-      description="Your feedback helps us improve CVPro for every job seeker. Whether you have a suggestion, concern, or issue, we want to hear from you and resolve it quickly."
+      description="Your feedback helps us improve ProfessionalResume.co.ke for every job seeker. Whether you have a suggestion, concern, or issue, we want to hear from you and resolve it quickly."
       lastUpdated={lastUpdated}
       contactTitle="Send feedback or raise a concern"
-      contactDescription="Email support@onedollarcvpro.com with relevant details (account email, screenshots, and payment reference when applicable). We aim to respond as promptly as possible."
+      contactDescription="Email support@professionalresume.co.ke with relevant details (account email, screenshots, and payment reference when applicable). We aim to respond as promptly as possible."
       sections={[
         {
           id: 'general-feedback',
@@ -71,7 +71,7 @@ export default function ComplaintsFeedbackPage() {
         <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Support request checklist</h2>
         <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-slate-600 dark:text-slate-300 sm:text-base">
           <li>Subject line that describes the issue clearly.</li>
-          <li>Account email used on CVPro.</li>
+          <li>Account email used on ProfessionalResume.co.ke.</li>
           <li>Timeline and steps to reproduce (if technical).</li>
           <li>Payment reference (if billing-related).</li>
           <li>Screenshots or attachments when helpful.</li>

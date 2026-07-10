@@ -58,7 +58,7 @@ export function trackEvent(eventName: EventName, params?: AnalyticsParams) {
 export function trackPageView(path: string) {
   if (!canTrackGa() || !GA_MEASUREMENT_ID) return;
   window.gtag?.('event', 'page_view', {
-    page_title: typeof document !== 'undefined' ? document.title : 'CVPro',
+    page_title: typeof document !== 'undefined' ? document.title : 'ProfessionalResume.co.ke',
     page_path: path,
     page_location: typeof window !== 'undefined' ? window.location.href : path,
   });

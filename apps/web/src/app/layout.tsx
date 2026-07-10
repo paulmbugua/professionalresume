@@ -5,6 +5,7 @@ import Providers from './providers';
 import CvTopNav from '../components/cv/CvTopNav';
 import AnalyticsProvider from '../components/analytics/AnalyticsProvider';
 import TikTokPixel from '../components/analytics/TikTokPixel';
+import { brand, seoKeywords } from '../lib/brand';
 import {
   buildOrganizationSchema,
   buildPageMetadata,
@@ -16,19 +17,18 @@ import {
 export const metadata: Metadata = {
   metadataBase: new URL(getSiteUrl()),
   ...buildPageMetadata({
-    title: 'CVPro | ATS Resume & Cover Letter Builder',
+    title: `${brand.name} | AI CV Builder Kenya`,
     description:
-      'Build ATS-friendly resumes and cover letters in minutes with expert templates, AI writing support, and one-click export.',
+      `${brand.tagline} Build Kenya-ready CVs, resumes, cover letters, ATS reports, and career documents for local and international jobs.`,
     path: '/',
     keywords: [
-      'resume builder',
-      'ATS resume templates',
-      'cover letter builder',
-      'CV builder',
-      'OneDollarCVPro',
+      ...seoKeywords,
+      'AI cover letter generator Kenya',
+      'Kenya CV templates',
+      'M-Pesa CV builder',
     ],
   }),
-  applicationName: 'CVPro',
+  applicationName: brand.name,
   icons: {
     icon: '/favicon.png',
     shortcut: '/favicon.png',

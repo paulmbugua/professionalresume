@@ -9,7 +9,7 @@ export default function CookiePolicyPage() {
     <SupportPageLayout
       eyebrow="Legal"
       title="Cookie Policy"
-      description="This Cookie Policy explains how CVPro (onedollarcvpro.com) uses cookies and similar technologies when you browse our website and use our $1 AI-powered resume/CV and cover letter tools."
+      description="This Cookie Policy explains how ProfessionalResume.co.ke (professionalresume.co.ke) uses cookies and similar technologies when you browse our website and use our $1 AI-powered resume/CV and cover letter tools."
       lastUpdated={lastUpdated}
       sections={[
         {
@@ -25,10 +25,10 @@ export default function CookiePolicyPage() {
         },
         {
           id: 'why-we-use-cookies',
-          title: 'Why CVPro uses cookies',
+          title: 'Why ProfessionalResume.co.ke uses cookies',
           body: (
             <p>
-              CVPro uses cookies to run core platform features, keep your session secure, improve
+              ProfessionalResume.co.ke uses cookies to run core platform features, keep your session secure, improve
               reliability, and understand how users interact with resume and cover letter creation
               workflows so we can improve quality and speed.
             </p>
@@ -71,7 +71,7 @@ export default function CookiePolicyPage() {
                 operate securely and reliably.
               </p>
               <p>
-                We work with providers that are relevant to delivering CVPro services and do not use
+                We work with providers that are relevant to delivering ProfessionalResume.co.ke services and do not use
                 cookies for unrelated purposes.
               </p>
             </>

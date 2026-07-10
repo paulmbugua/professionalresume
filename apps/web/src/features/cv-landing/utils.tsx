@@ -3,6 +3,7 @@ import React from 'react';
 import { demoResume } from '../../templates/demoResume';
 import { normalizeDraft } from '../../utils/cvDefaults';
 import { templateRegistryById } from '../../templates/registry';
+import { brand } from '../../lib/brand';
 import type { AnyTemplate } from './types';
 
 export function pickTemplatesById(templates: AnyTemplate[], ids: string[]): AnyTemplate[] {
@@ -27,13 +28,13 @@ export function getLandingCopy(variant: 'home' | 'templates') {
     return {
       title: 'Choose the best resume template for your next role',
       subtitle:
-        'Compare ATS-friendly layouts, preview each design instantly, and launch your new resume in minutes.',
+        'Compare Kenya-ready, ATS-friendly layouts for graduates, professionals, NGOs, government roles, and international applications.',
     };
   }
 
   return {
-    title: 'Create a job-winning resume in minutes!',
+    title: brand.tagline,
     subtitle:
-      'Create an ATS-friendly, professional resume with our AI-powered builder — trusted by recruiters.',
+      'Create a Kenya-ready CV, resume, cover letter, and ATS-optimized career profile with AI support for local and international opportunities.',
   };
 }

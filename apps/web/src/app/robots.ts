@@ -8,13 +8,23 @@ export default function robots(): MetadataRoute.Robots {
     rules: [
       {
         userAgent: '*',
-        allow: ['/', '/templates', '/cover-letter', '/cover-letters/templates'],
+        allow: [
+          '/',
+          '/templates',
+          '/cover-letter',
+          '/cover-letters/templates',
+          '/ats-checker',
+          '/career-resources',
+          '/pricing',
+          '/blog',
+        ],
         disallow: [
           '/builder',
           '/builder/',
           '/cover-letters/editor',
           '/cover-letters/new',
           '/login',
+          '/register',
           '/messages',
           '/profile',
           '/paystack/callback',

@@ -53,6 +53,11 @@ const TEMPLATE_FONT_STACKS = {
   'elegant-serif': "'Elegant Serif', Georgia, 'Times New Roman', serif",
   'creative-timeline': "'Inter', 'Segoe UI', Arial, sans-serif",
   'compact-one-pager': "'Inter', 'Segoe UI', Arial, sans-serif",
+  'executive-band': "'Inter', 'Segoe UI', Arial, sans-serif",
+  'skill-matrix': "'Source Sans 3', 'Inter', 'Segoe UI', Arial, sans-serif",
+  'academic-compact': "'Elegant Serif', Georgia, 'Times New Roman', serif",
+  'project-forward': "'Inter', 'Segoe UI', Arial, sans-serif",
+  'operations-ledger': "'Source Sans 3', 'Inter', 'Segoe UI', Arial, sans-serif",
 };
 
 const TEMPLATE_FONT_DEPENDENCIES = {
@@ -65,6 +70,11 @@ const TEMPLATE_FONT_DEPENDENCIES = {
   'elegant-serif': ['elegantSerif'],
   'creative-timeline': ['inter'],
   'compact-one-pager': ['inter'],
+  'executive-band': ['inter'],
+  'skill-matrix': ['sourceSans3', 'inter'],
+  'academic-compact': ['elegantSerif'],
+  'project-forward': ['inter'],
+  'operations-ledger': ['sourceSans3', 'inter'],
 };
 
 const ALL_CV_FONT_DEPENDENCIES = Array.from(

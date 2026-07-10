@@ -3,8 +3,8 @@ import CvBuilderPage from '../../../pages/CvBuilderPage.web';
 import { buildPageMetadata } from '../../../lib/seo';
 
 export const metadata: Metadata = buildPageMetadata({
-  title: 'Resume Builder Workspace | CVPro',
-  description: 'Private resume editing workspace for your CVPro draft.',
+  title: 'Resume Builder Workspace | ProfessionalResume.co.ke',
+  description: 'Private resume editing workspace for your ProfessionalResume.co.ke draft.',
   path: '/builder/[id]',
   noIndex: true,
 });

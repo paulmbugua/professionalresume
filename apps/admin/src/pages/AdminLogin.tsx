@@ -375,7 +375,7 @@ export default function AdminLogin() {
         <aside className="hidden md:flex panel p-8 rounded-2xl shadow-lg border border-gray-100/70 dark:border-darkCard bg-white/60 dark:bg-darkCard/60 backdrop-blur flex-col justify-between">
           <div>
             <h3 className="text-xl font-semibold text-gray-800 dark:text-white">
-              DayBreak Learner • Admin
+              ProfessionalResume.co.ke • Admin
             </h3>
             <p className="mt-2 text-sm text-mutedGray dark:text-darkTextSecondary">
               Manage prices and packages, review transactions, generate receipts,

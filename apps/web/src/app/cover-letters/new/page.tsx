@@ -3,8 +3,8 @@ import CoverLetterNewPage from '../../../pages/CoverLetterNew.web';
 import { buildPageMetadata } from '../../../lib/seo';
 
 export const metadata: Metadata = buildPageMetadata({
-  title: 'Create Cover Letter Draft | CVPro',
-  description: 'Private cover letter draft creation flow for CVPro users.',
+  title: 'Create Cover Letter Draft | ProfessionalResume.co.ke',
+  description: 'Private cover letter draft creation flow for ProfessionalResume.co.ke users.',
   path: '/cover-letters/new',
   noIndex: true,
 });

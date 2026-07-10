@@ -352,7 +352,7 @@ const CoverLetterBuilderPageInner: React.FC<{
             items: [
               {
                 item_id: 'cvpro-export-unlock',
-                item_name: 'CVPro Export Unlock',
+                item_name: 'ProfessionalResume Export Unlock',
                 price: PAYSTACK_KES_AMOUNT,
                 quantity: 1,
               },

@@ -131,14 +131,14 @@ const CoverLetterTemplatesPage: React.FC = () => {
               applicantLocation: 'New York, NY',
               recipientName: 'Alex Morgan',
               recipientTitle: 'Talent Acquisition Manager',
-              companyName: 'CVPro Inc',
+              companyName: 'ProfessionalResume.co.ke',
               companyAddress: '123 Market Street, New York, NY',
               roleTitle: 'Product Designer',
               dateText: new Date().toLocaleDateString(),
               subjectLine: 'Application for Product Designer',
               greeting: 'Dear Hiring Manager,',
               letterBody:
-                'I am excited to apply for the Product Designer role at CVPro.\n\nI have designed and shipped user-focused experiences that improved conversion and retention.',
+                'I am excited to apply for the Product Designer role at ProfessionalResume.co.ke.\n\nI have designed and shipped user-focused experiences that improved conversion and retention.',
               closingParagraph:
                 'I would welcome the opportunity to discuss how my background can support your product goals.',
               closingLine: 'Sincerely,',
