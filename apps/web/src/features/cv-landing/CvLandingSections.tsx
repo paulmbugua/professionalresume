@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import Link from 'next/link';
 
 import TemplateThumbnail from '../../components/cv/templates/TemplateThumbnail';
@@ -210,7 +210,7 @@ export function TemplatesCarousel({
         disabled={page <= 0}
         className={`${navButtonClass} left-0`}
       >
-        â€¹
+        {'<'}
       </button>
 
       <button
@@ -220,7 +220,7 @@ export function TemplatesCarousel({
         disabled={page >= pageCount - 1}
         className={`${navButtonClass} right-0`}
       >
-        â€º
+        {'>'}
       </button>
 
       <div className="mx-9 grid gap-4 sm:mx-10 md:grid-cols-2 lg:grid-cols-4">
@@ -285,17 +285,17 @@ export function CoverLettersPromoSection({
     {
       title: 'Premium AI support',
       body: 'Use built-in AI assist to tailor every paragraph to your role, tone, and experience in seconds.',
-      icon: <IconChip tone="purple">âœ¨</IconChip>,
+      icon: <IconChip tone="purple">AI</IconChip>,
     },
     {
       title: 'Ready to print or download',
       body: 'Export polished cover letters as print-ready, downloadable files whenever you are ready to apply.',
-      icon: <IconChip tone="blue">â¬‡ï¸</IconChip>,
+      icon: <IconChip tone="blue">DL</IconChip>,
     },
     {
       title: 'Included after your first resume',
       body: 'Cover letters are included at no extra cost after your first $1 resume purchase.',
-      icon: <IconChip tone="emerald">ðŸ’Ž</IconChip>,
+      icon: <IconChip tone="emerald">CV</IconChip>,
     },
   ];
 
@@ -354,32 +354,32 @@ export function WhyChooseSection() {
     {
       title: 'Time-saving solutions',
       body: "Don't believe that resume building can take minutes? Let us prove it and handle the details while you focus on your job hunt.",
-      icon: <IconChip tone="neutral">â±ï¸</IconChip>,
+      icon: <IconChip tone="neutral">GO</IconChip>,
     },
     {
       title: 'HR-approved templates',
       body: 'Make a resume using templates designed with input from hiring professionals who know what works.',
-      icon: <IconChip tone="neutral">ðŸ§‘â€ðŸ’¼</IconChip>,
+      icon: <IconChip tone="neutral">HR</IconChip>,
     },
     {
       title: 'ATS-friendly',
-      body: 'Beat the ATS â€” the system that screens resumes. Get noticed by employers and stand out where it counts!',
-      icon: <IconChip tone="emerald">âœ…</IconChip>,
+      body: 'Beat the ATS - the system that screens resumes. Get noticed by employers and stand out where it counts!',
+      icon: <IconChip tone="emerald">OK</IconChip>,
     },
     {
       title: 'Designs for every level',
-      body: 'Explore templates that match your path â€” for your first job, a career change, or a move into leadership role.',
-      icon: <IconChip tone="orange">ðŸ“„</IconChip>,
+      body: 'Explore templates that match your path - for your first job, a career change, or a move into leadership role.',
+      icon: <IconChip tone="orange">CV</IconChip>,
     },
     {
       title: 'AI-powered tool',
       body: 'Write faster and better with smart keyword guidance and targeted content suggestions.',
-      icon: <IconChip tone="purple">âœ¨</IconChip>,
+      icon: <IconChip tone="purple">AI</IconChip>,
     },
     {
       title: 'Security first',
       body: 'Keep your personal data protected with our trusted, industry-standard security measures.',
-      icon: <IconChip tone="amber">ðŸ”’</IconChip>,
+      icon: <IconChip tone="amber">SEC</IconChip>,
     },
   ];
 
@@ -416,27 +416,27 @@ export function StepsSection({ onCta }: { onCta: () => void }) {
   const steps = [
     {
       n: '01',
-      icon: 'ðŸ“„',
+      icon: 'CV',
       title: 'Upload your CV or create a new one',
-      body: 'Use your current version or start fresh â€” weâ€™ll help with suggestions and structure.',
+      body: "Use your current version or start fresh - we'll help with suggestions and structure.",
     },
     {
       n: '02',
-      icon: 'âœï¸',
+      icon: 'ED',
       title: 'Enter your personal details',
-      body: 'Fill in your profile, education, skills, and experience â€” weâ€™ll handle the layout.',
+      body: "Fill in your profile, education, skills, and experience - we'll handle the layout.",
     },
     {
       n: '03',
-      icon: 'ðŸ§©',
+      icon: 'FIT',
       title: 'Choose any template you like',
-      body: 'Customize the look â€” fonts, spacing, and colors â€” while staying ATS-friendly.',
+      body: 'Customize the look - fonts, spacing, and colors - while staying ATS-friendly.',
     },
     {
       n: '04',
-      icon: 'â¬‡ï¸',
+      icon: 'DL',
       title: 'Download your resume',
-      body: 'Save your final draft â€” the first step in your job search is already done.',
+      body: 'Save your final draft - the first step in your job search is already done.',
     },
   ];
 
@@ -497,7 +497,7 @@ export function FAQSection({ onCta }: { onCta: () => void }) {
     },
     {
       q: 'Are ProfessionalResume.co.ke templates ATS-friendly?',
-      a: 'Yes â€” templates are built with clean structure and consistent headings to parse well.',
+      a: 'Yes - templates are built with clean structure and consistent headings to parse well.',
     },
     {
       q: 'Is ProfessionalResume.co.ke available as subscription or one-time purchase?',

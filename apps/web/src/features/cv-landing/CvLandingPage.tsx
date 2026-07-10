@@ -45,18 +45,18 @@ const CAROUSEL_TEMPLATE_IDS = [
 ];
 
 const brandLogos = [
-  { label: 'Safaricom' },
-  { label: 'Equity Bank' },
-  { label: 'KCB Bank' },
-  { label: 'Co-operative Bank' },
-  { label: 'Kenya Airways' },
-  { label: 'KRA' },
-  { label: 'UN Kenya' },
-  { label: 'Aga Khan University Hospital' },
-  { label: 'Safaricom' },
-  { label: 'Equity Bank' },
-  { label: 'KCB Bank' },
-  { label: 'Co-operative Bank' },
+  { label: 'Safaricom', src: 'https://upload.wikimedia.org/wikipedia/en/e/eb/Safaricom_logo.svg' },
+  { label: 'Equity Bank', src: '/brands/equity-bank.png' },
+  { label: 'KCB Bank', src: '/brands/kcb-bank.png' },
+  { label: 'Co-operative Bank', src: 'https://upload.wikimedia.org/wikipedia/commons/d/d7/Coopbanklogo.jpg' },
+  { label: 'Kenya Airways', src: 'https://upload.wikimedia.org/wikipedia/commons/7/75/Kenya_Airways_Logo.svg' },
+  { label: 'KRA', src: '/brands/kra.webp' },
+  { label: 'UN Kenya', src: 'https://upload.wikimedia.org/wikipedia/commons/5/5f/United_Nations_Office_at_Nairobi_Logo.svg' },
+  { label: 'Aga Khan University Hospital', src: '/brands/aga-khan.png' },
+  { label: 'Safaricom', src: 'https://upload.wikimedia.org/wikipedia/en/e/eb/Safaricom_logo.svg' },
+  { label: 'Equity Bank', src: '/brands/equity-bank.png' },
+  { label: 'KCB Bank', src: '/brands/kcb-bank.png' },
+  { label: 'Co-operative Bank', src: 'https://upload.wikimedia.org/wikipedia/commons/d/d7/Coopbanklogo.jpg' },
 ];
 
 const testimonials = [
@@ -319,7 +319,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
         <div className="w-full bg-site pb-10 dark:bg-slate-950">
           <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
             <div className="text-center text-xs font-semibold text-slate-500 dark:text-slate-300">
-              Build CVs for opportunities across<sup>1</sup>
+              Build CVs for opportunities across
             </div>
             <div className="mt-2 text-center text-[11px] text-slate-400 dark:text-slate-500">
               Kenyan employers, NGOs, government bodies, banks, SACCOs, UN agencies, and global employers.
@@ -355,7 +355,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
                             key={i}
                             className="inline-flex size-4 items-center justify-center rounded bg-emerald-500 text-[11px] font-bold text-white"
                           >
-                            ★
+                            *
                           </span>
                         ))}
                       </div>
@@ -394,7 +394,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
 
           <div className={`mt-8 ${panelClass} p-5 sm:p-6`}>
             {isLoading ? (
-              <p className="text-sm text-slate-500 dark:text-slate-300">Loading templates…</p>
+              <p className="text-sm text-slate-500 dark:text-slate-300">Loading templates...</p>
             ) : carouselTemplates.length > 0 ? (
               <TemplatesCarousel templates={carouselTemplates} onChoose={openSpotlight} />
             ) : (
@@ -406,7 +406,7 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
                 href="/templates"
                 className="text-sm font-semibold text-blue-600 transition hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200"
               >
-                View all templates →
+                View all templates -&gt;
               </Link>
             </div>
           </div>
