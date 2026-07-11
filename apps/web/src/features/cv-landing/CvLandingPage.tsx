@@ -206,9 +206,9 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
 
               <div className="mt-7 grid grid-cols-3 gap-4 sm:flex sm:gap-10">
                 {[
-                  { value: '47', label: 'Kenyan counties supported' },
-                  { value: '100+', label: 'CV and cover letter templates' },
-                  { value: '3', label: 'languages planned' },
+                  { value: '1,311', label: 'resumes created today' },
+                  { value: '×2.2', label: 'more interview invitations' },
+                  { value: '+43%', label: 'higher chance of getting a job' },
                 ].map((item) => (
                   <div key={item.label} className="rounded-2xl px-3 py-2 sm:px-0 sm:py-0">
                     <div className="text-base font-semibold text-slate-900 dark:text-white sm:text-lg">
