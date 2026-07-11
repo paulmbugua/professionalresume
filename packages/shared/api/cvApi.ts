@@ -172,7 +172,7 @@ export const exportCvPdf = async (
     if (err?.response?.status === 403) {
       throw new Error(
         err?.response?.data?.error ||
-          'Resume export is available after one-time unlock payment (Paystack card: KES 130, M-Pesa: KES 100).',
+          'Resume export is available after Ksh 100 monthly M-Pesa access.',
       );
     }
     throw new Error(toMessage(err));
@@ -208,7 +208,7 @@ export const getCvPrintHtml = async (
     if (err?.response?.status === 403) {
       throw new Error(
         err?.response?.data?.error ||
-          'Resume printing is available after one-time unlock payment (Paystack card: KES 130, M-Pesa: KES 100).',
+          'Resume printing is available after Ksh 100 monthly M-Pesa access.',
       );
     }
     throw new Error(toMessage(err));
@@ -221,7 +221,9 @@ export const getCoverLetterEntitlement = async (
 ): Promise<CoverLetterEntitlement> => {
   try {
     const api = client(backendUrl, token);
-    const res = await api.get<CoverLetterEntitlement>('/api/cv/payments/entitlement');
+    const res = await api.get<CoverLetterEntitlement>('/api/cv/payments/entitlement', {
+      params: { entitlementKey: 'cover_letter_export_unlock' },
+    });
     return res.data;
   } catch (err: any) {
     throw new Error(toMessage(err));

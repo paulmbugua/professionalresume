@@ -1,11 +1,11 @@
-import { getCvExportEntitlement } from '../services/cvPaymentService.js';
+import { getCoverLetterExportEntitlement } from '../services/cvPaymentService.js';
 
 export async function requireCoverLetterEntitlement(req, res, next) {
   try {
-    const entitlement = await getCvExportEntitlement(req.user.id);
+    const entitlement = await getCoverLetterExportEntitlement(req.user.id);
     if (!entitlement.eligible) {
       return res.status(403).json({
-        error: 'Cover letter export/print requires the one-time CV export unlock payment (Paystack card: KES 130, M-Pesa STK: KES 100).',
+        error: 'Cover letter export/print requires Ksh 100 monthly M-Pesa access.',
         entitlement,
       });
     }

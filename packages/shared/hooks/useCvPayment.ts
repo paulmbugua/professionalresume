@@ -13,10 +13,19 @@ type Args = {
   backendUrl: string;
   token?: string;
   onPaymentConfirmed?: (paymentReference: string) => void;
+  entitlementKey?: string;
 };
 type Action = 'resume_export' | 'resume_print' | 'cover_letter_export' | 'cover_letter_print';
 const CVPRO_CANONICAL_ORIGIN = 'https://www.onedollarcvpro.com';
 const PENDING_MPESA_KEY = 'cv:pendingMpesaPayment';
+const RESUME_EXPORT_ENTITLEMENT_KEY = 'resume_export_unlock';
+const COVER_LETTER_EXPORT_ENTITLEMENT_KEY = 'cover_letter_export_unlock';
+
+function entitlementKeyForAction(action: Action): string {
+  return action.startsWith('cover_letter')
+    ? COVER_LETTER_EXPORT_ENTITLEMENT_KEY
+    : RESUME_EXPORT_ENTITLEMENT_KEY;
+}
 
 function normalizeKenyanPhoneInput(rawPhone: string): string | null {
   const digits = String(rawPhone || '')
@@ -33,12 +42,12 @@ function normalizeKenyanPhoneInput(rawPhone: string): string | null {
   return null;
 }
 
-export function useCvExportEntitlement({ backendUrl, token }: Args) {
+export function useCvExportEntitlement({ backendUrl, token, entitlementKey = RESUME_EXPORT_ENTITLEMENT_KEY }: Args) {
   return useQuery({
-    queryKey: ['cv-export-entitlement', backendUrl, token],
+    queryKey: ['cv-export-entitlement', backendUrl, token, entitlementKey],
     queryFn: () => {
       if (!token) throw new Error('Unauthorized');
-      return getCvExportEntitlement(backendUrl, token);
+      return getCvExportEntitlement(backendUrl, token, entitlementKey);
     },
     enabled: Boolean(backendUrl && token),
   });
@@ -46,7 +55,7 @@ export function useCvExportEntitlement({ backendUrl, token }: Args) {
 
 export function useCvPayment({ backendUrl, token, onPaymentConfirmed }: Args) {
   const qc = useQueryClient();
-  const entitlement = useCvExportEntitlement({ backendUrl, token });
+  const entitlement = useCvExportEntitlement({ backendUrl, token, entitlementKey: RESUME_EXPORT_ENTITLEMENT_KEY });
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<Action>('resume_export');
   const pendingResolver = useRef<((ok: boolean) => void) | null>(null);
@@ -77,7 +86,7 @@ export function useCvPayment({ backendUrl, token, onPaymentConfirmed }: Args) {
     }
   };
 
-  const persistPendingMpesa = (payload: { transactionId: string; checkoutRequestId: string }) => {
+  const persistPendingMpesa = (payload: { transactionId: string; checkoutRequestId: string; action: Action }) => {
     if (typeof window === 'undefined') return;
     window.sessionStorage.setItem(
       PENDING_MPESA_KEY,
@@ -197,7 +206,11 @@ export function useCvPayment({ backendUrl, token, onPaymentConfirmed }: Args) {
       if (!normalizedPhone) {
         throw new Error('Use a valid Safaricom number in format 2547XXXXXXXX.');
       }
-      return initCvMpesaPayment(backendUrl, token, { phone: normalizedPhone });
+      return initCvMpesaPayment(backendUrl, token, {
+        phone: normalizedPhone,
+        action: pendingAction,
+        entitlementKey: entitlementKeyForAction(pendingAction),
+      });
     },
     onSuccess: (data) => {
       setMpesaTransactionId(data.transactionId);
@@ -205,6 +218,7 @@ export function useCvPayment({ backendUrl, token, onPaymentConfirmed }: Args) {
       persistPendingMpesa({
         transactionId: data.transactionId,
         checkoutRequestId: data.checkoutRequestId,
+        action: pendingAction,
       });
       setMpesaFlowState('stk_sent');
       setMpesaStatusMessage(data.message || 'STK push sent. Check your phone to continue.');

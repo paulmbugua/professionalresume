@@ -37,10 +37,10 @@ export type CvEntitlementResponse = {
 export const createCvPaymentIntent = async (
   backendUrl: string,
   token: string,
-  payload: { provider: 'MPESA' | 'PAYSTACK'; callbackUrl?: string; phone?: string },
+  payload: { provider: 'MPESA' | 'PAYSTACK'; callbackUrl?: string; phone?: string; action?: string; entitlementKey?: string },
 ) => {
   if (payload.provider === 'MPESA') {
-    return initCvMpesaPayment(backendUrl, token, { phone: payload.phone || '' });
+    return initCvMpesaPayment(backendUrl, token, { phone: payload.phone || '', action: payload.action, entitlementKey: payload.entitlementKey });
   }
   return createCvPaystackOrder(backendUrl, token, { callbackUrl: payload.callbackUrl || '' });
 };
@@ -48,13 +48,14 @@ export const createCvPaymentIntent = async (
 export const initCvMpesaPayment = async (
   backendUrl: string,
   token: string,
-  payload: { phone: string },
+  payload: { phone: string; action?: string; entitlementKey?: string },
 ): Promise<{
   paymentId: number;
   transactionId: string;
   checkoutRequestId: string;
   amount: number;
   currency: 'KES';
+  entitlementKey?: string;
   message: string;
 }> => {
   try {
@@ -131,10 +132,13 @@ export const verifyCvPaystackPayment = async (
 export const getCvExportEntitlement = async (
   backendUrl: string,
   token: string,
+  entitlementKey?: string,
 ): Promise<CvEntitlementResponse> => {
   try {
     const api = client(backendUrl, token);
-    const res = await api.get('/api/cv/payments/entitlement');
+    const res = await api.get('/api/cv/payments/entitlement', {
+      params: entitlementKey ? { entitlementKey } : undefined,
+    });
     return res.data;
   } catch (err: any) {
     throw new Error(toMessage(err));
@@ -144,10 +148,11 @@ export const getCvExportEntitlement = async (
 export const ensureCvExportEntitlement = async (
   backendUrl: string,
   token: string,
+  entitlementKey?: string,
 ): Promise<CvEntitlementResponse> => {
   try {
     const api = client(backendUrl, token);
-    const res = await api.post('/api/cv/payments/entitlement/ensure');
+    const res = await api.post('/api/cv/payments/entitlement/ensure', entitlementKey ? { entitlementKey } : undefined);
     return res.data;
   } catch (err: any) {
     throw new Error(toMessage(err));

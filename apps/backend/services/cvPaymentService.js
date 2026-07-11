@@ -18,7 +18,6 @@ import {
   PAYSTACK_KES_AMOUNT,
   PAYSTACK_KES_AMOUNT_MINOR,
   CV_EXPORT_PURCHASE_KIND,
-  CV_EXPORT_ENTITLEMENT_KEY,
   expectedKesAmountForProvider,
 } from '../constants/cvPaymentPricing.js';
 export {
@@ -37,71 +36,137 @@ class PaymentInitError extends Error {
   }
 }
 
-function baseMeta() {
+function baseMeta({ entitlementKey = RESUME_EXPORT_ENTITLEMENT_KEY, action = 'resume_export' } = {}) {
+  const isCoverLetter = entitlementKey === COVER_LETTER_EXPORT_ENTITLEMENT_KEY;
   return {
     kind: CV_EXPORT_PURCHASE_KIND,
-    resumeExportUnlocked: true,
-    coverLetterExportUnlocked: true,
-    sourceProduct: 'cvpro',
-    usdAmount: CVPRO_EXPORT_PRICE_USD,
+    action,
+    entitlementKey,
+    product: isCoverLetter ? 'cover_letter' : 'resume',
+    productLabel: productLabelForEntitlement(entitlementKey),
+    sourceProduct: 'professionalresume',
+    billingCycle: 'monthly',
+    billingCycleDays: MONTHLY_ENTITLEMENT_DAYS,
     kesAmountMpesa: MPESA_KES_AMOUNT,
-    kesAmountPaystack: PAYSTACK_KES_AMOUNT,
+    legacyUsdAmount: CVPRO_EXPORT_PRICE_USD,
+    legacyKesAmountPaystack: PAYSTACK_KES_AMOUNT,
   };
+}
+
+function expiresAtFromGrant(grantedAt) {
+  if (!grantedAt) return null;
+  const granted = new Date(grantedAt).getTime();
+  if (!Number.isFinite(granted)) return null;
+  return new Date(granted + MONTHLY_ENTITLEMENT_DAYS * 24 * 60 * 60 * 1000).toISOString();
 }
 
 function readCallbackItem(items, name) {
   return items.find((item) => item?.Name === name)?.Value ?? null;
 }
 
-export async function getCvExportEntitlement(userId) {
+export async function getCvExportEntitlement(userId, entitlementKey = RESUME_EXPORT_ENTITLEMENT_KEY) {
+  const requestedKey = entitlementKey || RESUME_EXPORT_ENTITLEMENT_KEY;
   const { rows } = await pool.query(
     `SELECT id, user_id, entitlement_key, source_payment_id, granted_at, metadata
      FROM user_entitlements
-     WHERE user_id=$1 AND entitlement_key=$2
+     WHERE user_id=$1 AND entitlement_key = ANY($2::text[])
+     ORDER BY CASE WHEN entitlement_key=$3 THEN 0 ELSE 1 END, granted_at DESC
      LIMIT 1`,
-    [Number(userId), CV_EXPORT_ENTITLEMENT_KEY],
+    [Number(userId), [requestedKey, LEGACY_CV_EXPORT_ENTITLEMENT_KEY], requestedKey],
   );
 
   if (!rows[0]) {
-    return { eligible: false, entitlementKey: CV_EXPORT_ENTITLEMENT_KEY, reason: 'payment_required' };
+    return { eligible: false, entitlementKey: requestedKey, reason: 'payment_required' };
+  }
+
+  const expiresAt = expiresAtFromGrant(rows[0].granted_at);
+  if (expiresAt && Date.now() > new Date(expiresAt).getTime()) {
+    return {
+      eligible: false,
+      entitlementKey: requestedKey,
+      sourcePaymentId: rows[0].source_payment_id,
+      grantedAt: rows[0].granted_at,
+      expiresAt,
+      reason: 'monthly_cycle_expired',
+      metadata: rows[0].metadata || {},
+    };
   }
 
   return {
     eligible: true,
     entitlementKey: rows[0].entitlement_key,
+    requestedEntitlementKey: requestedKey,
     sourcePaymentId: rows[0].source_payment_id,
     grantedAt: rows[0].granted_at,
+    expiresAt,
     metadata: rows[0].metadata || {},
   };
 }
 
-export async function grantCvExportEntitlement({ userId, paymentId, client = pool }) {
-  const meta = baseMeta();
+export const getResumeExportEntitlement = (userId) =>
+  getCvExportEntitlement(userId, RESUME_EXPORT_ENTITLEMENT_KEY);
+
+export const getCoverLetterExportEntitlement = (userId) =>
+  getCvExportEntitlement(userId, COVER_LETTER_EXPORT_ENTITLEMENT_KEY);
+
+export async function grantCvExportEntitlement({ userId, paymentId, entitlementKey, client = pool }) {
+  let resolvedKey = entitlementKey || RESUME_EXPORT_ENTITLEMENT_KEY;
+  if (!entitlementKey && paymentId) {
+    const { rows } = await client.query(
+      'SELECT entitlement_key FROM cv_payments WHERE id=$1 LIMIT 1',
+      [paymentId],
+    );
+    resolvedKey = rows[0]?.entitlement_key || resolvedKey;
+  }
+
+  const meta = baseMeta({ entitlementKey: resolvedKey });
   await client.query(
     `INSERT INTO user_entitlements (user_id, entitlement_key, source_payment_id, metadata)
      VALUES ($1,$2,$3,$4::jsonb)
      ON CONFLICT (user_id, entitlement_key)
-     DO UPDATE SET source_payment_id = COALESCE(user_entitlements.source_payment_id, EXCLUDED.source_payment_id),
+     DO UPDATE SET source_payment_id = EXCLUDED.source_payment_id,
+                   granted_at = NOW(),
                    metadata = user_entitlements.metadata || EXCLUDED.metadata,
                    updated_at = NOW()`,
-    [Number(userId), CV_EXPORT_ENTITLEMENT_KEY, paymentId || null, JSON.stringify(meta)],
+    [Number(userId), resolvedKey, paymentId || null, JSON.stringify(meta)],
   );
 }
 
-async function createCvPaymentIntent({ userId, provider, paymentMethod, amount, currency, metadata = {} }) {
+async function createCvPaymentIntent({
+  userId,
+  provider,
+  paymentMethod,
+  amount,
+  currency,
+  entitlementKey = RESUME_EXPORT_ENTITLEMENT_KEY,
+  action = 'resume_export',
+  metadata = {},
+}) {
   const transactionId = crypto.randomUUID();
-  const mergedMeta = { ...baseMeta(), ...metadata };
+  const mergedMeta = { ...baseMeta({ entitlementKey, action }), ...metadata };
   const { rows } = await pool.query(
     `INSERT INTO cv_payments
-      (user_id, provider, payment_method, status, amount, currency, transaction_id, metadata)
-     VALUES ($1,$2,$3,'Pending',$4,$5,$6,$7::jsonb)
+      (user_id, provider, payment_method, status, amount, currency, transaction_id, purchase_kind, entitlement_key, metadata)
+     VALUES ($1,$2,$3,'Pending',$4,$5,$6,$7,$8,$9::jsonb)
      RETURNING *`,
-    [Number(userId), provider, paymentMethod, amount, currency, transactionId, JSON.stringify(mergedMeta)],
+    [
+      Number(userId),
+      provider,
+      paymentMethod,
+      amount,
+      currency,
+      transactionId,
+      CV_EXPORT_PURCHASE_KIND,
+      entitlementKey,
+      JSON.stringify(mergedMeta),
+    ],
   );
   return rows[0];
 }
 
-export async function initCvMpesaPayment({ userId, phone, requestBaseUrl }) {
+export async function initCvMpesaPayment({ userId, phone, requestBaseUrl, action = 'resume_export', entitlementKey }) {
+  const resolvedEntitlementKey = entitlementKey || entitlementKeyForAction(action);
+  const productLabel = productLabelForEntitlement(resolvedEntitlementKey);
   const normalizedPhone = normalizePhoneNumber(phone);
   if (!normalizedPhone) {
     const err = new PaymentInitError(
@@ -152,8 +217,8 @@ export async function initCvMpesaPayment({ userId, phone, requestBaseUrl }) {
       PartyB: shortcode,
       PhoneNumber: normalizedPhone,
       CallBackURL: callbackUrl,
-      AccountReference: 'CVPRO_EXPORT_UNLOCK',
-      TransactionDesc: 'ProfessionalResume.co.ke export unlock',
+      AccountReference: resolvedEntitlementKey === COVER_LETTER_EXPORT_ENTITLEMENT_KEY ? 'COVER_LETTER_MONTHLY' : 'RESUME_MONTHLY',
+      TransactionDesc: `${productLabel} monthly access`,
     };
 
     console.log('[cv/mpesa/init] sending stk push', {
@@ -766,21 +831,21 @@ export async function verifyCvPaystackPayment({ userId, reference }) {
   }
 }
 
-export async function ensureCvExportEntitlement({ userId }) {
-  const entitlement = await getCvExportEntitlement(userId);
+export async function ensureCvExportEntitlement({ userId, entitlementKey = RESUME_EXPORT_ENTITLEMENT_KEY }) {
+  const entitlement = await getCvExportEntitlement(userId, entitlementKey);
   if (entitlement.eligible) return entitlement;
 
   const { rows } = await pool.query(
     `SELECT id FROM cv_payments
-     WHERE user_id=$1 AND status='Completed' AND entitlement_key=$2
-     ORDER BY completed_at DESC NULLS LAST, created_at DESC
+     WHERE user_id=$1 AND status='Completed' AND entitlement_key = ANY($2::text[])
+     ORDER BY CASE WHEN entitlement_key=$3 THEN 0 ELSE 1 END, completed_at DESC NULLS LAST, created_at DESC
      LIMIT 1`,
-    [Number(userId), CV_EXPORT_ENTITLEMENT_KEY],
+    [Number(userId), [entitlementKey, LEGACY_CV_EXPORT_ENTITLEMENT_KEY], entitlementKey],
   );
 
   if (rows[0]?.id) {
-    await grantCvExportEntitlement({ userId, paymentId: rows[0].id });
-    return getCvExportEntitlement(userId);
+    await grantCvExportEntitlement({ userId, paymentId: rows[0].id, entitlementKey });
+    return getCvExportEntitlement(userId, entitlementKey);
   }
 
   return entitlement;

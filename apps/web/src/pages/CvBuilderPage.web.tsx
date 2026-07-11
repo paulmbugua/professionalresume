@@ -16,7 +16,7 @@ import type { CvDraft } from '@cvpro/shared/types';
 import { normalizeDraft } from '../utils/cvDefaults';
 import CvEditorShell from '../components/cv/CvEditorShell';
 import CvPaymentModal from '../components/cv/CvPaymentModal';
-import { MPESA_KES_AMOUNT, PAYSTACK_KES_AMOUNT } from '../lib/cvPaymentPricing';
+import { MPESA_KES_AMOUNT } from '../lib/cvPaymentPricing';
 import { demoResume } from '../templates/demoResume';
 import {
   clearPendingPaymentReturnState,
@@ -567,35 +567,11 @@ const CvBuilderPageInner: React.FC<{
             await cvPayment.initMpesaMutation.mutateAsync(phone);
           }}
           onRetryStatusCheck={cvPayment.retryMpesaPolling}
-          onPayWithPaystack={async () => {
-            const nextPath = `${window.location.pathname}?cv_action=${cvPayment.pendingAction}`;
-            trackTikTokInitiateCheckout();
-            trackBeginCheckout({
-              currency: 'KES',
-              value: PAYSTACK_KES_AMOUNT,
-              purchase_type: 'export_unlock',
-              product_type: 'resume',
-              source_page: 'cv_builder',
-              items: [
-                {
-                  item_id: 'cvpro-export-unlock',
-                  item_name: 'ProfessionalResume Export Unlock',
-                  price: PAYSTACK_KES_AMOUNT,
-                  quantity: 1,
-                },
-              ],
-            });
-            persistPaymentReturnState(cvPayment.pendingAction as 'resume_export' | 'resume_print');
-            const order = await cvPayment.startPaystackCheckout.mutateAsync(nextPath);
-            window.location.href = order.authorizationUrl;
-          }}
           isLoadingMpesaInit={cvPayment.initMpesaMutation.isPending}
-          isLoadingPaystack={cvPayment.startPaystackCheckout.isPending}
           mpesaFlowState={cvPayment.mpesaFlowState}
           message={cvPayment.mpesaStatusMessage}
           error={
             cvPayment.initMpesaMutation.error?.message ||
-            cvPayment.startPaystackCheckout.error?.message ||
             null
           }
         />

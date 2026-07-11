@@ -1,5 +1,5 @@
 import pool from '../config/db.js';
-import { getCvExportEntitlement } from './cvPaymentService.js';
+import { getCoverLetterExportEntitlement } from './cvPaymentService.js';
 import {
   createOwnedDraft,
   listOwnedDrafts,

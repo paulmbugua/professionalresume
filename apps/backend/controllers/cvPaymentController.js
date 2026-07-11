@@ -36,12 +36,12 @@ export async function getCvPaymentConfig(_req, res) {
 
 export async function initMpesa(req, res) {
   try {
-    const { phone } = req.body || {};
+    const { phone, action, entitlementKey } = req.body || {};
     const forwardedProto = req.headers['x-forwarded-proto'];
     const proto = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto || req.protocol || 'http';
     const host = req.headers['x-forwarded-host'] || req.get('host');
     const requestBaseUrl = host ? `${proto}://${host}` : null;
-    const out = await initCvMpesaPayment({ userId: req.user.id, phone, requestBaseUrl });
+    const out = await initCvMpesaPayment({ userId: req.user.id, phone, requestBaseUrl, action, entitlementKey });
     return res.status(200).json(out);
   } catch (error) {
     return resolveError(res, error);
@@ -100,7 +100,7 @@ export async function verifyPaystack(req, res) {
 
 export async function getEntitlement(req, res) {
   try {
-    const out = await getCvExportEntitlement(req.user.id);
+    const out = await getCvExportEntitlement(req.user.id, req.query?.entitlementKey || req.query?.key);
     return res.status(200).json(out);
   } catch (error) {
     return resolveError(res, error);
@@ -109,7 +109,7 @@ export async function getEntitlement(req, res) {
 
 export async function ensureEntitlement(req, res) {
   try {
-    const out = await ensureCvExportEntitlement({ userId: req.user.id });
+    const out = await ensureCvExportEntitlement({ userId: req.user.id, entitlementKey: req.body?.entitlementKey || req.query?.entitlementKey });
     return res.status(200).json(out);
   } catch (error) {
     return resolveError(res, error);

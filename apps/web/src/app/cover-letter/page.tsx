@@ -5,7 +5,7 @@ import { buildBreadcrumbSchema, buildPageMetadata } from '../../lib/seo';
 export const metadata: Metadata = buildPageMetadata({
   title: 'Cover Letter Builder | Match Your Resume in Minutes | ProfessionalResume.co.ke',
   description:
-    'Create polished cover letters that match your CV. Use templates, AI-assisted writing, and instant export after resume purchase.',
+    'Create polished cover letters that match your CV. Use templates, AI-assisted writing, and export after Ksh 100 monthly M-Pesa access.',
   path: '/cover-letter',
   keywords: ['cover letter builder', 'cover letter templates', 'resume and cover letter', 'job application letter'],
 });
@@ -50,8 +50,8 @@ export default function Page() {
           <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Improve wording and tailor your letter for each role faster.</p>
         </article>
         <article className="rounded-2xl border border-slate-200 bg-white/90 p-4 dark:border-white/10 dark:bg-slate-900/70">
-          <h2 className="text-base font-semibold">Unified checkout unlock</h2>
-          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">After your first resume unlock payment, cover letter export is included (Paystack card: KES 130, M-Pesa: KES 100).</p>
+          <h2 className="text-base font-semibold">M-Pesa monthly access</h2>
+          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Cover letter export is unlocked separately with Ksh 100 monthly M-Pesa access when you click Export PDF.</p>
         </article>
       </section>
     </main>

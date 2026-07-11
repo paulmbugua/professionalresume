@@ -57,12 +57,6 @@ export const seoKeywords = [
 
 export const paymentMethods = [
   'M-Pesa',
-  'Visa',
-  'Mastercard',
-  'Airtel Money',
-  'PayPal',
-  'Apple Pay',
-  'Google Pay',
 ] as const;
 
 export const platformCapabilities = [
