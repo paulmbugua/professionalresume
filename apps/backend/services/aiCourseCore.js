@@ -49,7 +49,35 @@ export function fairTimerSec({ count, quizType, preset }) {
 /* ─────────────────────────────────────────────────────────
  * OpenAI + timeouts
  * ───────────────────────────────────────────────────────── */
-export const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openaiApiKey = String(process.env.OPENAI_API_KEY || '').trim();
+const openaiClient = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
+let warnedMissingOpenAI = false;
+
+function createMissingOpenAIKeyError() {
+  const error = new Error(
+    'OPENAI_API_KEY is missing. Configure it in Railway to enable AI features.',
+  );
+  error.status = 503;
+  error.aiKind = 'config';
+  return error;
+}
+
+export function requireOpenAI() {
+  if (openaiClient) return openaiClient;
+  if (!warnedMissingOpenAI) {
+    warnedMissingOpenAI = true;
+    console.warn(
+      '[aiSvc:openai] OPENAI_API_KEY is missing; AI endpoints will return 503 until configured.',
+    );
+  }
+  throw createMissingOpenAIKeyError();
+}
+
+export const openai = openaiClient || new Proxy({}, {
+  get() {
+    return requireOpenAI();
+  },
+});
 export const OPENAI_REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_REQUEST_TIMEOUT_MS || 60000);
 
 /* ─────────────────────────────────────────────────────────
@@ -799,6 +827,7 @@ function finalizeSentencePunctuation(s) {
  * OpenAI JSON helper (supports JSON Schema)
  * ───────────────────────────────────────────────────────── */
 export async function aiJson({ system, user, temperature = 0.2, tries = 3, maxTokens, schema }) {
+  const client = requireOpenAI();
   let lastErr;
   for (let i = 0; i < tries; i++) {
     const t0 = Date.now();
@@ -823,7 +852,7 @@ export async function aiJson({ system, user, temperature = 0.2, tries = 3, maxTo
           responseFormat = { type: 'json_object' };
         }
 
-        const r = await openai.chat.completions.create(
+        const r = await client.chat.completions.create(
           {
             model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
             temperature,
