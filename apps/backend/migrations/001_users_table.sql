@@ -1,0 +1,55 @@
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS public.users (
+  id BIGSERIAL PRIMARY KEY,
+  name TEXT,
+  role TEXT CHECK (role IN ('user', 'admin', 'superadmin')),
+  email TEXT NOT NULL,
+  password TEXT,
+  google_id TEXT,
+  otp TEXT,
+  otp_expiration TIMESTAMP WITHOUT TIME ZONE,
+  tokens INTEGER NOT NULL DEFAULT 0,
+  must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  onboarding_state JSONB,
+  deleted_at TIMESTAMP WITHOUT TIME ZONE,
+  created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.users
+  ADD COLUMN IF NOT EXISTS name TEXT,
+  ADD COLUMN IF NOT EXISTS role TEXT,
+  ADD COLUMN IF NOT EXISTS email TEXT,
+  ADD COLUMN IF NOT EXISTS password TEXT,
+  ADD COLUMN IF NOT EXISTS google_id TEXT,
+  ADD COLUMN IF NOT EXISTS otp TEXT,
+  ADD COLUMN IF NOT EXISTS otp_expiration TIMESTAMP WITHOUT TIME ZONE,
+  ADD COLUMN IF NOT EXISTS tokens INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS onboarding_state JSONB,
+  ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITHOUT TIME ZONE,
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW();
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'users_role_check'
+      AND conrelid = 'public.users'::regclass
+  ) THEN
+    ALTER TABLE public.users
+      ADD CONSTRAINT users_role_check
+      CHECK (role IN ('user', 'admin', 'superadmin'));
+  END IF;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique
+  ON public.users (lower(email))
+  WHERE deleted_at IS NULL;
+
+COMMIT;
