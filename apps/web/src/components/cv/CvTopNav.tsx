@@ -78,15 +78,15 @@ const CvTopNav: React.FC = () => {
           </Link>
         </div>
 
-        <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
-          <nav className="hidden items-center justify-end gap-4 pr-1 text-xs font-semibold 2xl:flex">
+        <nav className="hidden min-w-0 flex-1 flex-wrap items-center justify-center gap-x-3 gap-y-2 px-2 text-[11px] font-semibold lg:flex xl:gap-x-4 xl:text-xs">
             {navLinks.map((link) => (
-              <Link key={link.href} href={link.href} className={linkClass(link.active)}>
+              <Link key={link.href} href={link.href} className={[linkClass(link.active), 'whitespace-nowrap'].join(' ')}>
                 {link.label}
               </Link>
             ))}
-          </nav>
+        </nav>
 
+        <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
           <button
             type="button"
             onClick={toggleTheme}
@@ -103,7 +103,7 @@ const CvTopNav: React.FC = () => {
             aria-expanded={isMenuOpen}
             aria-controls="mobile-global-nav"
             aria-label={isMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50 hover:text-primary dark:border-white/10 dark:bg-darkBg/40 dark:text-white/80 dark:hover:text-white 2xl:hidden"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50 hover:text-primary dark:border-white/10 dark:bg-darkBg/40 dark:text-white/80 dark:hover:text-white lg:hidden"
           >
             {isMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
           </button>
@@ -113,7 +113,7 @@ const CvTopNav: React.FC = () => {
       {isMenuOpen && (
         <div
           id="mobile-global-nav"
-          className="border-t border-slate-200/80 bg-white/95 px-4 py-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-darkBg/95 2xl:hidden"
+          className="border-t border-slate-200/80 bg-white/95 px-4 py-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-darkBg/95 lg:hidden"
         >
           <nav className="grid gap-1 text-sm font-medium">
             {navLinks.map((link) => (
