@@ -67,6 +67,9 @@ const PROD_BACKEND_URL =
 
 // ─── 2) Allowed origins ────────────────────────────────────────────────────────
 const productionOrigins = [
+  'https://professionalresume.co.ke',
+  'https://www.professionalresume.co.ke',
+  'https://server.professionalresume.co.ke',
   'https://onedollarcvpro.com',
   'https://www.onedollarcvpro.com',
   'http://onedollarcvpro.com',
