@@ -5,7 +5,7 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "start": "node server.js",
+    "start": "node scripts/runMigrations.js && node server.js",
     "playwright:install": "playwright install chromium",
     "payout:worker": "node cronJobs/payoutWorker.js",
     "start:ipv4": "node --dns-result-order=ipv4first server.js",
@@ -15,7 +15,8 @@
     "server:ipv4": "nodemon --dns-result-order=ipv4first server.js",
     "lint": "eslint . --ext .ts,.js --no-cache",
     "format": "prettier --write .",
-    "migrate": "node scripts/runMigrations.js"
+    "migrate": "node scripts/runMigrations.js",
+    "start:server": "node server.js"
   },
   "author": "",
   "license": "ISC",

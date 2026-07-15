@@ -126,10 +126,12 @@ async function waitForPg({
     }
   }
 }
-waitForPg().catch((e) => {
-  console.error('🚨 PG init failed:', e);
-  process.exit(1);
-});
+if (process.env.SKIP_DB_STARTUP_PROBE !== 'true') {
+  waitForPg().catch((e) => {
+    console.error('[pg:init] failed:', e);
+    process.exit(1);
+  });
+}
 
 /* ───────── 3) queryWithRetry helper (use this instead of pool.query) ───────── */
 
