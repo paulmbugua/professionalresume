@@ -18,6 +18,12 @@ import {
   PAYSTACK_KES_AMOUNT,
   PAYSTACK_KES_AMOUNT_MINOR,
   CV_EXPORT_PURCHASE_KIND,
+  LEGACY_CV_EXPORT_ENTITLEMENT_KEY,
+  RESUME_EXPORT_ENTITLEMENT_KEY,
+  COVER_LETTER_EXPORT_ENTITLEMENT_KEY,
+  MONTHLY_ENTITLEMENT_DAYS,
+  entitlementKeyForAction,
+  productLabelForEntitlement,
   expectedKesAmountForProvider,
 } from '../constants/cvPaymentPricing.js';
 export {
@@ -201,6 +207,8 @@ export async function initCvMpesaPayment({ userId, phone, requestBaseUrl, action
     paymentMethod: 'MPESA_STK',
     amount: MPESA_KES_AMOUNT,
     currency: 'KES',
+    entitlementKey: resolvedEntitlementKey,
+    action,
     metadata: { normalizedPhone },
   });
 
