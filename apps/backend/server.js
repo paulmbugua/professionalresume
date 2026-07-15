@@ -22,6 +22,7 @@ import uploadsRoutes from './routes/uploadsRoutes.js';
 import coverLetterRoutes from './routes/coverLetterRoutes.js';
 import cvPaymentRoutes from './routes/cvPaymentRoutes.js';
 import authRoutes from './routes/authRoutes.js';
+import atsCheckerRoutes from './routes/atsCheckerRoutes.js';
 
 // Middleware
 import {
@@ -254,6 +255,7 @@ if (isProduction) {
 // Payments & webhooks
 app.use('/api/payment', paymentRoutes);
 app.use('/api/cv', cvRoutes);
+app.use('/api/ats', atsCheckerRoutes);
 app.use('/api/cv/payments', cvPaymentRoutes);
 app.use('/api/cover-letters', coverLetterRoutes);
 
