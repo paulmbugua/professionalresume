@@ -1601,7 +1601,7 @@ export async function extractTextFromUploadedDocument({ buffer, mimetype, filena
 
   if (mime === 'application/pdf' || ext === '.pdf') {
     parser = 'pdf';
-    const pdfResult = await extractTextFromPdf(buffer);
+    const pdfResult = await runPdfExtractionPipeline(buffer);
     text = cleanText(pdfResult.text || '');
     extractionUsed = pdfResult.extractionUsed;
     if (!text) warnings.push('Could not extract readable text from PDF.');

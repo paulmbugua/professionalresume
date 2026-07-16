@@ -1,4 +1,4 @@
-﻿import type { Metadata } from 'next';
+import type { Metadata } from 'next';
 import Script from 'next/script';
 import '../index.css';
 import Providers from './providers';
@@ -30,9 +30,13 @@ export const metadata: Metadata = {
   }),
   applicationName: brand.name,
   icons: {
-    icon: '/favicon.png',
+    icon: [
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.png', sizes: '512x512', type: 'image/png' },
+      { url: '/favicon-192.png', sizes: '192x192', type: 'image/png' },
+    ],
     shortcut: '/favicon.png',
-    apple: '/favicon.png',
+    apple: '/apple-touch-icon.png',
   },
   manifest: '/site.webmanifest',
 };
