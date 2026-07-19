@@ -19,6 +19,14 @@ import SkillMatrix from '../components/cv/templates/SkillMatrix';
 import AcademicCompact from '../components/cv/templates/AcademicCompact';
 import ProjectForward from '../components/cv/templates/ProjectForward';
 import OperationsLedger from '../components/cv/templates/OperationsLedger';
+import NairobiGrid from '../components/cv/templates/NairobiGrid';
+import DiplomaticClassic from '../components/cv/templates/DiplomaticClassic';
+import ImpactSidebar from '../components/cv/templates/ImpactSidebar';
+import AnalystDashboard from '../components/cv/templates/AnalystDashboard';
+import ServicePro from '../components/cv/templates/ServicePro';
+import LegalFormal from '../components/cv/templates/LegalFormal';
+import ClinicalClean from '../components/cv/templates/ClinicalClean';
+import PortfolioCanvas from '../components/cv/templates/PortfolioCanvas';
 
 export type TemplateMeta = CvTemplate & {
   description?: string;
@@ -63,7 +71,7 @@ export const templateRegistry: TemplateMeta[] = [
     description: 'Statement header with strong section hierarchy.',
     tags: ['modern', 'bold'],
     component: BoldHeader,
-    renderHtml: renderersById['bold-header'], // ✅ fixes blank thumbnail
+    renderHtml: renderersById['bold-header'], // fixes blank thumbnail
   },
   {
     id: 'elegant-serif',
@@ -137,7 +145,8 @@ export const templateRegistry: TemplateMeta[] = [
     category: 'Executive',
     isAtsFriendly: true,
     componentKey: 'ExecutiveBand',
-    description: 'Polished executive layout with a strong top band and clean ATS-readable sections.',
+    description:
+      'Polished executive layout with a strong top band and clean ATS-readable sections.',
     tags: ['executive', 'ats', 'leadership'],
     component: ExecutiveBand,
     renderHtml: renderersById['executive-band'],
@@ -148,7 +157,8 @@ export const templateRegistry: TemplateMeta[] = [
     category: 'ATS',
     isAtsFriendly: true,
     componentKey: 'SkillMatrix',
-    description: 'Skills-first resume with a structured matrix and clean single-column experience flow.',
+    description:
+      'Skills-first resume with a structured matrix and clean single-column experience flow.',
     tags: ['ats', 'skills', 'technical'],
     component: SkillMatrix,
     renderHtml: renderersById['skill-matrix'],
@@ -170,7 +180,8 @@ export const templateRegistry: TemplateMeta[] = [
     category: 'Modern',
     isAtsFriendly: true,
     componentKey: 'ProjectForward',
-    description: 'Project-led resume for builders, analysts, engineers, and portfolio-driven roles.',
+    description:
+      'Project-led resume for builders, analysts, engineers, and portfolio-driven roles.',
     tags: ['projects', 'modern', 'ats'],
     component: ProjectForward,
     renderHtml: renderersById['project-forward'],
@@ -185,13 +196,113 @@ export const templateRegistry: TemplateMeta[] = [
     tags: ['operations', 'professional', 'ats'],
     component: OperationsLedger,
     renderHtml: renderersById['operations-ledger'],
-  },];
+  },
+  {
+    id: 'nairobi-grid',
+    name: 'Nairobi Grid',
+    category: 'Professional',
+    isAtsFriendly: true,
+    componentKey: 'NairobiGrid',
+    description:
+      'Contemporary grid layout for Kenyan professionals who need a polished, recruiter-friendly profile.',
+    tags: ['kenya', 'professional', 'grid'],
+    component: NairobiGrid,
+    renderHtml: renderersById['nairobi-grid'],
+  },
+  {
+    id: 'diplomatic-classic',
+    name: 'Diplomatic Classic',
+    category: 'Classic',
+    isAtsFriendly: true,
+    componentKey: 'DiplomaticClassic',
+    description:
+      'Formal serif layout for government, diplomatic, policy, and institutional applications.',
+    tags: ['classic', 'government', 'formal'],
+    component: DiplomaticClassic,
+    renderHtml: renderersById['diplomatic-classic'],
+  },
+  {
+    id: 'impact-sidebar',
+    name: 'Impact Sidebar',
+    category: 'Executive',
+    isAtsFriendly: true,
+    componentKey: 'ImpactSidebar',
+    description:
+      'High-contrast sidebar design that foregrounds leadership impact and measurable results.',
+    tags: ['executive', 'impact', 'sidebar'],
+    component: ImpactSidebar,
+    renderHtml: renderersById['impact-sidebar'],
+  },
+  {
+    id: 'analyst-dashboard',
+    name: 'Analyst Dashboard',
+    category: 'Modern',
+    isAtsFriendly: true,
+    componentKey: 'AnalystDashboard',
+    description:
+      'Dashboard-inspired resume for analysts, data, finance, technology, and reporting roles.',
+    tags: ['analytics', 'dashboard', 'technical'],
+    component: AnalystDashboard,
+    renderHtml: renderersById['analyst-dashboard'],
+  },
+  {
+    id: 'service-pro',
+    name: 'Service Pro',
+    category: 'Service',
+    isAtsFriendly: true,
+    componentKey: 'ServicePro',
+    description:
+      'Warm service-focused layout for hospitality, customer care, healthcare support, and operations roles.',
+    tags: ['service', 'hospitality', 'customer'],
+    component: ServicePro,
+    renderHtml: renderersById['service-pro'],
+  },
+  {
+    id: 'legal-formal',
+    name: 'Legal Formal',
+    category: 'Classic',
+    isAtsFriendly: true,
+    componentKey: 'LegalFormal',
+    description:
+      'Conservative legal-style resume for law, compliance, governance, audit, and corporate affairs.',
+    tags: ['legal', 'formal', 'compliance'],
+    component: LegalFormal,
+    renderHtml: renderersById['legal-formal'],
+  },
+  {
+    id: 'clinical-clean',
+    name: 'Clinical Clean',
+    category: 'Healthcare',
+    isAtsFriendly: true,
+    componentKey: 'ClinicalClean',
+    description:
+      'Clean clinical layout for healthcare, nursing, public health, and technical care roles.',
+    tags: ['healthcare', 'clinical', 'clean'],
+    component: ClinicalClean,
+    renderHtml: renderersById['clinical-clean'],
+  },
+  {
+    id: 'portfolio-canvas',
+    name: 'Portfolio Canvas',
+    category: 'Creative',
+    isAtsFriendly: true,
+    componentKey: 'PortfolioCanvas',
+    description:
+      'Expressive portfolio-led layout for designers, developers, creators, and project-driven professionals.',
+    tags: ['portfolio', 'creative', 'projects'],
+    component: PortfolioCanvas,
+    renderHtml: renderersById['portfolio-canvas'],
+  },
+];
 
 export const templateRegistryList: CvTemplate[] = templateRegistry.map(
   ({ component, renderHtml, ...rest }) => rest
 );
 
-export const templateRegistryById = templateRegistry.reduce((acc, template) => {
-  acc[template.id] = template;
-  return acc;
-}, {} as Record<string, TemplateMeta>);
+export const templateRegistryById = templateRegistry.reduce(
+  (acc, template) => {
+    acc[template.id] = template;
+    return acc;
+  },
+  {} as Record<string, TemplateMeta>
+);

@@ -26,10 +26,36 @@ import {
   renderModernSidebarBlueHtml,
   renderModernSidebarHtml,
   renderModernTealHtml,
-  templateMarkersById,
+  templateMarkersById as baseTemplateMarkersById,
 } from './templates/renderers.js';
+import {
+  newTemplateMarkersById,
+  renderAnalystDashboardHtml,
+  renderClinicalCleanHtml,
+  renderDiplomaticClassicHtml,
+  renderImpactSidebarHtml,
+  renderLegalFormalHtml,
+  renderNairobiGridHtml,
+  renderPortfolioCanvasHtml,
+  renderServiceProHtml,
+} from './templates/newRenderers.js';
 
-export { normalizeCvDraft, sanitizeRichTextHtml, buildCssVars, paginationCss, resolveTemplateTypography, templateMarkersById, buildCvFontFaceCss, getTemplateFontStack, getTemplateFontDependencies, getTemplateFontAudit };
+export {
+  normalizeCvDraft,
+  sanitizeRichTextHtml,
+  buildCssVars,
+  paginationCss,
+  resolveTemplateTypography,
+  buildCvFontFaceCss,
+  getTemplateFontStack,
+  getTemplateFontDependencies,
+  getTemplateFontAudit,
+};
+
+export const templateMarkersById = {
+  ...baseTemplateMarkersById,
+  ...newTemplateMarkersById,
+};
 
 export const renderersById = {
   'ats-minimal': renderAtsMinimalHtml,
@@ -46,6 +72,14 @@ export const renderersById = {
   'academic-compact': renderAcademicCompactHtml,
   'project-forward': renderProjectForwardHtml,
   'operations-ledger': renderOperationsLedgerHtml,
+  'nairobi-grid': renderNairobiGridHtml,
+  'diplomatic-classic': renderDiplomaticClassicHtml,
+  'impact-sidebar': renderImpactSidebarHtml,
+  'analyst-dashboard': renderAnalystDashboardHtml,
+  'service-pro': renderServiceProHtml,
+  'legal-formal': renderLegalFormalHtml,
+  'clinical-clean': renderClinicalCleanHtml,
+  'portfolio-canvas': renderPortfolioCanvasHtml,
 };
 
 export function renderCvHtmlByTemplate(draft = {}) {

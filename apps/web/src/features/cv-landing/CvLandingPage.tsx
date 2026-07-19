@@ -34,29 +34,41 @@ type Props = {
 
 const FEATURED_TEMPLATE_IDS = ['ats-minimal', 'modern-sidebar', 'modern-sidebar-blue'];
 const CAROUSEL_TEMPLATE_IDS = [
-  'modern-sidebar',
-  'modern-teal',
-  'ats-minimal',
-  'modern-sidebar-blue',
-  'ats-compact',
-  'modern-bold',
-  'modern-sidebar',
-  'ats-minimal',
+  'nairobi-grid',
+  'diplomatic-classic',
+  'impact-sidebar',
+  'analyst-dashboard',
+  'service-pro',
+  'legal-formal',
+  'clinical-clean',
+  'portfolio-canvas',
 ];
 
 const brandLogos = [
   { label: 'Safaricom', src: 'https://upload.wikimedia.org/wikipedia/en/e/eb/Safaricom_logo.svg' },
   { label: 'Equity Bank', src: '/brands/equity-bank.png' },
   { label: 'KCB Bank', src: '/brands/kcb-bank.png' },
-  { label: 'Co-operative Bank', src: 'https://upload.wikimedia.org/wikipedia/commons/d/d7/Coopbanklogo.jpg' },
-  { label: 'Kenya Airways', src: 'https://upload.wikimedia.org/wikipedia/commons/7/75/Kenya_Airways_Logo.svg' },
+  {
+    label: 'Co-operative Bank',
+    src: 'https://upload.wikimedia.org/wikipedia/commons/d/d7/Coopbanklogo.jpg',
+  },
+  {
+    label: 'Kenya Airways',
+    src: 'https://upload.wikimedia.org/wikipedia/commons/7/75/Kenya_Airways_Logo.svg',
+  },
   { label: 'KRA', src: '/brands/kra.webp' },
-  { label: 'UN Kenya', src: 'https://upload.wikimedia.org/wikipedia/commons/5/5f/United_Nations_Office_at_Nairobi_Logo.svg' },
+  {
+    label: 'UN Kenya',
+    src: 'https://upload.wikimedia.org/wikipedia/commons/5/5f/United_Nations_Office_at_Nairobi_Logo.svg',
+  },
   { label: 'Aga Khan University Hospital', src: '/brands/aga-khan.png' },
   { label: 'Safaricom', src: 'https://upload.wikimedia.org/wikipedia/en/e/eb/Safaricom_logo.svg' },
   { label: 'Equity Bank', src: '/brands/equity-bank.png' },
   { label: 'KCB Bank', src: '/brands/kcb-bank.png' },
-  { label: 'Co-operative Bank', src: 'https://upload.wikimedia.org/wikipedia/commons/d/d7/Coopbanklogo.jpg' },
+  {
+    label: 'Co-operative Bank',
+    src: 'https://upload.wikimedia.org/wikipedia/commons/d/d7/Coopbanklogo.jpg',
+  },
 ];
 
 const testimonials = [
@@ -120,12 +132,20 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
   const [selectedTemplate, setSelectedTemplate] = React.useState<AnyTemplate | null>(null);
 
   const createNewResume = React.useCallback(() => {
-    trackBuilderStarted({ source_page: variant === 'home' ? 'landing_home' : 'templates_page', template_id: 'ats-minimal', product_type: 'resume' });
+    trackBuilderStarted({
+      source_page: variant === 'home' ? 'landing_home' : 'templates_page',
+      template_id: 'ats-minimal',
+      product_type: 'resume',
+    });
     router.push('/builder/new?templateId=ats-minimal');
   }, [router, variant]);
 
   const improveResume = React.useCallback(() => {
-    trackBuilderStarted({ source_page: variant === 'home' ? 'landing_home' : 'templates_page', template_id: 'ats-minimal', product_type: 'resume' });
+    trackBuilderStarted({
+      source_page: variant === 'home' ? 'landing_home' : 'templates_page',
+      template_id: 'ats-minimal',
+      product_type: 'resume',
+    });
     router.push('/builder/new?templateId=ats-minimal');
   }, [router, variant]);
 
@@ -145,11 +165,18 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
     router.push('/cover-letters');
   }, [router, token]);
 
-  const openSpotlight = React.useCallback((template: AnyTemplate) => {
-    trackTemplateSelect({ template_id: template.id, template_name: template.name, source_page: variant === 'home' ? 'landing_home' : 'templates_page' });
-    setSelectedTemplate(template);
-    setSpotlightOpen(true);
-  }, [variant]);
+  const openSpotlight = React.useCallback(
+    (template: AnyTemplate) => {
+      trackTemplateSelect({
+        template_id: template.id,
+        template_name: template.name,
+        source_page: variant === 'home' ? 'landing_home' : 'templates_page',
+      });
+      setSelectedTemplate(template);
+      setSpotlightOpen(true);
+    },
+    [variant]
+  );
 
   const floatingTemplates = React.useMemo(
     () => pickTemplatesById(templates ?? [], FEATURED_TEMPLATE_IDS),
@@ -160,10 +187,10 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
   const rightTopHtml = useThumbHtml(floatingTemplates[1]?.id);
   const rightBottomHtml = useThumbHtml(floatingTemplates[2]?.id);
 
-  const carouselTemplates = React.useMemo(
-    () => pickTemplatesById(templates ?? [], CAROUSEL_TEMPLATE_IDS),
-    [templates]
-  );
+  const carouselTemplates = React.useMemo(() => {
+    if (variant === 'templates') return templates ?? [];
+    return pickTemplatesById(templates ?? [], CAROUSEL_TEMPLATE_IDS);
+  }, [templates, variant]);
 
   const copy = getLandingCopy(variant);
 
@@ -322,7 +349,8 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
               Build CVs for opportunities across
             </div>
             <div className="mt-2 text-center text-[11px] text-slate-400 dark:text-slate-500">
-              Kenyan employers, NGOs, government bodies, banks, SACCOs, UN agencies, and global employers.
+              Kenyan employers, NGOs, government bodies, banks, SACCOs, UN agencies, and global
+              employers.
             </div>
           </div>
 
@@ -333,94 +361,94 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
       </header>
 
       <main>
-      <section className="w-full bg-site pb-12 pt-2 dark:bg-slate-950">
-        <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
-          <div className="text-center">
-            <h2 className="text-xl font-extrabold text-slate-900 dark:text-white sm:text-2xl">
-              ProfessionalResume.co.ke, as told by Kenyan job seekers
-            </h2>
+        <section className="w-full bg-site pb-12 pt-2 dark:bg-slate-950">
+          <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
+            <div className="text-center">
+              <h2 className="text-xl font-extrabold text-slate-900 dark:text-white sm:text-2xl">
+                ProfessionalResume.co.ke, as told by Kenyan job seekers
+              </h2>
+            </div>
           </div>
-        </div>
 
-        <div className="mx-auto mt-8 w-full max-w-screen-2xl px-4 lg:px-8">
-          <div className={`${panelClass} p-5 sm:p-6`}>
-            <div className="grid gap-4 lg:grid-cols-3">
-              {testimonials.map((t) => (
-                <div key={t.name} className={`${softPanelClass} p-5`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-1">
-                        {Array.from({ length: 5 }).map((_, i) => (
-                          <span
-                            key={i}
-                            className="inline-flex size-4 items-center justify-center rounded bg-emerald-500 text-[11px] font-bold text-white"
-                          >
-                            *
-                          </span>
-                        ))}
+          <div className="mx-auto mt-8 w-full max-w-screen-2xl px-4 lg:px-8">
+            <div className={`${panelClass} p-5 sm:p-6`}>
+              <div className="grid gap-4 lg:grid-cols-3">
+                {testimonials.map((t) => (
+                  <div key={t.name} className={`${softPanelClass} p-5`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <span
+                              key={i}
+                              className="inline-flex size-4 items-center justify-center rounded bg-emerald-500 text-[11px] font-bold text-white"
+                            >
+                              *
+                            </span>
+                          ))}
+                        </div>
+
+                        <div className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
+                          {t.name}
+                        </div>
                       </div>
 
-                      <div className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
-                        {t.name}
-                      </div>
+                      <div className="text-[11px] text-slate-400 dark:text-slate-500">{t.time}</div>
                     </div>
 
-                    <div className="text-[11px] text-slate-400 dark:text-slate-500">{t.time}</div>
+                    <p className="mt-3 text-sm leading-6 text-slate-700 dark:text-slate-200">
+                      {t.body}
+                    </p>
                   </div>
+                ))}
+              </div>
 
-                  <p className="mt-3 text-sm leading-6 text-slate-700 dark:text-slate-200">
-                    {t.body}
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-8 flex justify-center">
-              <button onClick={createNewResume} className={primaryButtonClass}>
-                Create your resume
-              </button>
+              <div className="mt-8 flex justify-center">
+                <button onClick={createNewResume} className={primaryButtonClass}>
+                  Create your resume
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section className="bg-site pb-12 pt-8 dark:bg-slate-950">
-        <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
-          <div className="text-center">
-            <h2 className="text-xl font-extrabold text-slate-900 dark:text-white sm:text-2xl">
-              Kenya-ready CV templates for every career path
-            </h2>
-          </div>
+        <section className="bg-site pb-12 pt-8 dark:bg-slate-950">
+          <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-8">
+            <div className="text-center">
+              <h2 className="text-xl font-extrabold text-slate-900 dark:text-white sm:text-2xl">
+                Kenya-ready CV templates for every career path
+              </h2>
+            </div>
 
-          <div className={`mt-8 ${panelClass} p-5 sm:p-6`}>
-            {isLoading ? (
-              <p className="text-sm text-slate-500 dark:text-slate-300">Loading templates...</p>
-            ) : carouselTemplates.length > 0 ? (
-              <TemplatesCarousel templates={carouselTemplates} onChoose={openSpotlight} />
-            ) : (
-              <p className="text-sm text-slate-500 dark:text-slate-300">Templates unavailable.</p>
-            )}
+            <div className={`mt-8 ${panelClass} p-5 sm:p-6`}>
+              {isLoading ? (
+                <p className="text-sm text-slate-500 dark:text-slate-300">Loading templates...</p>
+              ) : carouselTemplates.length > 0 ? (
+                <TemplatesCarousel templates={carouselTemplates} onChoose={openSpotlight} />
+              ) : (
+                <p className="text-sm text-slate-500 dark:text-slate-300">Templates unavailable.</p>
+              )}
 
-            <div className="mt-6 flex items-center justify-end">
-              <Link
-                href="/templates"
-                className="text-sm font-semibold text-blue-600 transition hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200"
-              >
-                View all templates {'->'}
-              </Link>
+              <div className="mt-6 flex items-center justify-end">
+                <Link
+                  href="/templates"
+                  className="text-sm font-semibold text-blue-600 transition hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200"
+                >
+                  View all templates {'->'}
+                </Link>
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <CoverLettersPromoSection
-        onCreateCoverLetter={createCoverLetter}
-        onExploreDesigns={exploreCoverLetterDesigns}
-      />
-      <WhyChooseSection />
-      <StepsSection onCta={createNewResume} />
-      <FAQSection onCta={createNewResume} />
-      <SiteFooter />
+        <CoverLettersPromoSection
+          onCreateCoverLetter={createCoverLetter}
+          onExploreDesigns={exploreCoverLetterDesigns}
+        />
+        <WhyChooseSection />
+        <StepsSection onCta={createNewResume} />
+        <FAQSection onCta={createNewResume} />
+        <SiteFooter />
       </main>
 
       <TemplateSpotlightModal
@@ -429,7 +457,11 @@ const CvLandingPage: React.FC<Props> = ({ variant }) => {
         onClose={() => setSpotlightOpen(false)}
         onContinue={(templateId: string) => {
           setSpotlightOpen(false);
-          trackBuilderStarted({ source_page: variant === 'home' ? 'landing_home' : 'templates_page', template_id: templateId, product_type: 'resume' });
+          trackBuilderStarted({
+            source_page: variant === 'home' ? 'landing_home' : 'templates_page',
+            template_id: templateId,
+            product_type: 'resume',
+          });
           router.push(`/builder/new?templateId=${encodeURIComponent(templateId)}`);
         }}
       />

@@ -1,23 +1,11 @@
 const FONT_FAMILIES = {
   inter: {
     family: 'Inter',
-    localSources: [
-      'Inter',
-      'Inter Regular',
-      'DejaVu Sans',
-      'Liberation Sans',
-      'Arial',
-    ],
+    localSources: ['Inter', 'Inter Regular', 'DejaVu Sans', 'Liberation Sans', 'Arial'],
   },
   poppins: {
     family: 'Poppins',
-    localSources: [
-      'Poppins',
-      'Inter',
-      'DejaVu Sans',
-      'Liberation Sans',
-      'Arial',
-    ],
+    localSources: ['Poppins', 'Inter', 'DejaVu Sans', 'Liberation Sans', 'Arial'],
   },
   sourceSans3: {
     family: 'Source Sans 3',
@@ -58,6 +46,14 @@ const TEMPLATE_FONT_STACKS = {
   'academic-compact': "'Elegant Serif', Georgia, 'Times New Roman', serif",
   'project-forward': "'Inter', 'Segoe UI', Arial, sans-serif",
   'operations-ledger': "'Source Sans 3', 'Inter', 'Segoe UI', Arial, sans-serif",
+  'nairobi-grid': "'Inter', 'Segoe UI', Arial, sans-serif",
+  'diplomatic-classic': "'Elegant Serif', Georgia, 'Times New Roman', serif",
+  'impact-sidebar': "'Poppins', 'Inter', 'Segoe UI', Arial, sans-serif",
+  'analyst-dashboard': "'Source Sans 3', 'Inter', 'Segoe UI', Arial, sans-serif",
+  'service-pro': "'Poppins', 'Inter', 'Segoe UI', Arial, sans-serif",
+  'legal-formal': "'Elegant Serif', Georgia, 'Times New Roman', serif",
+  'clinical-clean': "'Source Sans 3', 'Inter', 'Segoe UI', Arial, sans-serif",
+  'portfolio-canvas': "'Poppins', 'Inter', 'Segoe UI', Arial, sans-serif",
 };
 
 const TEMPLATE_FONT_DEPENDENCIES = {
@@ -75,6 +71,14 @@ const TEMPLATE_FONT_DEPENDENCIES = {
   'academic-compact': ['elegantSerif'],
   'project-forward': ['inter'],
   'operations-ledger': ['sourceSans3', 'inter'],
+  'nairobi-grid': ['inter'],
+  'diplomatic-classic': ['elegantSerif'],
+  'impact-sidebar': ['poppins', 'inter'],
+  'analyst-dashboard': ['sourceSans3', 'inter'],
+  'service-pro': ['poppins', 'inter'],
+  'legal-formal': ['elegantSerif'],
+  'clinical-clean': ['sourceSans3', 'inter'],
+  'portfolio-canvas': ['poppins', 'inter'],
 };
 
 const ALL_CV_FONT_DEPENDENCIES = Array.from(
@@ -106,7 +110,9 @@ export function buildCvFontFaceCss({ fontKeys = ALL_CV_FONT_DEPENDENCIES } = {})
       const family = FONT_FAMILIES[key];
       if (!family) return [];
       const src = family.localSources.map((source) => `local('${source}')`).join(',');
-      return [`@font-face{font-family:'${family.family}';font-style:normal;font-weight:400 900;font-display:swap;src:${src};}`];
+      return [
+        `@font-face{font-family:'${family.family}';font-style:normal;font-weight:400 900;font-display:swap;src:${src};}`,
+      ];
     })
     .join('');
 }
