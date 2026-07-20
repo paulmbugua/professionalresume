@@ -8,7 +8,7 @@ export type CvHtmlEnhanceOptions = {
   /**
    * Default true.
    * When false, we do NOT inject the autosize postMessage script.
-   * (Use this for TemplateSpotlightModal to avoid “infinite” growth.)
+   * (Use this for TemplateSpotlightModal to avoid -infinite- growth.)
    */
   injectAutosize?: boolean;
 
@@ -26,8 +26,8 @@ function applySidebarPagedBackgroundCss(templateId: string) {
   // Print engines paginate one long flow; sidebar elements cannot stretch into empty
   // leftover page space. Repeating a page-height background paints each A4 page slice.
   //
-  // ✅ Screen: paint on .page (simple, looks correct in iframe preview)
-  // ✅ Print: paint on html/body (bulletproof; avoids bottom cut when .page height differs)
+  // ? Screen: paint on .page (simple, looks correct in iframe preview)
+  // ? Print: paint on html/body (bulletproof; avoids bottom cut when .page height differs)
   return `
 /* marker */
 .cv-sidebar-paged-background{}
@@ -45,7 +45,7 @@ body[data-template-id="${templateId}"] .page{
   background-position:top left;
 }
 
-/* PRINT: paint on document flow so it never “cuts” at the bottom */
+/* PRINT: paint on document flow so it never -cuts- at the bottom */
 @media print{
   html,body{
     -webkit-print-color-adjust:exact;
@@ -80,8 +80,8 @@ export function withPreviewEnhancements(
   const templateId = String(templateMeta?.templateId ?? draft.templateId ?? '').trim();
   const sidebarPagedBackgroundCss = applySidebarPagedBackgroundCss(templateId);
 
-  // ✅ Modal “one page only” clamp (SCREEN only).
-  // This prevents the modal from looking like it’s creating new pages / infinite scroll.
+  // ? Modal -one page only- clamp (SCREEN only).
+  // This prevents the modal from looking like it-s creating new pages / infinite scroll.
   // NOTE: We only clamp on screen; print remains normal.
   const onePageClampCss = screenOnePageOnly
     ? `
@@ -103,7 +103,8 @@ export function withPreviewEnhancements(
 @page { size: A4; margin: 0; }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
-section,.item,.row,header,article{break-inside:avoid;page-break-inside:avoid}
+section,article,.item{break-inside:auto;page-break-inside:auto}
+.row,header{break-inside:avoid;page-break-inside:avoid}
 h2,h3{break-after:avoid;page-break-after:avoid}
 ul{break-inside:auto;page-break-inside:auto}
 li{break-inside:avoid;page-break-inside:avoid}
@@ -159,7 +160,7 @@ body[data-template-id="creative-timeline"] .timeline:before{
     next = next.replace('</head>', `${paginationCss}</head>`);
   }
 
-  // ✅ Only inject autosize when enabled
+  // ? Only inject autosize when enabled
   if (injectAutosize && !next.includes('__cv_iframe_resize')) {
     next = next.replace('</body>', `${autosizeScript}</body>`);
   }

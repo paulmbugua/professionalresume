@@ -9,6 +9,7 @@ import PrintExportButton from './PrintExportButton';
 import TemplateErrorBoundary from './TemplateErrorBoundary';
 import DesignFormattingPanel from './DesignFormattingPanel';
 import TemplateFillSlider from './TemplateFillSlider';
+import TemplateSwitcher from './TemplateSwitcher';
 import { templateRegistryById, templateRegistryList } from '../../templates/registry';
 import { resolvePreviewDraft } from '../../templates/demoResume';
 import {
@@ -169,7 +170,7 @@ const CvEditorShell: React.FC<Props> = ({
           </h2>
           <p className="text-xs text-gray-500 dark:text-white/60">
             {isGuest
-              ? 'Keep editing — your workspace will continue after sign-in'
+              ? 'Keep editing - your workspace will continue after sign-in'
               : lastSavedAt
                 ? `Saved to your account ${lastSavedAt}`
                 : 'Saved to your account'}
@@ -178,6 +179,8 @@ const CvEditorShell: React.FC<Props> = ({
         </div>
 
         <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
+          <TemplateSwitcher currentTemplateId={liveTemplateId} />
+
           <button
             type="button"
             onClick={() => setIsDesignOpen(true)}

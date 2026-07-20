@@ -134,11 +134,51 @@ const templateTypographyDefaults = {
     name: 28.5,
     lineHeight: 1.41,
   },
-  'executive-band': { body: 11.4, meta: 10.8, h3: 12.5, sectionTitle: 11.6, headline: 12.8, name: 31, lineHeight: 1.45 },
-  'skill-matrix': { body: 11.3, meta: 10.8, h3: 12.4, sectionTitle: 11.6, headline: 12.6, name: 30, lineHeight: 1.42 },
-  'academic-compact': { body: 11.6, meta: 11, h3: 12.5, sectionTitle: 11.7, headline: 12.6, name: 31.5, lineHeight: 1.48 },
-  'project-forward': { body: 11.4, meta: 10.8, h3: 12.5, sectionTitle: 11.7, headline: 12.7, name: 30.5, lineHeight: 1.44 },
-  'operations-ledger': { body: 11.3, meta: 10.8, h3: 12.4, sectionTitle: 11.5, headline: 12.6, name: 30, lineHeight: 1.43 },
+  'executive-band': {
+    body: 11.4,
+    meta: 10.8,
+    h3: 12.5,
+    sectionTitle: 11.6,
+    headline: 12.8,
+    name: 31,
+    lineHeight: 1.45,
+  },
+  'skill-matrix': {
+    body: 11.3,
+    meta: 10.8,
+    h3: 12.4,
+    sectionTitle: 11.6,
+    headline: 12.6,
+    name: 30,
+    lineHeight: 1.42,
+  },
+  'academic-compact': {
+    body: 11.6,
+    meta: 11,
+    h3: 12.5,
+    sectionTitle: 11.7,
+    headline: 12.6,
+    name: 31.5,
+    lineHeight: 1.48,
+  },
+  'project-forward': {
+    body: 11.4,
+    meta: 10.8,
+    h3: 12.5,
+    sectionTitle: 11.7,
+    headline: 12.7,
+    name: 30.5,
+    lineHeight: 1.44,
+  },
+  'operations-ledger': {
+    body: 11.3,
+    meta: 10.8,
+    h3: 12.4,
+    sectionTitle: 11.5,
+    headline: 12.6,
+    name: 30,
+    lineHeight: 1.43,
+  },
 };
 
 const HEX_COLOR_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
@@ -269,6 +309,6 @@ export const buildCssVars = (d) => {
   const t = resolveTemplateTypography(d);
   return `:root{--baseFontSize:${d.typography.baseFontSize}px;--h1Size:${d.typography.h1Size}px;--h2Size:${d.typography.h2Size}px;--h3Size:${d.typography.h3Size || 12}px;--bodySize:${d.typography.bodySize || d.typography.baseFontSize}px;--fontFamily:${d.typography.fontFamily};--lineHeight:${t.lineHeight};--denseLineHeight:${t.denseLineHeight};--resolvedBodySize:${t.body}px;--resolvedMetaSize:${t.meta}px;--resolvedH3Size:${t.h3}px;--resolvedSectionTitleSize:${t.sectionTitle}px;--resolvedNameSize:${t.name}px;--resolvedHeadlineSize:${t.headline}px;--resolvedSidebarBodySize:${t.sidebarBody}px;--resolvedSidebarMetaSize:${t.sidebarMeta}px;--resolvedSectionGap:${t.sectionGap}px;--resolvedItemGap:${t.itemGap}px;--textColor:${d.formatting.textColor};--mutedTextColor:${d.formatting.mutedTextColor};--linkColor:${d.formatting.linkColor};--primary:${d.templateTheme.primary || '#0f172a'};--secondary:${d.templateTheme.secondary || '#1e293b'};--accent:${d.templateTheme.accent || d.templateTheme.primary || '#0f766e'};--sidebarBg:${d.templateTheme.sidebarBg || d.templateTheme.primary || '#0f172a'};--sidebarText:${d.templateTheme.sidebarText || '#f8fafc'};--headerBg:${d.templateTheme.headerBg || d.templateTheme.primary || '#0f172a'};--headerText:${d.templateTheme.headerText || '#ffffff'};--sectionBg:${d.templateTheme.sectionBg || '#f8fafc'};--borderColor:${d.templateTheme.borderColor || '#e2e8f0'};--page-width:210mm;--page-height:297mm}`;
 };
-export const paginationCss = `@page{size:A4;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0}body{font-size:var(--resolvedBodySize);line-height:var(--lineHeight);color:var(--textColor)}section,.item,.row,header,article{break-inside:avoid;page-break-inside:avoid}h2,h3{break-after:avoid;page-break-after:avoid}li{break-inside:avoid;page-break-inside:avoid}@media print{html,body{background-color:#fff !important;overflow:visible !important}.page{margin:0 !important;box-shadow:none !important;width:var(--page-width) !important;min-height:var(--page-height) !important;overflow:visible !important;box-decoration-break:clone;-webkit-box-decoration-break:clone}.page>.inner,.page>.content,.page>aside,.page>main,.page>section{box-decoration-break:clone;-webkit-box-decoration-break:clone}}`;
+export const paginationCss = `@page{size:A4;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0}body{font-size:var(--resolvedBodySize);line-height:var(--lineHeight);color:var(--textColor)}section,article,.item{break-inside:auto;page-break-inside:auto}.row,header{break-inside:avoid;page-break-inside:avoid}h2,h3{break-after:avoid;page-break-after:avoid}ul{break-inside:auto;page-break-inside:auto}li{break-inside:avoid;page-break-inside:avoid}@media print{html,body{background-color:#fff !important;overflow:visible !important}.page{margin:0 !important;box-shadow:none !important;width:var(--page-width) !important;min-height:var(--page-height) !important;overflow:visible !important;box-decoration-break:clone;-webkit-box-decoration-break:clone}.page>.inner,.page>.content,.page>aside,.page>main,.page>section{box-decoration-break:clone;-webkit-box-decoration-break:clone}}`;
 export const renderRichText = (draft, key, fallback = '') =>
   draft.richText?.[key]?.trim() ? sanitizeRichTextHtml(draft.richText[key]) : esc(fallback);

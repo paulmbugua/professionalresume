@@ -10,7 +10,7 @@ import {
 } from './helpers.js';
 import { buildCvFontFaceCss, getTemplateFontDependencies, getTemplateFontStack } from './fonts.js';
 
-const contactLine = (b) => esc([b.email, b.phone, b.location].filter(Boolean).join(' • '));
+const contactLine = (b) => esc([b.email, b.phone, b.location].filter(Boolean).join(' - '));
 
 const PAGE_SHELL = `
 .page{width:var(--page-width);min-height:var(--page-height);margin:16px auto;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.12)}
@@ -33,13 +33,13 @@ function renderSectionMap(d) {
         ? `<section><h2>Summary</h2><p>${renderRichText(d, 'summary', d.summary || '')}</p></section>`
         : '',
     skills: d.skills?.length
-      ? `<section><h2>Skills</h2><p>${esc(d.skills.join(' • '))}</p></section>`
+      ? `<section><h2>Skills</h2><p>${esc(d.skills.join(' - '))}</p></section>`
       : '',
     experience: d.experience?.length
       ? `<section><h2>Experience</h2>${d.experience
           .map(
             (e, idx) =>
-              `<article class="item" data-k="${esc(`${safeKey(e.company)}|${idx}`)}"><h3>${esc(e.role || '')} ${e.company ? `· ${esc(e.company)}` : ''}</h3><p class="muted">${esc([e.start, e.end].filter(Boolean).join(' - '))}${e.location ? ` • ${esc(e.location)}` : ''}</p>${
+              `<article class="item" data-k="${esc(`${safeKey(e.company)}|${idx}`)}"><h3>${esc(e.role || '')} ${e.company ? `- ${esc(e.company)}` : ''}</h3><p class="muted">${esc([e.start, e.end].filter(Boolean).join(' - '))}${e.location ? ` - ${esc(e.location)}` : ''}</p>${
                 (e.bullets || []).length
                   ? `<ul>${e.bullets
                       .filter(Boolean)
@@ -51,7 +51,7 @@ function renderSectionMap(d) {
           .join('')}</section>`
       : '',
     education: d.education?.length
-      ? `<section><h2>Education</h2>${d.education.map((e, idx) => `<article class="item" data-k="${esc(`${safeKey(e.school)}|${idx}`)}"><h3>${esc(e.program || '')} ${e.school ? `· ${esc(e.school)}` : ''}</h3><p class="muted">${esc([e.start, e.end].filter(Boolean).join(' - '))}</p>${e.details ? `<p>${esc(e.details)}</p>` : ''}</article>`).join('')}</section>`
+      ? `<section><h2>Education</h2>${d.education.map((e, idx) => `<article class="item" data-k="${esc(`${safeKey(e.school)}|${idx}`)}"><h3>${esc(e.program || '')} ${e.school ? `- ${esc(e.school)}` : ''}</h3><p class="muted">${esc([e.start, e.end].filter(Boolean).join(' - '))}</p>${e.details ? `<p>${esc(e.details)}</p>` : ''}</article>`).join('')}</section>`
       : '',
     projects: d.projects?.length
       ? `<section><h2>Projects</h2>${d.projects
@@ -69,7 +69,7 @@ function renderSectionMap(d) {
           .join('')}</section>`
       : '',
     certifications: d.certifications?.length
-      ? `<section><h2>Certifications</h2>${d.certifications.map((c, idx) => `<p data-k="${esc(`${safeKey(c.name)}|${idx}`)}"><strong>${esc(c.name || '')}</strong>${c.issuer ? ` • ${esc(c.issuer)}` : ''}${c.year ? ` (${esc(c.year)})` : ''}</p>`).join('')}</section>`
+      ? `<section><h2>Certifications</h2>${d.certifications.map((c, idx) => `<p data-k="${esc(`${safeKey(c.name)}|${idx}`)}"><strong>${esc(c.name || '')}</strong>${c.issuer ? ` - ${esc(c.issuer)}` : ''}${c.year ? ` (${esc(c.year)})` : ''}</p>`).join('')}</section>`
       : '',
     extras:
       d.extras?.languages?.length || d.extras?.interests?.length
@@ -217,7 +217,7 @@ export function renderExecutiveBandHtml(draft = {}) {
   return doc(
     d,
     `<main class="page executiveBandLayout"><div class="topline"></div><header><div><h1>${esc(d.basics.name || 'Your Name')}</h1><p class="headline">${esc(d.basics.headline || '')}</p></div><p class="contact">${contactLine(d.basics)}</p></header>${sectionVisible(d, 'summary') ? `<section class="summaryBand">${m.summary || ''}</section>` : ''}<div class="grid"><section class="maincol">${main}</section><aside class="sidecol">${side}</aside></div></main>`,
-    `${TYPOGRAPHY_BASE}body{background:#eef2f7;font-family:var(--fontFamily);color:var(--textColor)}.executiveBandLayout{padding:0}.topline{height:6mm;background:linear-gradient(90deg,var(--primary),var(--accent))}header{padding:11mm 13mm 7mm;display:grid;grid-template-columns:1fr 62mm;gap:10mm;border-bottom:1px solid #dbe3ee}header h1{font-size:var(--resolvedNameSize)}.headline{margin:4px 0 0;color:var(--mutedTextColor);font-size:var(--resolvedHeadlineSize)}.contact{text-align:right;margin:0;color:var(--mutedTextColor);font-size:var(--resolvedMetaSize)}.summaryBand{padding:7mm 13mm;background:#f8fafc;border-bottom:1px solid #e2e8f0}.summaryBand section{margin:0}.grid{display:grid;grid-template-columns:1fr 62mm;gap:10mm;padding:8mm 13mm 12mm}.maincol h2{color:var(--primary)}.sidecol{border-left:1px solid #dbe3ee;padding-left:8mm}.sidecol h2{color:var(--accent)}h2{margin:0 0 5px;letter-spacing:.13em}ul{margin:4px 0 0;padding-left:17px}.item{break-inside:avoid}`
+    `${TYPOGRAPHY_BASE}body{background:#eef2f7;font-family:var(--fontFamily);color:var(--textColor)}.executiveBandLayout{padding:0}.topline{height:6mm;background:linear-gradient(90deg,var(--primary),var(--accent))}header{padding:11mm 13mm 7mm;display:grid;grid-template-columns:1fr 62mm;gap:10mm;border-bottom:1px solid #dbe3ee}header h1{font-size:var(--resolvedNameSize)}.headline{margin:4px 0 0;color:var(--mutedTextColor);font-size:var(--resolvedHeadlineSize)}.contact{text-align:right;margin:0;color:var(--mutedTextColor);font-size:var(--resolvedMetaSize)}.summaryBand{padding:7mm 13mm;background:#f8fafc;border-bottom:1px solid #e2e8f0}.summaryBand section{margin:0}.grid{display:grid;grid-template-columns:1fr 62mm;gap:10mm;padding:8mm 13mm 12mm}.maincol h2{color:var(--primary)}.sidecol{border-left:1px solid #dbe3ee;padding-left:8mm}.sidecol h2{color:var(--accent)}h2{margin:0 0 5px;letter-spacing:.13em}ul{margin:4px 0 0;padding-left:17px}.item{break-inside:auto;page-break-inside:auto}`
   );
 }
 
@@ -233,14 +233,22 @@ export function renderSkillMatrixHtml(draft = {}) {
   return doc(
     d,
     `<main class="page skillMatrixLayout"><header><h1>${esc(d.basics.name || 'Your Name')}</h1><p>${esc(d.basics.headline || '')}</p><p class="muted">${contactLine(d.basics)}</p></header>${skills}<div class="content">${sections}</div></main>`,
-    `${TYPOGRAPHY_BASE}body{background:#f3f4f6;font-family:var(--fontFamily);color:var(--textColor)}.skillMatrixLayout{padding:11mm 12mm}.skillMatrixLayout header{display:grid;grid-template-columns:1fr;gap:2px;border-bottom:2px solid var(--primary);padding-bottom:6mm}.skillMatrixLayout header p{margin:2px 0 0;font-size:var(--resolvedHeadlineSize)}.matrixSkills{margin:7mm 0;padding:6mm;background:#f8fafc;border:1px solid #dbe3ee}.matrixSkills h2{margin:0 0 5px;color:var(--primary)}.matrixSkills div{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 6px}.matrixSkills span{font-size:var(--resolvedBodySize);line-height:1.35;border-bottom:1px solid #e2e8f0;padding-bottom:2px}.content h2{color:var(--accent);border-bottom:1px solid #dbe3ee;padding-bottom:4px;margin:0 0 5px}ul{margin:4px 0 0;padding-left:17px}.item{break-inside:avoid}`
+    `${TYPOGRAPHY_BASE}body{background:#f3f4f6;font-family:var(--fontFamily);color:var(--textColor)}.skillMatrixLayout{padding:11mm 12mm}.skillMatrixLayout header{display:grid;grid-template-columns:1fr;gap:2px;border-bottom:2px solid var(--primary);padding-bottom:6mm}.skillMatrixLayout header p{margin:2px 0 0;font-size:var(--resolvedHeadlineSize)}.matrixSkills{margin:7mm 0;padding:6mm;background:#f8fafc;border:1px solid #dbe3ee}.matrixSkills h2{margin:0 0 5px;color:var(--primary)}.matrixSkills div{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 6px}.matrixSkills span{font-size:var(--resolvedBodySize);line-height:1.35;border-bottom:1px solid #e2e8f0;padding-bottom:2px}.content h2{color:var(--accent);border-bottom:1px solid #dbe3ee;padding-bottom:4px;margin:0 0 5px}ul{margin:4px 0 0;padding-left:17px}.item{break-inside:auto;page-break-inside:auto}`
   );
 }
 
 export function renderAcademicCompactHtml(draft = {}) {
   const d = normalizeCvDraft(draft);
   const m = renderSectionMap(d);
-  const order = ['summary', 'education', 'certifications', 'projects', 'experience', 'skills', 'extras'];
+  const order = [
+    'summary',
+    'education',
+    'certifications',
+    'projects',
+    'experience',
+    'skills',
+    'extras',
+  ];
   const sections = order.map((k) => (sectionVisible(d, k) ? m[k] || '' : '')).join('');
   return doc(
     d,
@@ -252,12 +260,20 @@ export function renderAcademicCompactHtml(draft = {}) {
 export function renderProjectForwardHtml(draft = {}) {
   const d = normalizeCvDraft(draft);
   const m = renderSectionMap(d);
-  const order = ['summary', 'projects', 'skills', 'experience', 'education', 'certifications', 'extras'];
+  const order = [
+    'summary',
+    'projects',
+    'skills',
+    'experience',
+    'education',
+    'certifications',
+    'extras',
+  ];
   const sections = order.map((k) => (sectionVisible(d, k) ? m[k] || '' : '')).join('');
   return doc(
     d,
     `<main class="page projectForwardLayout"><header><div><p class="label">Project-forward resume</p><h1>${esc(d.basics.name || 'Your Name')}</h1><p class="headline">${esc(d.basics.headline || '')}</p></div><p class="contact">${contactLine(d.basics)}</p></header><section class="content">${sections}</section></main>`,
-    `${TYPOGRAPHY_BASE}body{background:#eef2ff;font-family:var(--fontFamily);color:var(--textColor)}.projectForwardLayout{padding:0}.projectForwardLayout header{display:grid;grid-template-columns:1fr 70mm;gap:8mm;padding:11mm 12mm;background:#f8fafc;border-bottom:4px solid var(--accent)}.label{margin:0 0 3px;color:var(--accent);font-size:var(--resolvedMetaSize);font-weight:700;text-transform:uppercase;letter-spacing:.16em}.headline{margin:3px 0 0;color:var(--mutedTextColor);font-size:var(--resolvedHeadlineSize)}.contact{text-align:right;color:var(--mutedTextColor);font-size:var(--resolvedMetaSize);margin:0}.content{padding:9mm 12mm 12mm}.content h2{color:var(--primary);border-left:4px solid var(--accent);padding-left:6px;margin:0 0 5px;letter-spacing:.12em}.content section:nth-of-type(2){background:#f8fafc;border:1px solid #dbe3ee;padding:5mm;margin-bottom:6mm}ul{margin:4px 0 0;padding-left:17px}.item{break-inside:avoid}`
+    `${TYPOGRAPHY_BASE}body{background:#eef2ff;font-family:var(--fontFamily);color:var(--textColor)}.projectForwardLayout{padding:0}.projectForwardLayout header{display:grid;grid-template-columns:1fr 70mm;gap:8mm;padding:11mm 12mm;background:#f8fafc;border-bottom:4px solid var(--accent)}.label{margin:0 0 3px;color:var(--accent);font-size:var(--resolvedMetaSize);font-weight:700;text-transform:uppercase;letter-spacing:.16em}.headline{margin:3px 0 0;color:var(--mutedTextColor);font-size:var(--resolvedHeadlineSize)}.contact{text-align:right;color:var(--mutedTextColor);font-size:var(--resolvedMetaSize);margin:0}.content{padding:9mm 12mm 12mm}.content h2{color:var(--primary);border-left:4px solid var(--accent);padding-left:6px;margin:0 0 5px;letter-spacing:.12em}.content section:nth-of-type(2){background:#f8fafc;border:1px solid #dbe3ee;padding:5mm;margin-bottom:6mm}ul{margin:4px 0 0;padding-left:17px}.item{break-inside:auto;page-break-inside:auto}`
   );
 }
 
@@ -268,7 +284,7 @@ export function renderOperationsLedgerHtml(draft = {}) {
   return doc(
     d,
     `<main class="page operationsLedgerLayout"><header><h1>${esc(d.basics.name || 'Your Name')}</h1><p>${esc(d.basics.headline || '')}</p><p class="muted">${contactLine(d.basics)}</p></header><div class="ledger">${sections}</div></main>`,
-    `${TYPOGRAPHY_BASE}body{background:#f4f7f6;font-family:var(--fontFamily);color:#10201c}.operationsLedgerLayout{padding:11mm 12mm}.operationsLedgerLayout header{border:1px solid #b8c7c1;padding:7mm;background:#fbfdfc}.operationsLedgerLayout header p{margin:3px 0 0;font-size:var(--resolvedHeadlineSize)}.ledger{margin-top:7mm}.ledger section{display:grid;grid-template-columns:35mm 1fr;gap:7mm;border-top:1px solid #cbd8d3;padding-top:5mm;margin-bottom:5mm}.ledger h2{margin:0;color:#315f52;letter-spacing:.14em}.ledger section>*:not(h2){grid-column:2}.ledger section>h2+article,.ledger section>h2+p,.ledger section>h2+ul{margin-top:0}.item{break-inside:avoid}ul{margin:4px 0 0;padding-left:17px}.muted{color:#526b63}`
+    `${TYPOGRAPHY_BASE}body{background:#f4f7f6;font-family:var(--fontFamily);color:#10201c}.operationsLedgerLayout{padding:11mm 12mm}.operationsLedgerLayout header{border:1px solid #b8c7c1;padding:7mm;background:#fbfdfc}.operationsLedgerLayout header p{margin:3px 0 0;font-size:var(--resolvedHeadlineSize)}.ledger{margin-top:7mm}.ledger section{display:grid;grid-template-columns:35mm 1fr;gap:7mm;border-top:1px solid #cbd8d3;padding-top:5mm;margin-bottom:5mm}.ledger h2{margin:0;color:#315f52;letter-spacing:.14em}.ledger section>*:not(h2){grid-column:2}.ledger section>h2+article,.ledger section>h2+p,.ledger section>h2+ul{margin-top:0}.item{break-inside:auto;page-break-inside:auto}ul{margin:4px 0 0;padding-left:17px}.muted{color:#526b63}`
   );
 }
 export const templateMarkersById = {
