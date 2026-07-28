@@ -1,5 +1,6 @@
 import React from 'react';
 import { useFormContext } from 'react-hook-form';
+import { LayoutTemplate } from 'lucide-react';
 import type { CvDraft } from '@cvpro/shared/types';
 import { demoResume } from '../../templates/demoResume';
 import { templateRegistry, templateRegistryById } from '../../templates/registry';
@@ -53,10 +54,10 @@ const TemplateSwitcher: React.FC<Props> = ({ currentTemplateId }) => {
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="col-span-2 inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-primary hover:text-primary sm:col-span-1 dark:border-white/10 dark:bg-white/5 dark:text-white"
+        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-primary hover:text-primary dark:border-white/10 dark:bg-white/5 dark:text-white"
       >
-        <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
-        Change template
+        <LayoutTemplate className="h-4 w-4" aria-hidden />
+        Template
       </button>
 
       {isOpen && (

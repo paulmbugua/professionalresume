@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
+import { Save, SlidersHorizontal, Sparkles } from 'lucide-react';
 import type { CvDraft, CvSectionKey } from '@cvpro/shared/types';
 import CvForm from './CvForm';
 import CvPreview from './CvPreview';
@@ -178,41 +179,46 @@ const CvEditorShell: React.FC<Props> = ({
           <TemplateFillSlider />
         </div>
 
-        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
-          <TemplateSwitcher currentTemplateId={liveTemplateId} />
+        <div className="w-full rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-sm sm:w-auto sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none dark:border-white/10 dark:bg-white/5 sm:dark:bg-transparent">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
+            <TemplateSwitcher currentTemplateId={liveTemplateId} />
 
-          <button
-            type="button"
-            onClick={() => setIsDesignOpen(true)}
-            className="col-span-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:border-primary hover:text-primary sm:col-span-1 dark:border-white/10 dark:bg-white/5 dark:text-white"
-          >
-            Design & Style
-          </button>
+            <button
+              type="button"
+              onClick={() => setIsDesignOpen(true)}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-800 shadow-sm transition hover:border-primary hover:text-primary dark:border-white/10 dark:bg-white/5 dark:text-white"
+            >
+              <SlidersHorizontal className="h-4 w-4" aria-hidden />
+              Style
+            </button>
 
-          <button
-            type="button"
-            onClick={handleAiJump}
-            className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white dark:bg-white/90 dark:text-gray-900"
-          >
-            AI Improve
-          </button>
+            <button
+              type="button"
+              onClick={handleAiJump}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-900 bg-slate-900 px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 dark:border-white/80 dark:bg-white/90 dark:text-gray-900"
+            >
+              <Sparkles className="h-4 w-4" aria-hidden />
+              AI Improve
+            </button>
 
-          <PrintExportButton
-            onExport={onExport}
-            isExporting={isExporting}
-            downloadUrl={exportUrl}
-            onCopyLink={onCopyExportLink}
-            onPrint={onPrint}
-          />
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={isSaving}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-primary/40 bg-primary px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90 disabled:opacity-60"
+            >
+              <Save className="h-4 w-4" aria-hidden />
+              {isSaving ? 'Saving...' : 'Save'}
+            </button>
 
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={isSaving}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-          >
-            {isSaving ? 'Saving...' : 'Save'}
-          </button>
+            <PrintExportButton
+              onExport={onExport}
+              isExporting={isExporting}
+              downloadUrl={exportUrl}
+              onCopyLink={onCopyExportLink}
+              onPrint={onPrint}
+            />
+          </div>
         </div>
       </div>
 
