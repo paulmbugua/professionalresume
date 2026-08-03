@@ -54,8 +54,8 @@ export function trackTikTokInitiateCheckout(): void {
     content_id: 'resume_export',
     content_type: 'product',
     content_name: 'ProfessionalResume.co.ke Resume Purchase',
-    currency: 'USD',
-    value: 1,
+    currency: 'KES',
+    value: 100,
   });
 }
 
@@ -63,8 +63,8 @@ export function trackTikTokPurchase(reference: string) {
   const purchaseReference = String(reference || '').trim();
   if (!purchaseReference || markPurchaseTracked(purchaseReference)) return;
   trackTikTokEvent('Purchase', {
-    value: 1,
-    currency: 'USD',
+    value: 100,
+    currency: 'KES',
     contents: [
       {
         content_id: 'resume_export',
