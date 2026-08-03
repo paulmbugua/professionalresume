@@ -173,7 +173,7 @@ const CoverLetterBuilderPageInner: React.FC<{
           if (String(err?.message || '').includes('not allowed')) {
             lastValidationFailedSigRef.current = payloadSig;
           }
-          throw err;
+          console.warn('[cover-letter-builder] autosave failed', err);
         }
       }, 900),
     [id, updateDraft]
@@ -199,11 +199,16 @@ const CoverLetterBuilderPageInner: React.FC<{
     const values = getValues();
     const payload = mapEditorDraftToUpdatePayload(values);
     setSaveState('saving');
-    const updated = await updateDraft.mutateAsync({ id, payload });
-    lastSavedSigRef.current = JSON.stringify(payload);
-    lastValidationFailedSigRef.current = '';
-    setLastSavedAt(updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined);
-    setSaveState('saved');
+    try {
+      const updated = await updateDraft.mutateAsync({ id, payload });
+      lastSavedSigRef.current = JSON.stringify(payload);
+      lastValidationFailedSigRef.current = '';
+      setLastSavedAt(updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined);
+      setSaveState('saved');
+    } catch (err) {
+      console.warn('[cover-letter-builder] manual save failed', err);
+      setSaveState('error');
+    }
   };
 
   const handleImport = async (file: File, sourceType: 'cover_letter' | 'resume') => {
@@ -291,7 +296,9 @@ const CoverLetterBuilderPageInner: React.FC<{
       if (actionFromQuery === 'cover_letter_print') await doPrint();
       clearPaymentQuery();
     };
-    void run();
+    void run().catch((err) => {
+      console.warn('[cover-letter-payment-return] pending action failed', err);
+    });
   }, [paymentSuccessFromQuery, actionFromQuery]);
 
   const content = isLoading ? (
@@ -344,10 +351,7 @@ const CoverLetterBuilderPageInner: React.FC<{
         isLoadingMpesaInit={cvPayment.initMpesaMutation.isPending}
         mpesaFlowState={cvPayment.mpesaFlowState}
         message={cvPayment.mpesaStatusMessage}
-        error={
-          cvPayment.initMpesaMutation.error?.message ||
-          null
-        }
+        error={cvPayment.initMpesaMutation.error?.message || null}
       />
       <input
         ref={coverLetterImportRef}

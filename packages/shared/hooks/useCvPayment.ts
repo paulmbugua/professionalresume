@@ -42,7 +42,11 @@ function normalizeKenyanPhoneInput(rawPhone: string): string | null {
   return null;
 }
 
-export function useCvExportEntitlement({ backendUrl, token, entitlementKey = RESUME_EXPORT_ENTITLEMENT_KEY }: Args) {
+export function useCvExportEntitlement({
+  backendUrl,
+  token,
+  entitlementKey = RESUME_EXPORT_ENTITLEMENT_KEY,
+}: Args) {
   return useQuery({
     queryKey: ['cv-export-entitlement', backendUrl, token, entitlementKey],
     queryFn: () => {
@@ -55,7 +59,16 @@ export function useCvExportEntitlement({ backendUrl, token, entitlementKey = RES
 
 export function useCvPayment({ backendUrl, token, onPaymentConfirmed }: Args) {
   const qc = useQueryClient();
-  const entitlement = useCvExportEntitlement({ backendUrl, token, entitlementKey: RESUME_EXPORT_ENTITLEMENT_KEY });
+  const entitlement = useCvExportEntitlement({
+    backendUrl,
+    token,
+    entitlementKey: RESUME_EXPORT_ENTITLEMENT_KEY,
+  });
+  const coverLetterEntitlement = useCvExportEntitlement({
+    backendUrl,
+    token,
+    entitlementKey: COVER_LETTER_EXPORT_ENTITLEMENT_KEY,
+  });
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<Action>('resume_export');
   const pendingResolver = useRef<((ok: boolean) => void) | null>(null);
@@ -86,7 +99,11 @@ export function useCvPayment({ backendUrl, token, onPaymentConfirmed }: Args) {
     }
   };
 
-  const persistPendingMpesa = (payload: { transactionId: string; checkoutRequestId: string; action: Action }) => {
+  const persistPendingMpesa = (payload: {
+    transactionId: string;
+    checkoutRequestId: string;
+    action: Action;
+  }) => {
     if (typeof window === 'undefined') return;
     window.sessionStorage.setItem(
       PENDING_MPESA_KEY,
@@ -283,11 +300,30 @@ export function useCvPayment({ backendUrl, token, onPaymentConfirmed }: Args) {
     },
   });
 
+  const entitlementForAction = (action: Action) =>
+    action.startsWith('cover_letter') ? coverLetterEntitlement : entitlement;
+
+  const hasEligibleEntitlement = async (action: Action): Promise<boolean> => {
+    const selectedEntitlement = entitlementForAction(action);
+    if (selectedEntitlement.data?.eligible) return true;
+
+    if (
+      selectedEntitlement.isLoading ||
+      selectedEntitlement.isFetching ||
+      !selectedEntitlement.data
+    ) {
+      const refreshed = await selectedEntitlement.refetch();
+      return Boolean(refreshed.data?.eligible);
+    }
+
+    return false;
+  };
+
   const ensurePaid = async (
     action: Action,
     onPaid: () => Promise<void> | void
   ): Promise<boolean> => {
-    if (entitlement.data?.eligible) {
+    if (await hasEligibleEntitlement(action)) {
       await onPaid();
       return true;
     }
@@ -338,6 +374,7 @@ export function useCvPayment({ backendUrl, token, onPaymentConfirmed }: Args) {
   return useMemo(
     () => ({
       entitlement,
+      coverLetterEntitlement,
       modalOpen,
       pendingAction,
       setModalOpen,
@@ -360,6 +397,7 @@ export function useCvPayment({ backendUrl, token, onPaymentConfirmed }: Args) {
     }),
     [
       entitlement,
+      coverLetterEntitlement,
       modalOpen,
       pendingAction,
       initMpesaMutation,
