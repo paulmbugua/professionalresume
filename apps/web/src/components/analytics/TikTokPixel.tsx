@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import Script from 'next/script';
 
-const TIKTOK_PIXEL_ID = 'D9O4F6BC77U4HBCLMV8G';
+const TIKTOK_PIXEL_ID = 'D9O55S3C77U3CJ3IHFH0';
 
 const tiktokPixelScript = `
 !function (w, d, t) {
