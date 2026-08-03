@@ -134,7 +134,7 @@ export function renderNairobiGridHtml(draft = {}) {
   const rest = ['experience', 'projects', 'education', 'certifications', 'extras'];
   return doc(
     d,
-    `<main class="page nairobiGridLayout"><header><div><p class="kicker">Nairobi professional profile</p><h1>${esc(
+    `<main class="page nairobiGridLayout"><header><div><div class="skyline-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></div><h1>${esc(
       d.basics.name || 'Your Name'
     )}</h1><p>${esc(d.basics.headline || '')}</p></div><div class="contact">${contactLine(
       d.basics
@@ -143,7 +143,7 @@ export function renderNairobiGridHtml(draft = {}) {
       .join('')}</div><div class="body">${rest
       .map((k) => (sectionVisible(d, k) ? m[k] || '' : ''))
       .join('')}</div></main>`,
-    `${TYPOGRAPHY_BASE}body{background:#eef6ff;font-family:var(--fontFamily);color:#0f172a}.nairobiGridLayout{padding:12mm}.nairobiGridLayout header{display:grid;grid-template-columns:1fr 60mm;gap:8mm;padding-bottom:7mm;border-bottom:3px solid #0ea5e9}.kicker{margin:0 0 3px;color:#0369a1;font-size:var(--resolvedMetaSize);font-weight:800;text-transform:uppercase;letter-spacing:.16em}header p{margin:4px 0 0}.contact{align-self:end;text-align:right;color:#334155;font-size:var(--resolvedMetaSize);line-height:1.45}.intro{display:grid;grid-template-columns:1.15fr .85fr;gap:7mm;margin-top:7mm}.intro section{background:#f8fafc;border:1px solid #dbeafe;padding:5mm}.body{margin-top:7mm;columns:2 72mm;column-gap:10mm}.body section{break-inside:auto;page-break-inside:auto;display:block}h2{margin:0 0 5px;color:#0369a1;border-bottom:1px solid #bfdbfe;padding-bottom:4px}ul{margin:4px 0 0;padding-left:17px}`
+    `${TYPOGRAPHY_BASE}body{background:#eef6ff;font-family:var(--fontFamily);color:#0f172a}.nairobiGridLayout{padding:12mm}.nairobiGridLayout header{display:grid;grid-template-columns:1fr 60mm;gap:8mm;padding-bottom:7mm;border-bottom:3px solid #0ea5e9}.skyline-mark{display:flex;align-items:flex-end;gap:1.4mm;height:5mm;margin:0 0 4mm}.skyline-mark span{display:block;width:4mm;background:#0ea5e9;border-radius:1mm 1mm 0 0}.skyline-mark span:nth-child(1){height:2.4mm}.skyline-mark span:nth-child(2){height:4.8mm;background:#0369a1}.skyline-mark span:nth-child(3){height:3.4mm}.skyline-mark span:nth-child(4){height:5mm;background:#38bdf8}header p{margin:4px 0 0}.contact{align-self:end;text-align:right;color:#334155;font-size:var(--resolvedMetaSize);line-height:1.45}.intro{display:grid;grid-template-columns:1.15fr .85fr;gap:7mm;margin-top:7mm}.intro section{background:#f8fafc;border:1px solid #dbeafe;padding:5mm}.body{margin-top:7mm;columns:2 72mm;column-gap:10mm}.body section{break-inside:auto;page-break-inside:auto;display:block}h2{margin:0 0 5px;color:#0369a1;border-bottom:1px solid #bfdbfe;padding-bottom:4px}ul{margin:4px 0 0;padding-left:17px}`
   );
 }
 
@@ -168,14 +168,14 @@ export function renderImpactSidebarHtml(draft = {}) {
   const main = ['experience', 'projects', 'education'];
   return doc(
     d,
-    `<main class="page impactSidebarLayout"><aside><div class="badge">Impact</div><h1>${esc(
+    `<main class="page impactSidebarLayout"><aside><div class="impact-mark" aria-hidden="true"><span></span><span></span><span></span></div><h1>${esc(
       d.basics.name || 'Your Name'
     )}</h1><p class="headline">${esc(d.basics.headline || '')}</p><p class="contact">${contactLine(
       d.basics
     )}</p>${side.map((k) => (sectionVisible(d, k) ? m[k] || '' : '')).join('')}</aside><section class="main">${main
       .map((k) => (sectionVisible(d, k) ? m[k] || '' : ''))
       .join('')}</section></main>`,
-    `${TYPOGRAPHY_BASE}body{background:#f1f5f9;font-family:var(--fontFamily);color:#172033}.impactSidebarLayout{display:grid;grid-template-columns:70mm 1fr}.impactSidebarLayout aside{background:#111827;color:#f8fafc;padding:12mm 9mm}.impactSidebarLayout .main{padding:12mm 12mm}.badge{display:inline-block;background:#f97316;color:#fff;font-size:var(--resolvedMetaSize);font-weight:900;text-transform:uppercase;letter-spacing:.14em;padding:4px 8px;margin-bottom:8mm}.headline,.contact{color:#cbd5e1}.contact{font-size:var(--resolvedSidebarMetaSize)}aside h2{color:#fed7aa}aside p,aside li{font-size:var(--resolvedSidebarBodySize)}aside .muted{color:#cbd5e1}.main h2{color:#f97316;border-left:5px solid #f97316;padding-left:7px}ul{margin:4px 0 0;padding-left:17px}.item{break-inside:auto;page-break-inside:auto}`
+    `${TYPOGRAPHY_BASE}body{background:#f1f5f9;font-family:var(--fontFamily);color:#172033}.impactSidebarLayout{display:grid;grid-template-columns:70mm 1fr}.impactSidebarLayout aside{background:#111827;color:#f8fafc;padding:12mm 9mm}.impactSidebarLayout .main{padding:12mm 12mm}.impact-mark{display:grid;grid-template-columns:repeat(3,1fr);gap:1.6mm;width:24mm;margin-bottom:8mm}.impact-mark span{height:5mm;border-radius:999px;background:#f97316}.impact-mark span:nth-child(2){background:#fb923c;transform:translateY(2mm)}.impact-mark span:nth-child(3){background:#fdba74;transform:translateY(4mm)}.headline,.contact{color:#cbd5e1}.contact{font-size:var(--resolvedSidebarMetaSize)}aside h2{color:#fed7aa}aside p,aside li{font-size:var(--resolvedSidebarBodySize)}aside .muted{color:#cbd5e1}.main h2{color:#f97316;border-left:5px solid #f97316;padding-left:7px}ul{margin:4px 0 0;padding-left:17px}.item{break-inside:auto;page-break-inside:auto}`
   );
 }
 
@@ -194,12 +194,12 @@ export function renderAnalystDashboardHtml(draft = {}) {
     : '';
   return doc(
     d,
-    `<main class="page analystDashboardLayout"><header><div><p class="kicker">Data-ready resume</p><h1>${esc(
+    `<main class="page analystDashboardLayout"><header><div><div class="metric-strip" aria-hidden="true"><span></span><span></span><span></span></div><h1>${esc(
       d.basics.name || 'Your Name'
     )}</h1><p>${esc(d.basics.headline || '')}</p></div><p>${contactLine(d.basics)}</p></header><section class="summary">${
       m.summary || ''
     }</section><section class="skills"><h2>Capability Dashboard</h2>${skills}</section><div class="content">${sections}</div></main>`,
-    `${TYPOGRAPHY_BASE}body{background:#e8eef5;font-family:var(--fontFamily);color:#111827}.analystDashboardLayout{padding:11mm 12mm}.analystDashboardLayout header{background:#0f172a;color:#fff;padding:7mm;display:grid;grid-template-columns:1fr 62mm;gap:8mm}.kicker{margin:0 0 3px;color:#93c5fd;font-size:var(--resolvedMetaSize);font-weight:800;text-transform:uppercase;letter-spacing:.16em}header p{margin:3px 0 0;color:#cbd5e1}.summary{margin:7mm 0 0}.summary section{margin:0;background:#f8fafc;border:1px solid #dbe3ee;padding:5mm}.skills{margin-top:6mm}.skillGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}.skillGrid span{background:#dbeafe;border-left:4px solid #2563eb;padding:5px;font-size:var(--resolvedMetaSize);font-weight:700}.content{margin-top:7mm}.content h2{color:#2563eb;border-bottom:1px solid #bfdbfe;padding-bottom:4px}ul{margin:4px 0 0;padding-left:17px}.item{break-inside:auto;page-break-inside:auto}`
+    `${TYPOGRAPHY_BASE}body{background:#e8eef5;font-family:var(--fontFamily);color:#111827}.analystDashboardLayout{padding:11mm 12mm}.analystDashboardLayout header{background:#0f172a;color:#fff;padding:7mm;display:grid;grid-template-columns:1fr 62mm;gap:8mm}.metric-strip{display:grid;grid-template-columns:22mm 14mm 8mm;gap:2mm;margin:0 0 4mm}.metric-strip span{height:2.2mm;border-radius:999px;background:#93c5fd}.metric-strip span:nth-child(2){background:#60a5fa}.metric-strip span:nth-child(3){background:#bfdbfe}header p{margin:3px 0 0;color:#cbd5e1}.summary{margin:7mm 0 0}.summary section{margin:0;background:#f8fafc;border:1px solid #dbe3ee;padding:5mm}.skills{margin-top:6mm}.skillGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}.skillGrid span{background:#dbeafe;border-left:4px solid #2563eb;padding:5px;font-size:var(--resolvedMetaSize);font-weight:700}.content{margin-top:7mm}.content h2{color:#2563eb;border-bottom:1px solid #bfdbfe;padding-bottom:4px}ul{margin:4px 0 0;padding-left:17px}.item{break-inside:auto;page-break-inside:auto}`
   );
 }
 
