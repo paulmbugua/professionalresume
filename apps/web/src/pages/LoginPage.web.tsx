@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -17,6 +17,7 @@ type AuthMode = 'Login' | 'Sign Up';
 type ResetMode = 'idle' | 'requesting' | 'verifying';
 
 const RETURN_TO_SS_KEY = 'auth:returnTo';
+const GOOGLE_AUTH_CODE_SS_PREFIX = 'auth:google:code:';
 
 const safeSessionGet = (k: string) => {
   try {
@@ -50,6 +51,7 @@ const emailHash = (email: string) => {
 const LoginPage: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const googleAuthCodeInFlightRef = useRef<string | null>(null);
 
   const computedReturnTo = useMemo(
     () => sanitizeInternalReturnTo(getReturnToFromQuery(searchParams, DEFAULT_RETURN_TO)),
@@ -79,6 +81,15 @@ const LoginPage: React.FC = () => {
     [getReturnTo]
   );
 
+  const stripAuthParamsFromUrl = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('authCode');
+    url.searchParams.delete('authError');
+    const cleanUrl = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState(window.history.state, '', cleanUrl || '/login');
+  }, []);
+
   const { token } = useShopContext() as any;
 
   const {
@@ -105,11 +116,21 @@ const LoginPage: React.FC = () => {
     const authError = (searchParams?.get('authError') || '').trim();
     if (!authCode && !authError) return;
 
+    stripAuthParamsFromUrl();
+
     if (authError) {
       handleGoogleLoginFailure(new Error(authError.replace(/_/g, ' ')));
       setError('Google sign-in failed. Please try again.');
       return;
     }
+
+    const codeKey = `${GOOGLE_AUTH_CODE_SS_PREFIX}${authCode}`;
+    if (googleAuthCodeInFlightRef.current === authCode || safeSessionGet(codeKey) === '1') {
+      return;
+    }
+
+    googleAuthCodeInFlightRef.current = authCode;
+    safeSessionSet(codeKey, '1');
 
     let cancelled = false;
     setBusy(true);
@@ -123,9 +144,11 @@ const LoginPage: React.FC = () => {
       })
       .catch((err: any) => {
         if (cancelled) return;
-        setError(err?.message || 'Google sign-in failed.');
+        setError(err?.message || 'Google sign-in failed. Please open Google sign-in again.');
       })
       .finally(() => {
+        if (googleAuthCodeInFlightRef.current === authCode)
+          googleAuthCodeInFlightRef.current = null;
         if (!cancelled) setBusy(false);
       });
 
@@ -139,6 +162,7 @@ const LoginPage: React.FC = () => {
     computedReturnTo,
     getAuthDestination,
     router,
+    stripAuthParamsFromUrl,
   ]);
 
   const [authMode, setAuthMode] = useState<AuthMode>('Login');
@@ -159,7 +183,10 @@ const LoginPage: React.FC = () => {
   const clearErrors = () => setError(null);
 
   const emailFormTitle = useMemo(
-    () => (authMode === 'Login' ? 'Log in to ProfessionalResume.co.ke' : 'Create your ProfessionalResume.co.ke account'),
+    () =>
+      authMode === 'Login'
+        ? 'Log in to ProfessionalResume.co.ke'
+        : 'Create your ProfessionalResume.co.ke account',
     [authMode]
   );
 
@@ -263,7 +290,9 @@ const LoginPage: React.FC = () => {
       <div className="relative z-10 grid w-full max-w-5xl gap-8 rounded-3xl border border-white/60 bg-white/70 p-4 shadow-2xl backdrop-blur-xl md:grid-cols-2 md:p-8 dark:border-white/10 dark:bg-black/30">
         <section className="hidden flex-col justify-between rounded-2xl bg-slate-900/85 p-8 text-white md:flex dark:bg-black/20">
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-white/60">ProfessionalResume.co.ke</p>
+            <p className="text-xs uppercase tracking-[0.3em] text-white/60">
+              ProfessionalResume.co.ke
+            </p>
             <h1 className="mt-3 text-3xl font-semibold leading-tight">
               Build an ATS-friendly CV in minutes.
             </h1>

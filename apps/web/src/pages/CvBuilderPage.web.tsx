@@ -248,52 +248,57 @@ const CvBuilderPageInner: React.FC<{
   const debouncedSave = useMemo(
     () =>
       debounce(async (values: CvDraft) => {
-        const normalized = normalizeDraft(values);
-        if (isGuest || !token || !resolvedBackendUrl) {
-          persistGuestCvState(normalized);
-          const scrollPosition = {
-            windowY: typeof window !== 'undefined' ? window.scrollY : undefined,
-            builderPanelY:
-              typeof document !== 'undefined'
-                ? document.querySelector<HTMLElement>('[data-cv-builder-panel]')?.scrollTop
-                : undefined,
-            previewY:
-              typeof document !== 'undefined'
-                ? document.querySelector<HTMLElement>('[data-cv-preview-scroll]')?.scrollTop
-                : undefined,
-          };
-          const sessionHash = createBuilderSessionHash(normalized, {
-            activeTab: builderUiRef.current.activeTab,
-            activeSection: builderUiRef.current.activeSection,
-            scrollPosition,
-          });
-          saveGuestCvDraft({
-            draft: normalized,
-            selectedTemplateId: normalized.templateId,
-            activeTab: builderUiRef.current.activeTab,
-            activeSection: builderUiRef.current.activeSection,
-            scrollY: scrollPosition.windowY,
-            scrollPosition,
-            editorState: { activeSection: builderUiRef.current.activeSection },
-            previewState: { selectedTemplateId: normalized.templateId },
-            sessionHash,
-            returnTo: '/builder/guest',
-            synced: Boolean(syncedDraftIdRef.current),
-            syncedDraftId: syncedDraftIdRef.current,
-          });
-          if (token && resolvedBackendUrl && syncedDraftIdRef.current) {
-            await updateDraft.mutateAsync({ id: syncedDraftIdRef.current, payload: normalized });
+        try {
+          const normalized = normalizeDraft(values);
+          if (isGuest || !token || !resolvedBackendUrl) {
+            persistGuestCvState(normalized);
+            const scrollPosition = {
+              windowY: typeof window !== 'undefined' ? window.scrollY : undefined,
+              builderPanelY:
+                typeof document !== 'undefined'
+                  ? document.querySelector<HTMLElement>('[data-cv-builder-panel]')?.scrollTop
+                  : undefined,
+              previewY:
+                typeof document !== 'undefined'
+                  ? document.querySelector<HTMLElement>('[data-cv-preview-scroll]')?.scrollTop
+                  : undefined,
+            };
+            const sessionHash = createBuilderSessionHash(normalized, {
+              activeTab: builderUiRef.current.activeTab,
+              activeSection: builderUiRef.current.activeSection,
+              scrollPosition,
+            });
+            saveGuestCvDraft({
+              draft: normalized,
+              selectedTemplateId: normalized.templateId,
+              activeTab: builderUiRef.current.activeTab,
+              activeSection: builderUiRef.current.activeSection,
+              scrollY: scrollPosition.windowY,
+              scrollPosition,
+              editorState: { activeSection: builderUiRef.current.activeSection },
+              previewState: { selectedTemplateId: normalized.templateId },
+              sessionHash,
+              returnTo: '/builder/guest',
+              synced: Boolean(syncedDraftIdRef.current),
+              syncedDraftId: syncedDraftIdRef.current,
+            });
+            if (token && resolvedBackendUrl && syncedDraftIdRef.current) {
+              await updateDraft.mutateAsync({ id: syncedDraftIdRef.current, payload: normalized });
+            }
+            lastSavedSigRef.current = JSON.stringify(values);
+            setLastSavedAt(token ? undefined : 'Draft saved on this device');
+            return;
           }
-          lastSavedSigRef.current = JSON.stringify(values);
-          setLastSavedAt(token ? undefined : 'Draft saved on this device');
-          return;
-        }
 
-        const updated = await updateDraft.mutateAsync({ id, payload: normalized });
-        lastSavedSigRef.current = JSON.stringify(values);
-        setLastSavedAt(
-          updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined
-        );
+          const updated = await updateDraft.mutateAsync({ id, payload: normalized });
+          lastSavedSigRef.current = JSON.stringify(values);
+          setLastSavedAt(
+            updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined
+          );
+        } catch (err) {
+          console.warn('[cv-builder] autosave failed', err);
+          setLastSavedAt('Save failed - retrying on next edit');
+        }
       }, 900),
     [id, isGuest, resolvedBackendUrl, token, updateDraft]
   );
@@ -369,12 +374,17 @@ const CvBuilderPageInner: React.FC<{
       return;
     }
 
-    const updated = await updateDraft.mutateAsync({
-      id: syncedDraftIdRef.current || id,
-      payload: values,
-    });
-    lastSavedSigRef.current = JSON.stringify(values);
-    setLastSavedAt(updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined);
+    try {
+      const updated = await updateDraft.mutateAsync({
+        id: syncedDraftIdRef.current || id,
+        payload: values,
+      });
+      lastSavedSigRef.current = JSON.stringify(values);
+      setLastSavedAt(updated.updatedAt ? new Date(updated.updatedAt).toLocaleString() : undefined);
+    } catch (err) {
+      console.warn('[cv-builder] manual save failed', err);
+      setLastSavedAt('Save failed - check your connection');
+    }
   };
 
   const handleExportForDraft = async (draftId: string) => {
@@ -466,7 +476,10 @@ const CvBuilderPageInner: React.FC<{
     if (!pending) return;
 
     consumedActionRef.current = true;
-    void migrateGuestDraftToServer(pending as PendingCvAction);
+    void migrateGuestDraftToServer(pending as PendingCvAction).catch((err) => {
+      console.warn('[cv-builder] guest draft sync failed', err);
+      consumedActionRef.current = false;
+    });
   }, [isGuest, resolvedBackendUrl, token]);
 
   useEffect(() => {
@@ -489,7 +502,9 @@ const CvBuilderPageInner: React.FC<{
       }
     };
 
-    void run();
+    void run().catch((err) => {
+      console.warn('[cv-builder] pending action failed', err);
+    });
   }, [actionFromQuery, id, isGuest]);
 
   useEffect(() => {
@@ -506,7 +521,9 @@ const CvBuilderPageInner: React.FC<{
       clearPendingPaymentReturnState();
       clearPaymentQuery();
     };
-    void run();
+    void run().catch((err) => {
+      console.warn('[cv-payment-return] pending action failed', err);
+    });
   }, [paymentSuccessFromQuery, actionFromQuery, clearPaymentQuery, isGuest]);
 
   const validationErrors = validateDraft(draft);
@@ -570,10 +587,7 @@ const CvBuilderPageInner: React.FC<{
           isLoadingMpesaInit={cvPayment.initMpesaMutation.isPending}
           mpesaFlowState={cvPayment.mpesaFlowState}
           message={cvPayment.mpesaStatusMessage}
-          error={
-            cvPayment.initMpesaMutation.error?.message ||
-            null
-          }
+          error={cvPayment.initMpesaMutation.error?.message || null}
         />
       )}
     </FormProvider>
