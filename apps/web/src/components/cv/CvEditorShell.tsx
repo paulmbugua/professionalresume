@@ -181,7 +181,10 @@ const CvEditorShell: React.FC<Props> = ({
 
         <div className="w-full rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-sm sm:w-auto sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none dark:border-white/10 dark:bg-white/5 sm:dark:bg-transparent">
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
-            <TemplateSwitcher currentTemplateId={liveTemplateId} />
+            <TemplateSwitcher
+              currentTemplateId={liveTemplateId}
+              onTemplateSelected={() => setActiveTab('preview')}
+            />
 
             <button
               type="button"
