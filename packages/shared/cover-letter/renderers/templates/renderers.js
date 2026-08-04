@@ -1,7 +1,4 @@
-import {
-  normalizeCoverLetterRenderModel,
-  normalizeCoverLetterTemplateId,
-} from '../renderModel.js';
+import { normalizeCoverLetterRenderModel, normalizeCoverLetterTemplateId } from '../renderModel.js';
 import { buildCvFontFaceCss } from '../../../cv/renderers/templates/fonts.js';
 
 const COVER_LETTER_FONT_STACKS = {
@@ -12,7 +9,8 @@ const COVER_LETTER_FONT_STACKS = {
   'minimal-wide-name-header': "'Inter', 'Segoe UI', 'Liberation Sans', Arial, sans-serif",
   'plain-re-subject': "Arial, 'Helvetica Neue', 'Liberation Sans', sans-serif",
   'simple-everyday-formal': "Calibri, 'Segoe UI', 'Liberation Sans', Arial, sans-serif",
-  'premium-elegant-business': "'Elegant Serif', Georgia, 'Times New Roman', 'Liberation Serif', serif",
+  'premium-elegant-business':
+    "'Elegant Serif', Georgia, 'Times New Roman', 'Liberation Serif', serif",
 };
 
 const COVER_LETTER_FONT_DEPENDENCIES = {
@@ -27,7 +25,10 @@ const COVER_LETTER_FONT_DEPENDENCIES = {
 };
 
 function getCoverLetterFontStack(templateId) {
-  return COVER_LETTER_FONT_STACKS[String(templateId || '').trim()] || COVER_LETTER_FONT_STACKS['professional-blue-letterhead'];
+  return (
+    COVER_LETTER_FONT_STACKS[String(templateId || '').trim()] ||
+    COVER_LETTER_FONT_STACKS['professional-blue-letterhead']
+  );
 }
 
 function getCoverLetterFontFaceCss(templateId) {
@@ -73,7 +74,9 @@ function toneVars(pageTheme) {
 }
 
 function hexToRgb(hex) {
-  const normalized = String(hex || '').trim().replace('#', '');
+  const normalized = String(hex || '')
+    .trim()
+    .replace('#', '');
   if (!/^[\da-f]{3}([\da-f]{3})?$/i.test(normalized)) return null;
   const full =
     normalized.length === 3
@@ -92,7 +95,12 @@ function hexToRgb(hex) {
 
 function pickHeaderForeground(accent) {
   const rgb = hexToRgb(accent);
-  if (!rgb) return { headerText: '#f8fafc', headerMuted: '#dbeafe', headerDivider: 'rgba(248,250,252,.32)' };
+  if (!rgb)
+    return {
+      headerText: '#f8fafc',
+      headerMuted: '#dbeafe',
+      headerDivider: 'rgba(248,250,252,.32)',
+    };
   const yiq = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
   if (yiq >= 150) {
     return { headerText: '#0f172a', headerMuted: '#334155', headerDivider: 'rgba(15,23,42,.28)' };
@@ -114,7 +122,10 @@ function buildTemplateColorVars(model) {
 }
 
 function metaLines(c) {
-  return [c.applicantEmail, c.applicantPhone, c.applicantLocation].filter(Boolean).map(esc).join(' &middot; ');
+  return [c.applicantEmail, c.applicantPhone, c.applicantLocation]
+    .filter(Boolean)
+    .map(esc)
+    .join(' &middot; ');
 }
 
 function recipientBlock(c) {
@@ -124,7 +135,7 @@ function recipientBlock(c) {
     .filter(Boolean);
   const rows = [c.recipientName, c.recipientTitle, c.companyName, ...addressLines].filter(Boolean);
   if (!rows.length) {
-    return '<p class="cl-placeholder">Recipient details (name, title, company, address)</p>';
+    return '';
   }
   return `<p>${rows.map((row) => esc(row)).join('<br/>')}</p>`;
 }
@@ -132,12 +143,10 @@ function recipientBlock(c) {
 function bodyBlock(c) {
   const paragraphs = [c.opening, ...c.paragraphs, c.closingParagraph].filter(Boolean);
   if (!paragraphs.length) {
-    return '<div class="cl-body"><p class="cl-placeholder">Write 2-4 concise paragraphs that connect your results to the role.</p></div>';
+    return '<div class="cl-body"></div>';
   }
 
-  return `<div class="cl-body">${paragraphs
-    .map((line) => `<p>${esc(line)}</p>`)
-    .join('')}</div>`;
+  return `<div class="cl-body">${paragraphs.map((line) => `<p>${esc(line)}</p>`).join('')}</div>`;
 }
 
 function doc(model, body, css, markerClass) {
@@ -185,14 +194,14 @@ function renderCommon(model, extras = '') {
   const c = model.content;
   return `<div class="cl-content">
     <header class="cl-header">
-      <h1 class="cl-header-name">${esc(c.applicantName || 'Your Name')}</h1>
-      <p class="cl-header-title">${esc(c.applicantTitle || c.applicantHeadline || c.roleTitle || 'Professional Title')}</p>
-      <p class="cl-meta">${metaLines(c) || '<span class="cl-placeholder">email &middot; phone &middot; location</span>'}</p>
+      <h1 class="cl-header-name">${esc(c.applicantName)}</h1>
+      <p class="cl-header-title">${esc(c.applicantTitle || c.applicantHeadline || c.roleTitle)}</p>
+      <p class="cl-meta">${metaLines(c)}</p>
     </header>
     ${extras}
-    <p class="cl-date">${esc(c.dateText || c.date || 'Date')}</p>
+    <p class="cl-date">${esc(c.dateText || c.date)}</p>
     <section class="cl-recipient">${recipientBlock(c)}</section>
-    ${(c.subjectLine || c.subject) ? `<p class="cl-subject"><strong>Re:</strong> ${esc(c.subjectLine || c.subject)}</p>` : ''}
+    ${c.subjectLine || c.subject ? `<p class="cl-subject"><strong>Re:</strong> ${esc(c.subjectLine || c.subject)}</p>` : ''}
     <p class="cl-greeting">${esc(c.greeting)}</p>
     ${bodyBlock(c)}
     <section class="cl-closing"><p>${esc(c.closingLine)}</p><p class="cl-signature">${esc(c.signatureName)}</p></section>
@@ -205,17 +214,20 @@ export function renderClassicLetterHtml(draft = {}) {
     model,
     renderCommon(model),
     '.classicLetter{background:var(--cl-page-bg)}.classicLetter .cl-page,.classicLetter{font-family:var(--cl-font-family)}.classicLetter .cl-header-name{font-size:28px}.classicLetter .cl-header-title{font-size:13px;letter-spacing:.02em;text-transform:uppercase}',
-    'classicLetter',
+    'classicLetter'
   );
 }
 
 export function renderProfessionalBlueLetterheadHtml(draft = {}) {
-  const model = normalizeCoverLetterRenderModel({ ...draft, templateId: 'professional-blue-letterhead' });
+  const model = normalizeCoverLetterRenderModel({
+    ...draft,
+    templateId: 'professional-blue-letterhead',
+  });
   return doc(
     model,
     renderCommon(model, '<div class="cl-divider"></div>'),
     '.professionalBlueLetterhead{border-top:6mm solid var(--cl-accent)}.professionalBlueLetterhead .cl-header-title{color:var(--cl-accent)}.professionalBlueLetterhead .cl-divider{background:color-mix(in srgb, var(--cl-accent) 40%, transparent)}',
-    'professionalBlueLetterhead',
+    'professionalBlueLetterhead'
   );
 }
 
@@ -225,7 +237,7 @@ export function renderCleanModernHeaderHtml(draft = {}) {
     model,
     renderCommon(model),
     '.cleanModernHeader .cl-header{display:grid;grid-template-columns:1fr auto;gap:8mm;align-items:end}.cleanModernHeader .cl-meta{text-align:right}.cleanModernHeader .cl-header-name{color:var(--cl-accent)}',
-    'cleanModernHeader',
+    'cleanModernHeader'
   );
 }
 
@@ -234,19 +246,22 @@ export function renderDarkHeaderCorporateHtml(draft = {}) {
   const c = model.content;
   return doc(
     model,
-    `<div class="cl-corporate-header"><h1 class="cl-header-name">${esc(c.applicantName || 'Your Name')}</h1><p class="cl-header-title">${esc(c.applicantTitle || c.applicantHeadline || c.roleTitle || 'Professional Title')}</p><p class="cl-meta">${metaLines(c) || '<span class="cl-placeholder">email &middot; phone &middot; location</span>'}</p></div>${renderCommon({ ...model, content: { ...c, applicantName: '', applicantHeadline: '' } })}`,
+    `<div class="cl-corporate-header"><h1 class="cl-header-name">${esc(c.applicantName)}</h1><p class="cl-header-title">${esc(c.applicantTitle || c.applicantHeadline || c.roleTitle)}</p><p class="cl-meta">${metaLines(c)}</p></div>${renderCommon({ ...model, content: { ...c, applicantName: '', applicantHeadline: '' } })}`,
     '.darkHeaderCorporate{padding-top:0}.darkHeaderCorporate .cl-corporate-header{margin:0 -17mm 5mm;background:color-mix(in srgb, var(--cl-accent) 55%, #0f172a);color:var(--cl-header-text);padding:11mm 17mm}.darkHeaderCorporate .cl-corporate-header .cl-header-name{color:var(--cl-header-text)}.darkHeaderCorporate .cl-corporate-header .cl-header-title,.darkHeaderCorporate .cl-corporate-header .cl-meta{color:var(--cl-header-muted)}.darkHeaderCorporate .cl-corporate-header .cl-meta{padding-top:1.5mm;border-top:1px solid var(--cl-header-divider)}.darkHeaderCorporate .cl-header{display:none}',
-    'darkHeaderCorporate',
+    'darkHeaderCorporate'
   );
 }
 
 export function renderMinimalWideNameHeaderHtml(draft = {}) {
-  const model = normalizeCoverLetterRenderModel({ ...draft, templateId: 'minimal-wide-name-header' });
+  const model = normalizeCoverLetterRenderModel({
+    ...draft,
+    templateId: 'minimal-wide-name-header',
+  });
   return doc(
     model,
     renderCommon(model),
     '.minimalWideNameHeader .cl-header-name{font-size:36px;letter-spacing:.06em;text-transform:uppercase;font-weight:500;color:var(--cl-accent)}',
-    'minimalWideNameHeader',
+    'minimalWideNameHeader'
   );
 }
 
@@ -254,9 +269,9 @@ export function renderPlainReSubjectHtml(draft = {}) {
   const model = normalizeCoverLetterRenderModel({ ...draft, templateId: 'plain-re-subject' });
   return doc(
     model,
-    renderCommon({ ...model, content: { ...model.content, subject: model.content.subject || 'Application for the advertised role' } }),
+    renderCommon(model),
     '.plainReSubject .cl-page,.plainReSubject{font-family:var(--cl-font-family)}.plainReSubject .cl-subject{font-weight:600;text-transform:none;color:var(--cl-accent)}',
-    'plainReSubject',
+    'plainReSubject'
   );
 }
 
@@ -266,17 +281,20 @@ export function renderSimpleEverydayFormalHtml(draft = {}) {
     model,
     renderCommon(model),
     '.simpleEverydayFormal .cl-page,.simpleEverydayFormal{font-family:var(--cl-font-family)}.simpleEverydayFormal .cl-header-title{font-size:13px}',
-    'simpleEverydayFormal',
+    'simpleEverydayFormal'
   );
 }
 
 export function renderPremiumElegantBusinessHtml(draft = {}) {
-  const model = normalizeCoverLetterRenderModel({ ...draft, templateId: 'premium-elegant-business' });
+  const model = normalizeCoverLetterRenderModel({
+    ...draft,
+    templateId: 'premium-elegant-business',
+  });
   return doc(
     model,
     renderCommon(model, '<div class="cl-elegant-rule"></div>'),
     '.premiumElegantBusiness .cl-page,.premiumElegantBusiness{font-family:var(--cl-font-family)}.premiumElegantBusiness .cl-elegant-rule{height:2px;background:linear-gradient(90deg,var(--cl-accent),color-mix(in srgb, var(--cl-accent) 35%, #fff));margin:4mm 0 0}.premiumElegantBusiness .cl-header-title{letter-spacing:.03em;text-transform:uppercase;font-size:12px}',
-    'premiumElegantBusiness',
+    'premiumElegantBusiness'
   );
 }
 
@@ -301,4 +319,3 @@ export const templateMarkersById = {
 };
 
 export { normalizeCoverLetterTemplateId };
-

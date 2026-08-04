@@ -31,10 +31,13 @@ function asNumber(v, fallback) {
 }
 
 function firstString(...values) {
+  let fallback = '';
   for (const value of values) {
-    if (typeof value === 'string') return value;
+    if (typeof value !== 'string') continue;
+    if (!fallback) fallback = value;
+    if (value.trim()) return value;
   }
-  return '';
+  return fallback;
 }
 
 function normalizeAddressLines(...values) {
@@ -87,8 +90,8 @@ export function normalizeCoverLetterRenderModel(draft = {}) {
       basics.name,
       legacyContent.applicantName,
       draft.applicantName,
-      draft.senderName,
-    ),
+      draft.senderName
+    )
   ).trim();
 
   const applicantTitle = asString(
@@ -100,8 +103,8 @@ export function normalizeCoverLetterRenderModel(draft = {}) {
       legacyContent.applicantHeadline,
       draft.applicantTitle,
       draft.applicantHeadline,
-      draft.senderTitle,
-    ),
+      draft.senderTitle
+    )
   ).trim();
 
   const normalized = {
@@ -117,8 +120,8 @@ export function normalizeCoverLetterRenderModel(draft = {}) {
           basics.email,
           legacyContent.applicantEmail,
           draft.applicantEmail,
-          draft.senderEmail,
-        ),
+          draft.senderEmail
+        )
       ).trim(),
       applicantPhone: asString(
         firstString(
@@ -126,8 +129,8 @@ export function normalizeCoverLetterRenderModel(draft = {}) {
           basics.phone,
           legacyContent.applicantPhone,
           draft.applicantPhone,
-          draft.senderPhone,
-        ),
+          draft.senderPhone
+        )
       ).trim(),
       applicantLocation: asString(
         firstString(
@@ -135,27 +138,27 @@ export function normalizeCoverLetterRenderModel(draft = {}) {
           basics.location,
           legacyContent.applicantLocation,
           draft.applicantLocation,
-          draft.senderLocation,
-        ),
+          draft.senderLocation
+        )
       ).trim(),
       recipientName: asString(
         firstString(
           recipient.name,
           basics.hiringManager,
           legacyContent.recipientName,
-          draft.recipientName,
-        ),
+          draft.recipientName
+        )
       ).trim(),
       recipientTitle: asString(
-        firstString(recipient.title, legacyContent.recipientTitle, draft.recipientTitle),
+        firstString(recipient.title, legacyContent.recipientTitle, draft.recipientTitle)
       ).trim(),
       companyName: asString(
         firstString(
           recipient.company,
           basics.companyName,
           legacyContent.companyName,
-          draft.companyName,
-        ),
+          draft.companyName
+        )
       ).trim(),
       companyAddress: asString(
         firstString(
@@ -163,34 +166,75 @@ export function normalizeCoverLetterRenderModel(draft = {}) {
           recipientAddress,
           recipient.addressLine1,
           legacyContent.companyAddress,
-          draft.companyAddress,
-        ),
+          draft.companyAddress
+        )
       ).trim(),
       roleTitle: asString(
-        firstString(letter.role, basics.jobTitle, legacyContent.roleTitle, draft.roleTitle),
+        firstString(letter.role, basics.jobTitle, legacyContent.roleTitle, draft.roleTitle)
       ).trim(),
       dateText: asString(
-        firstString(letter.date, basics.date, legacyContent.dateText, legacyContent.date, draft.dateText, draft.date),
+        firstString(
+          letter.date,
+          basics.date,
+          legacyContent.dateText,
+          legacyContent.date,
+          draft.dateText,
+          draft.date
+        )
       ).trim(),
       date: asString(
-        firstString(letter.date, basics.date, legacyContent.dateText, legacyContent.date, draft.dateText, draft.date),
+        firstString(
+          letter.date,
+          basics.date,
+          legacyContent.dateText,
+          legacyContent.date,
+          draft.dateText,
+          draft.date
+        )
       ).trim(),
       subjectLine: asString(
-        firstString(letter.subject, legacyContent.subjectLine, legacyContent.subject, draft.subjectLine, draft.subject),
+        firstString(
+          letter.subject,
+          legacyContent.subjectLine,
+          legacyContent.subject,
+          draft.subjectLine,
+          draft.subject
+        )
       ).trim(),
       subject: asString(
-        firstString(letter.subject, legacyContent.subjectLine, legacyContent.subject, draft.subjectLine, draft.subject),
+        firstString(
+          letter.subject,
+          legacyContent.subjectLine,
+          legacyContent.subject,
+          draft.subjectLine,
+          draft.subject
+        )
       ).trim(),
-      greeting: asString(
-        firstString(letter.greeting, legacyContent.greeting, draft.greeting),
-      ).trim() || 'Dear Hiring Manager,',
+      greeting:
+        asString(firstString(letter.greeting, legacyContent.greeting, draft.greeting)).trim() ||
+        'Dear Hiring Manager,',
       opening: asString(firstString(body.opening, legacyContent.opening, draft.opening)).trim(),
       paragraphs,
       letterBody: paragraphs.join('\n\n'),
-      closingParagraph: asString(firstString(body.closing, legacyContent.closingParagraph, legacyContent.closing, draft.closingParagraph, draft.closing)).trim(),
-      closingLine: asString(
-        firstString(letter.signoff, legacyContent.closingLine, legacyContent.signature, draft.closingLine, draft.closing),
-      ).trim() || 'Sincerely,',
+      closingParagraph: asString(
+        firstString(
+          body.closing,
+          legacyContent.closingParagraph,
+          legacyContent.closing,
+          draft.closingParagraph,
+          draft.closing
+        )
+      ).trim(),
+      closingLine:
+        asString(
+          firstString(
+            letter.signoff,
+            legacyContent.closingLine,
+            legacyContent.signature,
+            draft.closingLine,
+            draft.closing
+          )
+        ).trim() || 'Sincerely,',
       signatureName: asString(
         firstString(
           sender.fullName,
@@ -198,16 +242,29 @@ export function normalizeCoverLetterRenderModel(draft = {}) {
           legacyContent.signatureName,
           legacyContent.applicantName,
           draft.signatureName,
-          draft.applicantName,
-        ),
-      ).trim() || 'Your Name',
+          draft.applicantName
+        )
+      ).trim(),
     },
     style: {
-      fontFamily: asString(style.fontFamily || design.fontFamily || draft.fontFamily || DEFAULT_STYLE.fontFamily),
-      fontSize: asNumber(style.fontSize || design.fontSize || draft.fontSize, DEFAULT_STYLE.fontSize),
-      lineHeight: asNumber(style.lineHeight || design.lineHeight || draft.lineHeight, DEFAULT_STYLE.lineHeight),
-      accentColor: asString(style.accentColor || design.accentColor || draft.accentColor || DEFAULT_STYLE.accentColor),
-      pageTheme: asString(style.pageTheme || design.pageTheme || draft.pageTheme || DEFAULT_STYLE.pageTheme) || 'light',
+      fontFamily: asString(
+        style.fontFamily || design.fontFamily || draft.fontFamily || DEFAULT_STYLE.fontFamily
+      ),
+      fontSize: asNumber(
+        style.fontSize || design.fontSize || draft.fontSize,
+        DEFAULT_STYLE.fontSize
+      ),
+      lineHeight: asNumber(
+        style.lineHeight || design.lineHeight || draft.lineHeight,
+        DEFAULT_STYLE.lineHeight
+      ),
+      accentColor: asString(
+        style.accentColor || design.accentColor || draft.accentColor || DEFAULT_STYLE.accentColor
+      ),
+      pageTheme:
+        asString(
+          style.pageTheme || design.pageTheme || draft.pageTheme || DEFAULT_STYLE.pageTheme
+        ) || 'light',
     },
   };
 
@@ -226,4 +283,3 @@ export function toCoverLetterExportJson(draft = {}) {
 }
 
 export const DEFAULT_COVER_LETTER_STYLE = DEFAULT_STYLE;
-

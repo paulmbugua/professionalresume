@@ -41,7 +41,8 @@ export async function listCoverLetters(req, res) {
 export async function getCoverLetter(req, res) {
   try {
     const draft = await getCoverLetterForUser(req.user.id, req.params.id);
-    if (!draft) return res.status(404).json({ error: 'Cover letter not found' });
+    if (!draft)
+      return res.status(404).json({ error: 'Cover letter not found' });
     return res.json(draft);
   } catch (err) {
     console.error('getCoverLetter error', err);
@@ -67,8 +68,13 @@ export async function updateCoverLetter(req, res) {
     const { error, value } = patchCoverLetterSchema.validate(req.body || {});
     if (error) return validationErrorResponse(res, error);
 
-    const updated = await updateCoverLetterForUser(req.user.id, req.params.id, value);
-    if (!updated) return res.status(404).json({ error: 'Cover letter not found' });
+    const updated = await updateCoverLetterForUser(
+      req.user.id,
+      req.params.id,
+      value,
+    );
+    if (!updated)
+      return res.status(404).json({ error: 'Cover letter not found' });
     return res.json(updated);
   } catch (err) {
     console.error('updateCoverLetter error', err);
@@ -100,12 +106,15 @@ export async function getCoverLetterPrintHtml(req, res) {
     let exportDraft = value.coverLetterJson || {};
     if (value.draftId) {
       const draft = await getCoverLetterForUser(req.user.id, value.draftId);
-      if (!draft) return res.status(404).json({ error: 'Cover letter draft not found' });
-      exportDraft = draft;
+      if (!draft)
+        return res.status(404).json({ error: 'Cover letter draft not found' });
+      exportDraft = value.coverLetterJson || draft;
     }
 
     const renderModel = normalizeCoverLetterRenderModel(exportDraft);
-    console.info('[coverLetter.printHtml] template', { templateId: renderModel.templateId });
+    console.info('[coverLetter.printHtml] template', {
+      templateId: renderModel.templateId,
+    });
     const html = buildCvHtml({ draft: renderModel });
     return res.json({ html });
   } catch (err) {
@@ -130,12 +139,10 @@ export async function exportCoverLetter(req, res) {
 
     if (value.draftId) {
       const draft = await getCoverLetterForUser(req.user.id, value.draftId);
-      if (!draft) return res.status(404).json({ error: 'Cover letter draft not found' });
+      if (!draft)
+        return res.status(404).json({ error: 'Cover letter draft not found' });
       sourceDraftId = draft.id;
-      exportDraft = {
-        ...draft,
-        ...(value.coverLetterJson || {}),
-      };
+      exportDraft = value.coverLetterJson || draft;
     }
 
     const normalizedDraft = normalizeCoverLetterRenderModel(exportDraft);
@@ -144,7 +151,9 @@ export async function exportCoverLetter(req, res) {
     });
     const html = buildCvHtml({ draft: normalizedDraft });
     const buffer = await htmlToPdfBuffer(html);
-    console.info('[coverLetter.export] pdf-generated', { bytes: buffer.length });
+    console.info('[coverLetter.export] pdf-generated', {
+      bytes: buffer.length,
+    });
 
     const objectKey = sanitizeObjectKey(
       `cvpro/${req.user.id}/cover-letters/export-${Date.now()}.pdf`,
@@ -163,7 +172,9 @@ export async function exportCoverLetter(req, res) {
       mimeType: uploaded.contentType,
       bytes: uploaded.bytes,
     });
-    console.info('[coverLetter.export] record-created', { exportId: exportRecord?.id || null });
+    console.info('[coverLetter.export] record-created', {
+      exportId: exportRecord?.id || null,
+    });
 
     return res.status(201).json({
       url: uploaded.url,
@@ -174,6 +185,8 @@ export async function exportCoverLetter(req, res) {
     });
   } catch (err) {
     console.error('exportCoverLetter error', err);
-    return res.status(500).json({ error: err.message || 'Failed to export cover letter' });
+    return res
+      .status(500)
+      .json({ error: err.message || 'Failed to export cover letter' });
   }
 }
