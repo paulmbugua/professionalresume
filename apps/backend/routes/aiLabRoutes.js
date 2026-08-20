@@ -1,0 +1,14 @@
+import crypto from 'node:crypto';
+import express from 'express';
+import { agents, indexDocument, pipelines, runWorkflow } from '../services/aiLabRagService.js';
+const router = express.Router();
+const secret = process.env.AI_LAB_SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const buckets = new Map();
+function tokenFor(id, expires) { const body = `${id}.${expires}`; const sig = crypto.createHmac('sha256', secret).update(body).digest('base64url'); return `${body}.${sig}`; }
+function sessionId(req) { const token = String(req.get('x-ai-lab-session') || '').trim(); const [id, expires, sig] = token.split('.'); if (!id || !expires || !sig || Number(expires) < Date.now()) return null; const expected = tokenFor(id, expires).split('.').pop(); if (sig.length !== expected.length) return null; return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected)) ? id : null; }
+function limit(req, res, next) { const key = `${req.ip}:${Math.floor(Date.now() / 60000)}`; const count = (buckets.get(key) || 0) + 1; buckets.set(key, count); if (count > 8) return res.status(429).json({ message: 'Please try again shortly.' }); return next(); }
+router.post('/session', (_req, res) => { const id = crypto.randomUUID(); const expires = Date.now() + 30 * 60 * 1000; return res.json({ session: tokenFor(id, expires), expiresAt: new Date(expires).toISOString() }); });
+router.get('/pipeline', (_req, res) => res.json({ pipelines, agents }));
+router.post('/documents', limit, async (req, res) => { try { const sid = sessionId(req); if (!sid) return res.status(401).json({ message: 'Start a new AI Lab session.' }); return res.status(201).json(await indexDocument({ sessionId: sid, filename: req.body?.filename, mimeType: req.body?.mimeType, mode: req.body?.mode, text: req.body?.text, consentToProcess: req.body?.consentToProcess })); } catch (error) { if (error.message === 'AI_LAB_NOT_CONFIGURED') return res.status(503).json({ message: 'This service is temporarily unavailable.' }); if (error.message === 'PROCESSING_CONSENT_REQUIRED') return res.status(400).json({ message: 'Please confirm document-processing consent.' }); console.error('[ai-lab] indexing failed', error); return res.status(400).json({ message: error.message || 'Document indexing failed' }); } });
+router.post('/query', limit, async (req, res) => { try { const sid = sessionId(req); const question = String(req.body?.question || '').trim(); if (!sid || !question) return res.status(400).json({ message: 'A valid session and question are required.' }); return res.json(await runWorkflow({ sessionId: sid, mode: req.body?.mode, question })); } catch (error) { if (error.message === 'AI_LAB_NOT_CONFIGURED') return res.status(503).json({ message: 'This service is temporarily unavailable.' }); console.error('[ai-lab] workflow failed', error); return res.status(400).json({ message: error.message || 'Workflow failed' }); } });
+export default router;

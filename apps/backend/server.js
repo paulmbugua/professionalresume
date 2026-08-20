@@ -140,6 +140,7 @@ const corsOptions = {
     'X-Requested-With',
     'Accept',
     'Origin',
+    'X-AI-Lab-Session',
   ],
   exposedHeaders: [
     'Content-Disposition',
