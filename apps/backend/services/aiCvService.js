@@ -36,7 +36,14 @@ async function requestJson({ system, user }) {
   return parsed;
 }
 
-export async function generateSummary(draft) {
+function groundingSuffix(grounding = []) {
+  if (!Array.isArray(grounding) || grounding.length === 0) return '';
+  return '\n\nRetrieved evidence (use only when relevant):\n' + grounding.slice(0, 6)
+    .map((item, index) => '[' + (index + 1) + '] ' + String(item.content || '').slice(0, 1800))
+    .join('\n');
+}
+
+export async function generateSummary(draft, grounding = []) {
   const system =
     'You are a professional CV and resume writer for ProfessionalResume.co.ke. Prioritize Kenyan job market expectations while supporting international applications. Use ATS-friendly wording for counties, ministries, county governments, NGOs, banks, SACCOs, parastatals, UN agencies, TVETs, universities, and private-sector roles when relevant. Respond with JSON: {"suggestion": "..."}.';
   const user = `Create a concise professional summary (2-3 sentences, no markdown) for this CV draft:
@@ -51,21 +58,21 @@ ${JSON.stringify(
   null,
   2
 )}`;
-  const data = await requestJson({ system, user });
+  const data = await requestJson({ system, user: user + groundingSuffix(grounding) });
   return String(data.suggestion || '').trim();
 }
 
-export async function rewriteBullet(context, bullet) {
+export async function rewriteBullet(context, bullet, grounding = []) {
   const system =
     'You rewrite CV/resume bullets to be impact-driven, ATS-friendly, and quantified where possible. Keep facts grounded, use Kenyan or international employer language when context suggests it, and respond with JSON: {"suggestion": "..."}';
   const user = `Context: ${context}
 Bullet: ${bullet}
 Rewrite as a single bullet sentence (no markdown).`;
-  const data = await requestJson({ system, user });
+  const data = await requestJson({ system, user: user + groundingSuffix(grounding) });
   return String(data.suggestion || '').trim();
 }
 
-export async function suggestSkills(draft) {
+export async function suggestSkills(draft, grounding = []) {
   const system =
     'You are a Kenya-aware resume assistant. Suggest up to 12 relevant ATS skills for Kenyan and international roles, including NGO, government, county, banking, SACCO, parastatal, UN, TVET, university, and private-sector contexts when relevant. Respond with JSON: {"suggestions": ["..."]}.';
   const user = `Suggest skills for this CV draft:
@@ -80,14 +87,14 @@ ${JSON.stringify(
   null,
   2
 )}`;
-  const data = await requestJson({ system, user });
+  const data = await requestJson({ system, user: user + groundingSuffix(grounding) });
   const suggestions = Array.isArray(data.suggestions)
     ? data.suggestions.map((item) => String(item).trim()).filter(Boolean)
     : [];
   return suggestions;
 }
 
-export async function jobRequirementAssist({ draft, jobAdvertText, regenerate = false }) {
+export async function jobRequirementAssist({ draft, jobAdvertText, regenerate = false, grounding = [] }) {
   const system =
     'You are a Kenya-aware CV tailoring assistant for ProfessionalResume.co.ke. Extract role targets from a job advert and produce CV-ready suggestions for Kenyan employers, NGOs, ministries, county governments, parastatals, SACCOs, banks, UN agencies, diaspora roles, and international ATS systems when relevant. Respond with JSON only.';
   const user = `Analyze this job advert and the current CV context.
@@ -127,7 +134,7 @@ ${JSON.stringify(
   2
 )}`;
 
-  const data = await requestJson({ system, user });
+  const data = await requestJson({ system, user: user + groundingSuffix(grounding) });
 
   const toList = (v) =>
     Array.isArray(v)

@@ -12,6 +12,12 @@ import {
   suggestCoverLetterSubjectLines,
   suggestCoverLetterGreetingClosing,
 } from '../services/aiCoverLetterService.js';
+import { retrieveTextSources } from '../services/aiLabRagService.js';
+
+async function grounding(query, value) {
+  try { return await retrieveTextSources({ query, sources: [{ filename: 'CV and job context', text: JSON.stringify(value) }] }); }
+  catch (error) { console.warn('[ai-cover-letter] grounding skipped', error?.message || error); return []; }
+}
 
 function validationError(res, error) {
   return res.status(400).json({ error: error.details?.[0]?.message || error.message });
@@ -21,8 +27,9 @@ export async function aiCoverLetterGenerate(req, res) {
   try {
     const { error, value } = aiCoverLetterGenerateSchema.validate(req.body || {});
     if (error) return validationError(res, error);
-    const suggestion = await generateCoverLetter(value);
-    return res.json({ suggestion });
+    const passages = await grounding(value.jobTitle || 'cover letter', value);
+    const suggestion = await generateCoverLetter({ ...value, grounding: passages });
+    return res.json({ suggestion, grounding: { sourceCount: passages.length } });
   } catch (err) {
     console.error('aiCoverLetterGenerate error', err);
     return res.status(500).json({ error: 'Failed to generate cover letter' });
