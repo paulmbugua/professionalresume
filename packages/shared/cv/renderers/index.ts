@@ -12,6 +12,9 @@ import {
   renderersById as renderersByIdJs,
   sanitizeRichTextHtml as sanitizeRichTextHtmlJs,
   templateMarkersById as templateMarkersByIdJs,
+  buildSmartPaginationScript as buildSmartPaginationScriptJs,
+  injectSmartPagination as injectSmartPaginationJs,
+  smartPaginationCss as smartPaginationCssJs,
 } from './index.js';
 
 export type CvRenderer = (draft: CvDraft) => string;
@@ -25,6 +28,15 @@ export const paginationCss: string = paginationCssJs;
 export const resolveTemplateTypography: (draft?: CvDraft) => Record<string, number> =
   resolveTemplateTypographyJs;
 export const templateMarkersById: Record<string, string[]> = templateMarkersByIdJs;
+export const smartPaginationCss: string = smartPaginationCssJs;
+export const buildSmartPaginationScript: (options?: {
+  debug?: boolean;
+  notifyParent?: boolean;
+}) => string = buildSmartPaginationScriptJs;
+export const injectSmartPagination: (
+  html: string,
+  options?: { debug?: boolean; notifyParent?: boolean }
+) => string = injectSmartPaginationJs;
 
 export const buildCvFontFaceCss: (input?: { fontKeys?: string[] }) => string =
   buildCvFontFaceCssJs;

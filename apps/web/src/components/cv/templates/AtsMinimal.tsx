@@ -40,6 +40,7 @@ export function renderAtsMinimalHtml(draft: CvDraft) {
     });
 
   const sectionMap: Record<CvSectionKey, string> = {
+    additionalSections: '',
     summary: draft.summary?.trim()
       ? `<section><h2 class="sec">Summary</h2><p>${esc(draft.summary)}</p></section>`
       : '',

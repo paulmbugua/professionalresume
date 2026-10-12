@@ -6,12 +6,14 @@ export const defaultSectionOrder = [
   'projects',
   'certifications',
   'extras',
+  'additionalSections',
 ];
 export const defaultSectionVisibility = defaultSectionOrder.reduce(
   (a, k) => ((a[k] = true), a),
   {}
 );
 export const templateThemeDefaults = {
+  'executive-navy-orange': { primary: '#10243a', sidebarBg: '#10243a', sidebarText: '#ffffff', accent: '#e77722' },
   'modern-sidebar': {
     primary: '#0f172a',
     sidebarBg: '#0f172a',
@@ -214,7 +216,7 @@ export function normalizeCvDraft(draft = {}) {
   const templateDefaults = templateThemeDefaults[draft.templateId] || {};
   return {
     ...draft,
-    sectionOrder: draft.sectionOrder?.length ? draft.sectionOrder : defaultSectionOrder,
+    sectionOrder: [...new Set([...(draft.sectionOrder?.length ? draft.sectionOrder : defaultSectionOrder), 'additionalSections'])],
     sectionVisibility: { ...defaultSectionVisibility, ...(draft.sectionVisibility || {}) },
     basics: {
       ...(draft.basics || {}),
@@ -305,10 +307,31 @@ export function resolveTemplateTypography(draft = {}) {
 }
 
 export const sectionVisible = (d, k) => d.sectionVisibility?.[k] !== false;
+export function renderAdditionalSections(d, placement = 'main') {
+  if (!sectionVisible(d, 'additionalSections')) return '';
+  const sidebar = ['modern-sidebar', 'modern-sidebar-blue', 'impact-sidebar', 'executive-navy-orange', 'modern-teal', 'clinical-clean', 'executive-band'].includes(d.templateId);
+  return (d.additionalSections || []).filter((section) => placement === 'sidebar' ? sidebar && section.placement === 'sidebar' : !sidebar || section.placement !== 'sidebar')
+    .map((section) => `<section class="cv-resume-section"><h2 class="cv-keep-with-next">${esc(section.title)}</h2>${section.content ? `<p>${esc(section.content)}</p>` : ''}${section.bullets?.length ? `<ul>${section.bullets.map((bullet) => `<li>${esc(bullet)}</li>`).join('')}</ul>` : ''}</section>`).join('');
+}
+export function applySectionLabels(html, d) {
+  for (const key of defaultSectionOrder) {
+    const label = d.sectionLabels?.[key];
+    if (label && key !== 'additionalSections') {
+      const defaultLabel = key.charAt(0).toUpperCase() + key.slice(1);
+      html = html
+        .replaceAll(`<h2>${defaultLabel}</h2>`, `<h2>${esc(label)}</h2>`)
+        .replaceAll(
+          `<h2 class="cv-keep-with-next">${defaultLabel}</h2>`,
+          `<h2 class="cv-keep-with-next">${esc(label)}</h2>`,
+        );
+    }
+  }
+  return html;
+}
 export const buildCssVars = (d) => {
   const t = resolveTemplateTypography(d);
   return `:root{--baseFontSize:${d.typography.baseFontSize}px;--h1Size:${d.typography.h1Size}px;--h2Size:${d.typography.h2Size}px;--h3Size:${d.typography.h3Size || 12}px;--bodySize:${d.typography.bodySize || d.typography.baseFontSize}px;--fontFamily:${d.typography.fontFamily};--lineHeight:${t.lineHeight};--denseLineHeight:${t.denseLineHeight};--resolvedBodySize:${t.body}px;--resolvedMetaSize:${t.meta}px;--resolvedH3Size:${t.h3}px;--resolvedSectionTitleSize:${t.sectionTitle}px;--resolvedNameSize:${t.name}px;--resolvedHeadlineSize:${t.headline}px;--resolvedSidebarBodySize:${t.sidebarBody}px;--resolvedSidebarMetaSize:${t.sidebarMeta}px;--resolvedSectionGap:${t.sectionGap}px;--resolvedItemGap:${t.itemGap}px;--textColor:${d.formatting.textColor};--mutedTextColor:${d.formatting.mutedTextColor};--linkColor:${d.formatting.linkColor};--primary:${d.templateTheme.primary || '#0f172a'};--secondary:${d.templateTheme.secondary || '#1e293b'};--accent:${d.templateTheme.accent || d.templateTheme.primary || '#0f766e'};--sidebarBg:${d.templateTheme.sidebarBg || d.templateTheme.primary || '#0f172a'};--sidebarText:${d.templateTheme.sidebarText || '#f8fafc'};--headerBg:${d.templateTheme.headerBg || d.templateTheme.primary || '#0f172a'};--headerText:${d.templateTheme.headerText || '#ffffff'};--sectionBg:${d.templateTheme.sectionBg || '#f8fafc'};--borderColor:${d.templateTheme.borderColor || '#e2e8f0'};--page-width:210mm;--page-height:297mm}`;
 };
-export const paginationCss = `@page{size:A4;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0}body{font-size:var(--resolvedBodySize);line-height:var(--lineHeight);color:var(--textColor)}section,article,.item{break-inside:auto;page-break-inside:auto}.row,header{break-inside:avoid;page-break-inside:avoid}h2,h3{break-after:avoid;page-break-after:avoid}ul{break-inside:auto;page-break-inside:auto}li{break-inside:avoid;page-break-inside:avoid}@media print{html,body{background-color:#fff !important;overflow:visible !important}.page{margin:0 !important;box-shadow:none !important;width:var(--page-width) !important;min-height:var(--page-height) !important;overflow:visible !important;box-decoration-break:clone;-webkit-box-decoration-break:clone}.page>.inner,.page>.content,.page>aside,.page>main,.page>section{box-decoration-break:clone;-webkit-box-decoration-break:clone}}`;
+export const paginationCss = `@page{size:A4;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0}body{font-size:var(--resolvedBodySize);line-height:var(--lineHeight);color:var(--textColor)}section,article,.item{break-inside:auto;page-break-inside:auto}.row,header{break-inside:avoid-page;page-break-inside:avoid}h2,h3{break-after:avoid-page;page-break-after:avoid}ul{break-inside:auto;page-break-inside:auto}li{break-inside:avoid-page;page-break-inside:avoid;orphans:2;widows:2}@media print{html,body{background-color:#fff !important;overflow:visible !important}.page{margin:0 !important;box-shadow:none !important;width:var(--page-width) !important;min-height:var(--page-height) !important;overflow:visible !important;box-decoration-break:clone;-webkit-box-decoration-break:clone}.page>.inner,.page>.content,.page>aside,.page>main,.page>section{box-decoration-break:clone;-webkit-box-decoration-break:clone}}`;
 export const renderRichText = (draft, key, fallback = '') =>
   draft.richText?.[key]?.trim() ? sanitizeRichTextHtml(draft.richText[key]) : esc(fallback);

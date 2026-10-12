@@ -39,6 +39,11 @@ import {
   renderPortfolioCanvasHtml,
   renderServiceProHtml,
 } from './templates/newRenderers.js';
+import {
+  buildSmartPaginationScript,
+  injectSmartPagination,
+  smartPaginationCss,
+} from './smartPagination.js';
 
 export {
   normalizeCvDraft,
@@ -50,14 +55,19 @@ export {
   getTemplateFontStack,
   getTemplateFontDependencies,
   getTemplateFontAudit,
+  buildSmartPaginationScript,
+  injectSmartPagination,
+  smartPaginationCss,
 };
 
 export const templateMarkersById = {
+  'executive-navy-orange': ['modernSidebarLayout'],
   ...baseTemplateMarkersById,
   ...newTemplateMarkersById,
 };
 
 export const renderersById = {
+  'executive-navy-orange': (draft) => renderModernSidebarHtml({ ...draft, templateId: 'executive-navy-orange' }).replace('</head>', '<style>.sidebar h2{color:var(--accent)}.content h2{border-bottom:2px solid var(--accent);padding-bottom:5px}.sidebar .headline{color:#fff}</style></head>'),
   'ats-minimal': renderAtsMinimalHtml,
   'ats-compact': renderAtsCompactHtml,
   'modern-teal': renderModernTealHtml,

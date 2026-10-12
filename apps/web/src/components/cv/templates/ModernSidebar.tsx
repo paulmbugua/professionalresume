@@ -27,6 +27,7 @@ export function renderModernSidebarHtml(draft: CvDraft): string {
   const { cssVarBlock } = resolveDraftStyles(draft);
 
   const sectionMap: Record<CvSectionKey, string> = {
+    additionalSections: '',
     summary:
       draft.summary?.trim() || draft.richText?.summary?.trim()
         ? `<section><h2>Summary</h2><p>${renderRichText(draft, 'summary', draft.summary || '')}</p></section>`
@@ -150,6 +151,7 @@ const ModernSidebar: React.FC<Props> = ({ draft }) => {
   const mainKeys = order.filter((key) => !sidebarKeys.includes(key));
 
   const sectionMap: Record<CvSectionKey, React.ReactNode> = {
+    additionalSections: '',
     summary: draft.summary ? (
       <section>
         <h3 className="cv-section-title text-gray-800">Summary</h3>

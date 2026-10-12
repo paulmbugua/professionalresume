@@ -110,6 +110,7 @@ const TemplateSwitcher: React.FC<Props> = ({ currentTemplateId, onTemplateSelect
       shouldTouch: true,
       shouldValidate: false,
     });
+    setValue('templateTheme', normalizeDraft({ ...(liveDraft || demoResume), templateId, templateTheme: undefined } as CvDraft).templateTheme!, { shouldDirty: true });
     setFocusedTemplate(null);
     setIsOpen(false);
     onTemplateSelected?.(templateId);

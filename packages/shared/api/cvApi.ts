@@ -111,6 +111,9 @@ export const updateCvDraft = async (
 
     if ((payload as any).basics && typeof (payload as any).basics === 'object') safe.basics = (payload as any).basics;
     if (typeof (payload as any).summary === 'string') safe.summary = (payload as any).summary;
+    if (typeof payload.targetTitle === 'string') safe.targetTitle = payload.targetTitle;
+    if (Array.isArray(payload.additionalSections)) safe.additionalSections = payload.additionalSections;
+    if (payload.sectionLabels) safe.sectionLabels = payload.sectionLabels;
     if (Array.isArray((payload as any).skills)) safe.skills = (payload as any).skills;
 
     if (Array.isArray((payload as any).experience)) safe.experience = (payload as any).experience;
@@ -162,7 +165,7 @@ export const deleteCvDraft = async (backendUrl: string, token: string, id: strin
 export const exportCvPdf = async (
   backendUrl: string,
   token: string,
-  payload: { draftId?: string; cvJson?: Partial<CvDraft> },
+  payload: { draftId?: string; cvJson?: Partial<CvDraft>; format?: 'pdf' | 'docx' },
 ): Promise<CvExportResponse> => {
   try {
     const api = client(backendUrl, token);

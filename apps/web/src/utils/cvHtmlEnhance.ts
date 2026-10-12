@@ -1,8 +1,12 @@
 import type { CvDraft } from '@cvpro/shared/types';
+import {
+  buildSmartPaginationScript,
+  smartPaginationCss,
+} from '@cvpro/shared/cv/renderers/index.js';
 
 export const PREVIEW_MAX_HEIGHT = 10000;
 
-const SIDEBAR_TEMPLATE_IDS = new Set(['modern-sidebar', 'modern-sidebar-blue']);
+const SIDEBAR_TEMPLATE_IDS = new Set(['modern-sidebar', 'modern-sidebar-blue', 'executive-navy-orange']);
 
 export type CvHtmlEnhanceOptions = {
   /**
@@ -22,51 +26,7 @@ export type CvHtmlEnhanceOptions = {
 
 function applySidebarPagedBackgroundCss(templateId: string) {
   if (!SIDEBAR_TEMPLATE_IDS.has(templateId)) return '';
-
-  // Print engines paginate one long flow; sidebar elements cannot stretch into empty
-  // leftover page space. Repeating a page-height background paints each A4 page slice.
-  //
-  // ? Screen: paint on .page (simple, looks correct in iframe preview)
-  // ? Print: paint on html/body (bulletproof; avoids bottom cut when .page height differs)
-  return `
-/* marker */
-.cv-sidebar-paged-background{}
-
-body[data-template-id="${templateId}"]{
-  --cv-page-height:269mm;
-  --cv-sidebar-width:70mm;
-}
-
-/* SCREEN */
-body[data-template-id="${templateId}"] .page{
-  background-image:linear-gradient(to right,var(--sidebarBg) 0 var(--cv-sidebar-width),#fff var(--cv-sidebar-width) 100%);
-  background-repeat:no-repeat;
-  background-size:100% 100%;
-  background-position:top left;
-}
-
-/* PRINT: paint on document flow so it never -cuts- at the bottom */
-@media print{
-  html,body{
-    -webkit-print-color-adjust:exact;
-    print-color-adjust:exact;
-    /* Shared renderer base CSS applies background:#fff !important for print.
-       Keep sidebar background paint alive by overriding with matching priority. */
-    background-image:linear-gradient(to right,var(--sidebarBg) 0 var(--cv-sidebar-width),#fff var(--cv-sidebar-width) 100%) !important;
-    background-repeat:repeat-y !important;
-    background-size:100% var(--cv-page-height) !important;
-    background-position:top left !important;
-  }
-
-  /* avoid double-painting if templates also set .page bg */
-  body[data-template-id="${templateId}"] .page{
-    background:transparent !important;
-  }
-}
-
-/* avoid sidebar element painting over our gradient */
-body[data-template-id="${templateId}"] aside{background:transparent !important}
-`;
+  return `@media print{body[data-template-id="${templateId}"] .cv-paginated-page>aside.sidebar{background:var(--sidebarBg)!important}}`;
 }
 
 export function withPreviewEnhancements(
@@ -78,6 +38,10 @@ export function withPreviewEnhancements(
   const { injectAutosize = true, screenOnePageOnly = false } = opts;
 
   const templateId = String(templateMeta?.templateId ?? draft.templateId ?? '').trim();
+  const layoutDebug =
+    process.env.NODE_ENV !== 'production' &&
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('cvLayoutDebug') === '1';
   const sidebarPagedBackgroundCss = applySidebarPagedBackgroundCss(templateId);
 
   // ? Modal -one page only- clamp (SCREEN only).
@@ -130,6 +94,10 @@ body[data-template-id="creative-timeline"] .timeline:before{
 }
 </style>`;
 
+  const smartPaginationRuntime = screenOnePageOnly
+    ? ''
+    : buildSmartPaginationScript({ debug: layoutDebug, notifyParent: true });
+
   const autosizeScript = `
 <script>
 (function(){
@@ -157,12 +125,16 @@ body[data-template-id="creative-timeline"] .timeline:before{
   }
 
   if (!next.includes('id="cv-shared-pagination"')) {
-    next = next.replace('</head>', `${paginationCss}</head>`);
+    next = next.replace('</head>', `${paginationCss}${screenOnePageOnly ? '' : smartPaginationCss}</head>`);
   }
 
   // ? Only inject autosize when enabled
   if (injectAutosize && !next.includes('__cv_iframe_resize')) {
     next = next.replace('</body>', `${autosizeScript}</body>`);
+  }
+
+  if (smartPaginationRuntime && !next.includes('id="cv-smart-pagination-runtime"')) {
+    next = next.replace('</body>', `${smartPaginationRuntime}</body>`);
   }
 
   return next;

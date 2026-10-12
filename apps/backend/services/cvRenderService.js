@@ -7,13 +7,14 @@ import {
   getTemplateFontAudit,
   getTemplateFontDependencies,
   getTemplateFontStack,
+  injectSmartPagination,
 } from '../../../packages/shared/cv/renderers/index.js';
 import {
   renderersById as coverLetterRenderersById,
   templateMarkersById as coverLetterTemplateMarkersById,
 } from '../../../packages/shared/cover-letter/renderers/index.js';
 
-const SIDEBAR_TEMPLATE_IDS = new Set(['modern-sidebar', 'modern-sidebar-blue']);
+const SIDEBAR_TEMPLATE_IDS = new Set(['modern-sidebar', 'modern-sidebar-blue', 'executive-navy-orange']);
 const COVER_LETTER_TEMPLATE_IDS = new Set(Object.keys(coverLetterRenderersById));
 const CONTAINER_BROWSER_ARGS = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'];
 const OPTIONAL_LINUX_CHROME_PATHS = [
@@ -86,46 +87,22 @@ async function waitForDocumentFonts(page) {
   return result;
 }
 
+async function waitForSmartPagination(page) {
+  try {
+    await page.waitForFunction(
+      () => document.documentElement.dataset.cvPaginationDone === 'true',
+      { timeout: 5000 },
+    );
+    return await page.evaluate(() => window.__cvPaginationMetrics || null);
+  } catch (error) {
+    console.warn('[exportPdf] smart pagination metrics unavailable', error?.message || error);
+    return null;
+  }
+}
+
 function applySidebarPagedBackgroundCss(templateId) {
   if (!SIDEBAR_TEMPLATE_IDS.has(String(templateId || '').trim())) return '';
-
-  return `
-<style id="cv-sidebar-paged-background">
-body[data-template-id="${templateId}"]{
-  --cv-page-height:269mm;     /* A4 content height used for repeat */
-  --cv-sidebar-width:70mm;
-}
-
-/* ✅ PRINT: paint on html/body so it repeats cleanly for every page slice */
-@media print{
-  html,body{
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-    /* paginationCss uses background:#fff !important in base template CSS.
-       Force the repeating sidebar layer to win in print/export. */
-    background-image: linear-gradient(
-      to right,
-      var(--sidebarBg) 0 var(--cv-sidebar-width),
-      #fff var(--cv-sidebar-width) 100%
-    ) !important;
-    background-repeat: repeat-y !important;
-    background-size: 100% var(--cv-page-height) !important;
-    background-position: top left !important;
-  }
-
-  /* ✅ prevent template .page background (often light gray) from showing */
-  body[data-template-id="${templateId}"] .page{
-    background: transparent !important;
-    box-decoration-break: clone;
-    -webkit-box-decoration-break: clone;
-  }
-
-  /* avoid double painting from aside only while printing/exporting */
-  body[data-template-id="${templateId}"] aside{
-    background: transparent !important;
-  }
-}
-</style>`;
+  return `<style id="cv-sidebar-paged-background">@media print{body[data-template-id="${templateId}"] .cv-paginated-page>aside.sidebar{background:var(--sidebarBg)!important}}</style>`;
 }
 
 function withExportEnhancements(html, templateId) {
@@ -141,7 +118,9 @@ function withExportEnhancements(html, templateId) {
     next = next.replace('</head>', `${sidebarCss}</head>`);
   }
 
-  return next;
+  return COVER_LETTER_TEMPLATE_IDS.has(templateId)
+    ? next
+    : injectSmartPagination(next, { debug: false, notifyParent: false });
 }
 
 function assertTemplateMarkers(templateId, html) {
@@ -210,7 +189,7 @@ export function buildCvHtml({ draft }) {
   return html;
 }
 
-export async function htmlToPdfBuffer(html) {
+export async function htmlToPdfBuffer(html, { onPaginationMetrics } = {}) {
   let browser = null;
   const platform = process.platform;
   const isProduction = process.env.NODE_ENV === 'production';
@@ -319,7 +298,12 @@ export async function htmlToPdfBuffer(html) {
 
     await page.setContent(html, { waitUntil: 'networkidle0' });
     const fontReadyState = await waitForDocumentFonts(page);
+    const paginationMetrics = html.includes('id="cv-smart-pagination-runtime"')
+      ? await waitForSmartPagination(page)
+      : null;
+    if (typeof onPaginationMetrics === 'function') onPaginationMetrics(paginationMetrics);
     console.info('[exportPdf] puppeteer document.fonts', fontReadyState);
+    console.info('[exportPdf] smartPagination', paginationMetrics);
     return assertPdf(
       await page.pdf({
         format: 'A4',
@@ -364,7 +348,12 @@ export async function htmlToPdfBuffer(html) {
 
     await page.setContent(html, { waitUntil: 'networkidle' });
     const fontReadyState = await waitForDocumentFonts(page);
+    const paginationMetrics = html.includes('id="cv-smart-pagination-runtime"')
+      ? await waitForSmartPagination(page)
+      : null;
+    if (typeof onPaginationMetrics === 'function') onPaginationMetrics(paginationMetrics);
     console.info('[exportPdf] playwright document.fonts', fontReadyState);
+    console.info('[exportPdf] smartPagination', paginationMetrics);
     return assertPdf(
       await page.pdf({
         format: 'A4',

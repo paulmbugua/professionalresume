@@ -1,5 +1,6 @@
 // apps/web/src/templates/registry.ts
 import React from 'react';
+import ExecutiveNavyOrange from '../components/cv/templates/ExecutiveNavyOrange';
 import type { CvDraft, CvTemplate } from '@cvpro/shared/types';
 import { renderersById } from '@cvpro/shared/cv/renderers/index.js';
 
@@ -40,6 +41,7 @@ export type TemplateMeta = CvTemplate & {
 };
 
 export const templateRegistry: TemplateMeta[] = [
+  { id: 'executive-navy-orange', name: 'Executive Navy & Orange', category: 'Executive', isAtsFriendly: false, componentKey: 'ExecutiveNavyOrange', description: 'Navy sidebar, orange headings and a clear executive layout.', tags: ['executive', 'sidebar'], component: ExecutiveNavyOrange, renderHtml: renderersById['executive-navy-orange'] },
   {
     id: 'ats-minimal',
     name: 'ATS Minimal',

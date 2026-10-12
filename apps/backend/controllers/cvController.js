@@ -16,6 +16,7 @@ import {
 import { cvTemplates as localTemplates } from '../services/cvTemplates.js';
 import { improveExperienceWithAi } from '../services/cvAiService.js';
 import { buildCvHtml, htmlToPdfBuffer } from '../services/cvRenderService.js';
+import { resumeToDocxBuffer } from '../services/resumeDocxService.js';
 import { putDocObject, signDocGetUrl, getPublicR2Url } from '../services/r2.js';
 import {
   exportCoverLetter as exportCoverLetterFromCoverLetterController,
@@ -161,6 +162,9 @@ export async function exportCv(req, res) {
     if (upload?.buffer) {
       mimeType = upload.mimetype || 'application/pdf';
       buffer = upload.buffer;
+    } else if (value.format === 'docx') {
+      buffer = await resumeToDocxBuffer(draft || {});
+      mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
     } else {
       const formattedHtml = buildCvHtml({ draft: draft || {} });
       buffer = await htmlToPdfBuffer(formattedHtml);
@@ -169,7 +173,7 @@ export async function exportCv(req, res) {
 
     const draftSegment = value.draftId || draft?.id || 'adhoc';
     const objectKey = sanitizeObjectKey(
-      `cvpro/${req.user.id}/drafts/${draftSegment}/export-${Date.now()}.pdf`,
+      `cvpro/${req.user.id}/drafts/${draftSegment}/export-${Date.now()}.${value.format === 'docx' ? 'docx' : 'pdf'}`,
     );
 
     const uploaded = await putDocObject({

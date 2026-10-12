@@ -109,7 +109,7 @@ export function useDeleteCvDraft({ backendUrl, token }: BaseArgs) {
 }
 
 export function useExportCv({ backendUrl, token }: BaseArgs) {
-  return useMutation<CvExportResponse, Error, { draftId?: string; cvJson?: Partial<CvDraft> }>({
+  return useMutation<CvExportResponse, Error, { draftId?: string; cvJson?: Partial<CvDraft>; format?: 'pdf' | 'docx' }>({
     mutationFn: (payload) => {
       if (!token) throw new Error('Unauthorized');
       return exportCvPdf(backendUrl, token, payload);

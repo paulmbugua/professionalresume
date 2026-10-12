@@ -32,6 +32,7 @@ export function renderCompactOnePagerHtml(draft: CvDraft): string {
     );
 
   const sectionMap: Record<CvSectionKey, string> = {
+    additionalSections: '',
     summary: draft.summary?.trim()
       ? `<section><h2>Summary</h2><p>${esc(draft.summary)}</p></section>`
       : '',
@@ -127,6 +128,7 @@ const CompactOnePager: React.FC<Props> = ({ draft }) => {
   const visible = draft.sectionVisibility || {};
 
   const sectionMap: Record<CvSectionKey, React.ReactNode> = {
+    additionalSections: '',
     summary: draft.summary ? (
       <section>
         <h3 className="cv-section-title">Summary</h3>

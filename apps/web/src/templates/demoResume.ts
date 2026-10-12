@@ -83,6 +83,7 @@ export const demoResume: CvDraft = {
     projects: true,
     certifications: true,
     extras: true,
+    additionalSections: true,
   },
 };
 
@@ -200,6 +201,7 @@ export const resolvePreviewDraft = (
 
   const merged: CvDraft = {
     ...base,
+    ...draft,
     id: (draft.id as CvDraft['id']) ?? base.id,
     userId: (draft.userId as CvDraft['userId']) ?? base.userId,
     updatedAt: (draft.updatedAt as CvDraft['updatedAt']) ?? base.updatedAt,

@@ -21,6 +21,9 @@ import {
   getCoverLetterEntitlementController,
 } from '../controllers/cvController.js';
 import { parseCvUpload } from '../controllers/cvParseController.js';
+import rateLimit from 'express-rate-limit';
+import { ingestOriginalResume, buildAiResume, getResumeVersions, downloadOriginalResume } from '../controllers/resumeGenerationController.js';
+import { MAX_RESUME_BYTES } from '../services/resumeIngestionService.js';
 
 const upload = multer({ storage: multer.memoryStorage() });
 const parseUpload = multer({
@@ -38,6 +41,14 @@ const parseUpload = multer({
 });
 
 const r = express.Router();
+const resumeUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_RESUME_BYTES, files: 1 } });
+const resumeAiLimit = rateLimit({ windowMs: 60 * 60 * 1000, limit: 20, keyGenerator: (req) => String(req.user.id), standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Resume AI request limit reached. Please try again in an hour.' } });
+r.post('/original-resumes', requireAuth, resumeAiLimit, (req, res, next) => {
+  resumeUpload.single('file')(req, res, (error) => error ? res.status(400).json({ error: error.code === 'LIMIT_FILE_SIZE' ? 'Resume uploads must be 8 MB or smaller.' : 'Invalid resume upload.' }) : next());
+}, ingestOriginalResume);
+r.post('/generate', requireAuth, resumeAiLimit, buildAiResume);
+r.get('/original-resumes/:id/file', requireAuth, downloadOriginalResume);
+r.get('/drafts/:id/generated-versions', requireAuth, getResumeVersions);
 
 r.get('/templates', listTemplates);
 r.post('/templates/upload', requireAuth, upload.single('file'), uploadTemplate);

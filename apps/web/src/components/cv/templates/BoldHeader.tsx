@@ -50,6 +50,7 @@ export function renderBoldHeaderHtml(draft: CvDraft) {
     });
 
   const sectionHtml: Record<CvSectionKey, string> = {
+    additionalSections: '',
     summary:
       draft.summary?.trim() || draft.richText?.summary?.trim()
         ? `<section class="card muted">
@@ -289,6 +290,7 @@ const BoldHeader: React.FC<Props> = ({ draft }) => {
   const isVisible = (k: CvSectionKey) => visible[k] !== false;
 
   const sectionMap: Record<CvSectionKey, React.ReactNode> = {
+    additionalSections: '',
     summary:
       draft.summary || draft.richText?.summary ? (
         <section className="rounded-xl border border-gray-100 bg-gray-50 p-4">

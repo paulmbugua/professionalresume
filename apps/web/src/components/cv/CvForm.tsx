@@ -3,11 +3,9 @@ import { useFieldArray, useFormContext, Controller, useWatch } from 'react-hook-
 import type { CvDraft, CvSectionKey } from '@cvpro/shared/types';
 import { useShopContext } from '@cvpro/shared/context';
 import { uploadAsset } from '@cvpro/shared/api/uploadAsset';
-import { demoResume, hasAnyUserData } from '../../templates/demoResume';
+import { demoResume } from '../../templates/demoResume';
 import { stripHtml } from '../../utils/cvRichText';
-import { parseUploadedCv } from '../../utils/cvParseApi';
 import { improveExperienceEntry } from '../../utils/cvImproveApi';
-import { createBuilderSessionHash, saveGuestCvDraft } from '../../lib/cv/guestDraftStorage';
 import { normalizeSectionOrder, normalizeSectionVisibility } from '../../utils/cvDefaults';
 
 const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
@@ -62,56 +60,6 @@ const debugCvImport = (label: string, payload: unknown) => {
   } catch {
     // no-op
   }
-};
-
-const looksLikePdfJunk = (extracted: any): boolean => {
-  if (!extracted) return false;
-
-  const textBits: string[] = [];
-
-  const push = (value: unknown) => {
-    if (typeof value === 'string' && value.trim()) textBits.push(value);
-    if (Array.isArray(value)) {
-      value.forEach((item) => {
-        if (typeof item === 'string' && item.trim()) textBits.push(item);
-      });
-    }
-  };
-
-  push(extracted?.basics?.name);
-  push(extracted?.basics?.headline);
-  push(extracted?.basics?.email);
-  push(extracted?.basics?.phone);
-  push(extracted?.basics?.location);
-  push(extracted?.summary);
-  push(extracted?.skills);
-  push(extracted?.extras?.languages);
-  push(extracted?.extras?.interests);
-
-  const sample = textBits.join(' ').slice(0, 4000);
-  if (!sample.trim()) return false;
-
-  const pdfMarkers = [
-    '%PDF-',
-    'endobj',
-    'stream',
-    'endstream',
-    'xref',
-    'MediaBox',
-    'ViewerPreferences',
-    'ProcSet',
-    'StructParents',
-  ];
-
-  const markerHits = pdfMarkers.reduce(
-    (count, marker) => count + (sample.includes(marker) ? 1 : 0),
-    0
-  );
-
-  const weirdChars = (sample.match(/[^\x09\x0A\x0D\x20-\x7E]/g) || []).length;
-  const weirdRatio = sample.length ? weirdChars / sample.length : 0;
-
-  return markerHits >= 3 || weirdRatio > 0.12;
 };
 
 const normalizeExperienceItems = (items: any[] = []) =>
@@ -315,22 +263,11 @@ const CvForm: React.FC<{
   restoredActiveSection?: string;
   onActiveSectionChange?: (section: string) => void;
 }> = ({ restoredActiveSection, onActiveSectionChange }) => {
-  const { register, control, setValue, getValues, reset } = useFormContext<CvDraft>();
+  const { register, control, setValue, getValues } = useFormContext<CvDraft>();
   const { backendUrl, token } = useShopContext() as any;
 
   const [skillInput, setSkillInput] = useState('');
-  const [uploadMode, setUploadMode] = useState<'merge' | 'replace'>('merge');
-  const [cvFile, setCvFile] = useState<File | null>(null);
-  const [parseState, setParseState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [parseError, setParseError] = useState<string | null>(null);
-  const [parsedPreview, setParsedPreview] = useState<any | null>(null);
-  const [diagnostics, setDiagnostics] = useState<{
-    warnings?: string[];
-    parser?: string;
-    confidence?: number;
-  } | null>(null);
-  const [hasAppliedUpload, setHasAppliedUpload] = useState(false);
-  const [importUndoSnapshot, setImportUndoSnapshot] = useState<CvDraft | null>(null);
+  const hasAppliedUpload = Boolean(useWatch({ control, name: 'generationMeta' })?.originalDocumentId);
   const [improvingExperienceIndex, setImprovingExperienceIndex] = useState<number | null>(null);
   const [improvingAllExperience, setImprovingAllExperience] = useState(false);
   const [experienceAiError, setExperienceAiError] = useState<string | null>(null);
@@ -338,7 +275,6 @@ const CvForm: React.FC<{
   const [photoUploadError, setPhotoUploadError] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
 
-  const didAutoPreloadRef = useRef(false);
 
   const basics = useWatch({ control, name: 'basics' });
   const templateId = useWatch({ control, name: 'templateId' });
@@ -616,25 +552,14 @@ const CvForm: React.FC<{
     certificationsField.replace((demoResume.certifications as any) || []);
   };
 
-  useEffect(() => {
-    if (didAutoPreloadRef.current || hasAppliedUpload) return;
-
-    const current = getValues();
-    const hasUser = hasAnyUserData(current);
-
-    if (!hasUser) {
-      didAutoPreloadRef.current = true;
-      setTimeout(() => {
-        preloadFromDemo({ markDirty: false });
-      }, 0);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasAppliedUpload]);
 
   const clearAllContent = () => {
     setValue('title', '', { shouldDirty: true });
     setValue('meta.isDemoSeeded' as any, false, { shouldDirty: true });
     setValue('meta.hasImportedCv' as any, false, { shouldDirty: true });
+    setValue('additionalSections', [], { shouldDirty: true });
+    setValue('generationMeta', {}, { shouldDirty: true });
+    setValue('sectionLabels', {}, { shouldDirty: true });
 
     setValue(
       'basics',
@@ -670,6 +595,7 @@ const CvForm: React.FC<{
       projects: false,
       certifications: false,
       extras: false,
+      additionalSections: false,
     };
     setValue('sectionVisibility', normalizeSectionVisibility(nextVis) as any, {
       shouldDirty: true,
@@ -742,267 +668,6 @@ const CvForm: React.FC<{
     });
   };
 
-  const isSameAsDemo = (path: string, value: any) => {
-    const demoValue = path
-      .split('.')
-      .reduce((acc: any, part) => (acc ? acc[part] : undefined), demoResume as any);
-    return JSON.stringify(demoValue ?? null) === JSON.stringify(value ?? null);
-  };
-
-  const isMeaningful = (value: any) => {
-    if (Array.isArray(value)) return value.length > 0;
-    if (typeof value === 'string') return value.trim().length > 0;
-    return Boolean(value);
-  };
-
-  const chooseField = (
-    path: string,
-    existing: any,
-    incoming: any,
-    mode: 'merge' | 'replace',
-    isDemoSeeded: boolean
-  ) => {
-    if (mode === 'replace') return incoming;
-
-    const incomingMeaningful = isMeaningful(incoming);
-    if (!incomingMeaningful) return existing;
-
-    const existingMeaningful = isMeaningful(existing);
-    if (!existingMeaningful) return incoming;
-
-    const existingFromDemo = isDemoSeeded && isSameAsDemo(path, existing);
-    return existingFromDemo ? incoming : existing;
-  };
-
-  const applyExtractedToForm = (extracted: Partial<CvDraft>, mode: 'merge' | 'replace') => {
-    const current = getValues();
-    const isDemoSeeded = Boolean(current.meta?.isDemoSeeded);
-
-    debugCvImport('FORM_APPLY_PAYLOAD', { mode, extracted, current });
-
-    const choose = (path: string, existing: any, incoming: any) =>
-      chooseField(path, existing, incoming, mode, isDemoSeeded);
-
-    const chooseImportedArray = <T,>(existing: T[] = [], incoming: T[] = []) => {
-      return incoming.length ? incoming : existing;
-    };
-
-    const nextBasics = {
-      ...current.basics,
-      name: choose('basics.name', current.basics?.name, extracted.basics?.name || ''),
-      headline: choose(
-        'basics.headline',
-        current.basics?.headline,
-        extracted.basics?.headline || ''
-      ),
-      email: choose('basics.email', current.basics?.email, extracted.basics?.email || ''),
-      phone: choose('basics.phone', current.basics?.phone, extracted.basics?.phone || ''),
-      location: choose(
-        'basics.location',
-        current.basics?.location,
-        extracted.basics?.location || ''
-      ),
-      links: choose('basics.links', current.basics?.links || [], extracted.basics?.links || []),
-    };
-
-    const nextSummary = choose('summary', current.summary || '', extracted.summary || '');
-
-    const nextSkills =
-      mode === 'replace'
-        ? extracted.skills || []
-        : Array.from(
-            new Set([...(choose('skills', current.skills || [], extracted.skills || []) || [])])
-          );
-
-    const nextExperience = normalizeExperienceItems(
-      chooseImportedArray(current.experience || [], extracted.experience || [])
-    ) as any[];
-
-    const nextEducation = chooseImportedArray(
-      current.education || [],
-      extracted.education || []
-    ) as any[];
-
-    const nextProjects = chooseImportedArray(
-      current.projects || [],
-      extracted.projects || []
-    ) as any[];
-
-    const nextCertifications = chooseImportedArray(
-      current.certifications || [],
-      extracted.certifications || []
-    ) as any[];
-
-    const nextLanguages = choose(
-      'extras.languages',
-      current.extras?.languages || [],
-      extracted.extras?.languages || []
-    );
-
-    const nextInterests = choose(
-      'extras.interests',
-      current.extras?.interests || [],
-      extracted.extras?.interests || []
-    );
-
-    const nextVisibility = normalizeSectionVisibility(current.sectionVisibility);
-
-    const extractedHas = {
-      summary: Boolean((extracted.summary || '').trim()),
-      skills: Boolean(extracted.skills?.length),
-      experience: Boolean(extracted.experience?.length),
-      education: Boolean(extracted.education?.length),
-      projects: Boolean(extracted.projects?.length),
-      certifications: Boolean(extracted.certifications?.length),
-      extras: Boolean(extracted.extras?.languages?.length || extracted.extras?.interests?.length),
-    };
-
-    (Object.keys(extractedHas) as CvSectionKey[]).forEach((key) => {
-      if (mode === 'replace') nextVisibility[key] = extractedHas[key];
-      else if (extractedHas[key]) nextVisibility[key] = true;
-    });
-
-    const suggestedTitle =
-      !current.title?.trim() || (isDemoSeeded && isSameAsDemo('title', current.title))
-        ? `${(extracted.basics?.name || nextBasics.name || 'My CV').trim()} CV`
-        : current.title;
-
-    const nextDraft: CvDraft = {
-      ...current,
-      title: suggestedTitle,
-      basics: nextBasics,
-      summary: nextSummary,
-      skills: nextSkills,
-      experience: nextExperience,
-      education: nextEducation,
-      projects: nextProjects,
-      certifications: nextCertifications,
-      extras: {
-        languages: nextLanguages || [],
-        interests: nextInterests || [],
-      },
-      richText: {
-        ...(current.richText || {}),
-        summary: nextSummary || '',
-      },
-      sectionOrder: normalizeSectionOrder(current.sectionOrder),
-      sectionVisibility: normalizeSectionVisibility(nextVisibility),
-      meta: {
-        ...(current.meta || {}),
-        isDemoSeeded: false,
-        hasImportedCv: true,
-        importedAt: new Date().toISOString(),
-        importMode: mode,
-      },
-    };
-
-    const sessionHash = createBuilderSessionHash(nextDraft, {
-      activeSection: nextExperience.length ? 'experience' : 'basics',
-      importMode: mode,
-      hasImportedCv: true,
-    });
-    saveGuestCvDraft({
-      draft: nextDraft,
-      selectedTemplateId: nextDraft.templateId,
-      activeTab: 'edit',
-      activeSection: nextExperience.length ? 'experience' : 'basics',
-      scrollY: typeof window !== 'undefined' ? window.scrollY : undefined,
-      scrollPosition: {
-        windowY: typeof window !== 'undefined' ? window.scrollY : undefined,
-        builderPanelY:
-          typeof document !== 'undefined'
-            ? document.querySelector<HTMLElement>('[data-cv-builder-panel]')?.scrollTop
-            : undefined,
-        previewY:
-          typeof document !== 'undefined'
-            ? document.querySelector<HTMLElement>('[data-cv-preview-scroll]')?.scrollTop
-            : undefined,
-      },
-      editorState: { activeSection: nextExperience.length ? 'experience' : 'basics' },
-      previewState: { selectedTemplateId: nextDraft.templateId, hasImportedCv: true },
-      sessionHash,
-      returnTo: '/builder/guest',
-    });
-
-    debugCvImport('FORM_APPLY_NEXT_DRAFT', nextDraft);
-    debugCvImport('FORM_APPLY_NEXT_EXPERIENCE', nextExperience);
-
-    reset(nextDraft, {
-      keepDefaultValues: false,
-    });
-
-    setTimeout(() => {
-      linksField.replace((nextDraft.basics?.links || []) as any);
-      experienceField.replace((nextDraft.experience || []) as any);
-      educationField.replace((nextDraft.education || []) as any);
-      projectsField.replace((nextDraft.projects || []) as any);
-      certificationsField.replace((nextDraft.certifications || []) as any);
-
-      debugCvImport('POST_RESET_EXPERIENCE_VALUES', {
-        watched: normalizeExperienceItems(getValues('experience') as any[]),
-        replacingWith: nextDraft.experience,
-      });
-
-      requestAnimationFrame(() => {
-        debugCvImport('POST_RESET_EXPERIENCE_FIELDS', {
-          fieldArrayLength: experienceField.fields.length,
-          getValuesExperience: normalizeExperienceItems(getValues('experience') as any[]),
-        });
-      });
-    }, 0);
-
-    didAutoPreloadRef.current = true;
-    setHasAppliedUpload(true);
-    setOpen((prev) => ({
-      ...prev,
-      basics: true,
-      summary:
-        Boolean(nextBasics.name?.trim() || nextBasics.headline?.trim()) &&
-        !Boolean(nextSummary?.trim()),
-      experience: Boolean(nextExperience.length),
-      education: false,
-      projects: false,
-      certifications: false,
-      skills: false,
-      extras: false,
-      photo: false,
-    }));
-  };
-
-  const onExtractCv = async () => {
-    if (!backendUrl || !cvFile) return;
-
-    setParseState('loading');
-    setParseError(null);
-    setParsedPreview(null);
-
-    try {
-      const parsed = await parseUploadedCv({ backendUrl, token, file: cvFile, mode: uploadMode });
-      const extracted = parsed.extracted || null;
-
-      if (extracted && looksLikePdfJunk(extracted)) {
-        throw new Error(
-          'Extraction output appears corrupted. Please retry with a text-based PDF or DOCX.'
-        );
-      }
-
-      setParsedPreview(extracted);
-      setDiagnostics(parsed.diagnostics || null);
-
-      debugCvImport('PARSED_EXTRACTED_PRE_APPLY', extracted);
-
-      if (extracted) {
-        setImportUndoSnapshot(getValues() as CvDraft);
-        applyExtractedToForm(extracted, uploadMode);
-      }
-
-      setParseState('success');
-    } catch (err: any) {
-      setParseError(err?.response?.data?.error || err?.message || 'Failed to parse CV');
-      setParseState('error');
-    }
-  };
-
   const includePill = (key: CvSectionKey) => (
     <button
       type="button"
@@ -1032,8 +697,7 @@ const CvForm: React.FC<{
               Build fast, then remove what you don’t need
             </h3>
             <p className="mt-1 text-xs text-gray-500 dark:text-white/60">
-              Sample content loads by default. Importing a CV now replaces sample values
-              automatically.
+              Manual workspace
             </p>
           </div>
 
@@ -1063,6 +727,7 @@ const CvForm: React.FC<{
     );
 
   const improveSingleExperience = async (index: number) => {
+    if (hasAppliedUpload) { document.getElementById('resume-ai-builder')?.scrollIntoView({ behavior: 'smooth' }); return; }
     if (!backendUrl) return;
 
     const entry = getValues(`experience.${index}` as const);
@@ -1116,6 +781,7 @@ const CvForm: React.FC<{
   };
 
   const improveAllExperience = async () => {
+    if (hasAppliedUpload) { document.getElementById('resume-ai-builder')?.scrollIntoView({ behavior: 'smooth' }); return; }
     if (!backendUrl) return;
 
     const items = (getValues('experience') || []) as any[];
@@ -1222,96 +888,7 @@ const CvForm: React.FC<{
 
   return (
     <div className="space-y-6">
-      {topActions}
-
-      <SectionCard
-        title="Upload your existing CV"
-        subtitle="Upload PDF/DOCX and we’ll auto-fill the form."
-        isOpen
-        collapsible={false}
-      >
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <input
-              type="file"
-              accept="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.pdf,.docx"
-              onChange={(e) => setCvFile(e.target.files?.[0] || null)}
-              className="text-xs"
-            />
-            <label className="inline-flex items-center gap-2 text-xs text-gray-600">
-              <input
-                type="checkbox"
-                checked={uploadMode === 'merge'}
-                onChange={(e) => setUploadMode(e.target.checked ? 'merge' : 'replace')}
-              />
-              Merge into existing data (recommended)
-            </label>
-            <button
-              type="button"
-              disabled={!cvFile || parseState === 'loading'}
-              onClick={onExtractCv}
-              className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
-            >
-              {parseState === 'loading' ? 'Uploading & parsing...' : 'Extract details'}
-            </button>
-          </div>
-
-          {parseState === 'error' && parseError ? (
-            <p className="text-xs text-rose-600">{parseError}</p>
-          ) : null}
-
-          {parseState === 'success' && parsedPreview ? (
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
-              <p>
-                <b>Name:</b> {parsedPreview.basics?.name || '—'}
-              </p>
-              <p>
-                <b>Headline:</b> {parsedPreview.basics?.headline || '—'}
-              </p>
-              <p>
-                <b>Email / Phone:</b> {parsedPreview.basics?.email || '—'} /{' '}
-                {parsedPreview.basics?.phone || '—'}
-              </p>
-              <p>
-                <b>Location:</b> {parsedPreview.basics?.location || '—'}
-              </p>
-              <p className="mt-2">
-                <b>Counts:</b> skills {parsedPreview.skills?.length || 0} · experience{' '}
-                {parsedPreview.experience?.length || 0} · education{' '}
-                {parsedPreview.education?.length || 0} · projects{' '}
-                {parsedPreview.projects?.length || 0} · certs{' '}
-                {parsedPreview.certifications?.length || 0}
-              </p>
-              {diagnostics?.warnings?.length ? (
-                <ul className="mt-2 list-disc pl-5">
-                  {diagnostics.warnings.map((w, idx) => (
-                    <li key={idx}>{w}</li>
-                  ))}
-                </ul>
-              ) : null}
-              <div className="mt-3 flex gap-2">
-                <span className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white">
-                  Imported details applied
-                </span>
-                <button
-                  type="button"
-                  disabled={!importUndoSnapshot}
-                  onClick={() => {
-                    if (importUndoSnapshot) {
-                      reset(importUndoSnapshot);
-                      setHasAppliedUpload(Boolean(importUndoSnapshot.meta?.hasImportedCv));
-                      setImportUndoSnapshot(null);
-                    }
-                  }}
-                  className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 disabled:opacity-50"
-                >
-                  Undo import
-                </button>
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </SectionCard>
+      {!hasAppliedUpload && topActions}
 
       <SectionCard
         title="Basics"

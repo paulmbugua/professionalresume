@@ -140,6 +140,7 @@ const CvBuilderPageInner: React.FC<{
   } as any);
 
   const [exportUrl, setExportUrl] = useState<string | undefined>();
+  const [isAiBuilding, setIsAiBuilding] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | undefined>();
 
   const initRef = useRef(true);
@@ -305,6 +306,7 @@ const CvBuilderPageInner: React.FC<{
 
   useEffect(() => {
     if (!formValues) return;
+    if (isAiBuilding) { debouncedSave.cancel(); return; }
 
     if (initRef.current) {
       initRef.current = false;
@@ -316,7 +318,7 @@ const CvBuilderPageInner: React.FC<{
 
     debouncedSave(formValues as CvDraft);
     return () => debouncedSave.cancel();
-  }, [formValues, debouncedSave]);
+  }, [formValues, debouncedSave, isAiBuilding]);
 
   const ensureAuthForBuilderAction = async (action: PendingCvAction): Promise<boolean> => {
     if (token && resolvedBackendUrl) return true;
@@ -387,16 +389,16 @@ const CvBuilderPageInner: React.FC<{
     }
   };
 
-  const handleExportForDraft = async (draftId: string) => {
+  const handleExportForDraft = async (draftId: string, format: 'pdf' | 'docx' = window.sessionStorage.getItem('cvpro:export-format') === 'docx' ? 'docx' : 'pdf') => {
     if (!token || !resolvedBackendUrl) return;
-    const exported = await exportCv.mutateAsync({ draftId, cvJson: getValues() });
+    const exported = await exportCv.mutateAsync({ draftId, cvJson: getValues(), format });
     setExportUrl(exported.signedUrl || exported.url || undefined);
     trackResumeDownload({ source_page: 'cv_builder', template_id: draft.templateId });
   };
 
-  const doExport = async () => {
+  const doExport = async (format: 'pdf' | 'docx' = window.sessionStorage.getItem('cvpro:export-format') === 'docx' ? 'docx' : 'pdf') => {
     const draftId = syncedDraftIdRef.current || id;
-    await handleExportForDraft(draftId);
+    await handleExportForDraft(draftId, format);
   };
 
   const doPrint = async () => {
@@ -421,7 +423,8 @@ const CvBuilderPageInner: React.FC<{
     });
   };
 
-  const handleExport = async () => {
+  const handleExport = async (format: 'pdf' | 'docx' = window.sessionStorage.getItem('cvpro:export-format') === 'docx' ? 'docx' : 'pdf') => {
+    window.sessionStorage.setItem('cvpro:export-format', format);
     if (isGuest) {
       const canContinue = await ensureAuthForBuilderAction('export');
       if (!canContinue) return;
@@ -430,7 +433,7 @@ const CvBuilderPageInner: React.FC<{
     if (!cvPayment.entitlement.data?.eligible) {
       persistPaymentReturnState('resume_export');
     }
-    await cvPayment.ensurePaidBeforeResumeExport(doExport);
+    await cvPayment.ensurePaidBeforeResumeExport(() => doExport(format));
   };
 
   const handlePrint = async () => {
@@ -559,6 +562,12 @@ const CvBuilderPageInner: React.FC<{
         restoredScrollPosition={restoredGuestMetaRef.current?.scrollPosition}
         onBuilderUiChange={(state) => {
           builderUiRef.current = state;
+        }}
+        isAiBuilding={isAiBuilding}
+        onAiBuildingChange={setIsAiBuilding}
+        onBeforeAiBuild={async () => {
+          debouncedSave.cancel();
+          if (!isGuest && token) await updateDraft.mutateAsync({ id, payload: getValues() });
         }}
       />
     </>

@@ -10,6 +10,7 @@ const sectionLabels: Record<CvSectionKey, string> = {
   projects: 'Projects',
   certifications: 'Certifications',
   extras: 'Extras',
+  additionalSections: 'Additional Sections',
 };
 
 type Props = {

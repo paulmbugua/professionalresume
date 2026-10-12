@@ -7,10 +7,12 @@ import {
   renderRichText,
   safeKey,
   sectionVisible,
+  renderAdditionalSections,
+  applySectionLabels,
 } from './helpers.js';
 import { buildCvFontFaceCss, getTemplateFontDependencies, getTemplateFontStack } from './fonts.js';
 
-const contactLine = (b) => esc([b.email, b.phone, b.location].filter(Boolean).join(' | '));
+const contactLine = (b) => esc([b.email, b.phone, b.location, ...(b.links || []).map((link) => [link.label, link.url].filter(Boolean).join(': '))].filter(Boolean).join(' | '));
 
 const PAGE_SHELL = `
 .page{width:var(--page-width);min-height:var(--page-height);margin:16px auto;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.12)}
@@ -29,22 +31,23 @@ section{margin-bottom:var(--resolvedSectionGap)}
 
 function renderSectionMap(d) {
   return {
+    additionalSections: renderAdditionalSections(d),
     summary:
       d.summary?.trim() || d.richText?.summary?.trim()
-        ? `<section><h2>Summary</h2><p>${renderRichText(d, 'summary', d.summary || '')}</p></section>`
+        ? `<section class="cv-resume-section"><h2 class="cv-keep-with-next">Summary</h2><p>${renderRichText(d, 'summary', d.summary || '')}</p></section>`
         : '',
     skills: d.skills?.length
-      ? `<section><h2>Skills</h2><p>${esc(d.skills.join(' | '))}</p></section>`
+      ? `<section class="cv-resume-section"><h2 class="cv-keep-with-next">Skills</h2><p>${esc(d.skills.join(' | '))}</p></section>`
       : '',
     experience: d.experience?.length
-      ? `<section><h2>Experience</h2>${d.experience
+      ? `<section class="cv-resume-section"><h2 class="cv-keep-with-next">Experience</h2>${d.experience
           .map(
             (e, idx) =>
-              `<article class="item" data-k="${esc(`${safeKey(e.company)}|${idx}`)}"><h3>${esc(e.role || '')}${
+              `<article class="item cv-entry cv-entry--splittable" data-k="${esc(`${safeKey(e.company)}|${idx}`)}"><div class="cv-entry-heading"><h3>${esc(e.role || '')}${
                 e.company ? ` - ${esc(e.company)}` : ''
               }</h3><p class="muted">${esc([e.start, e.end].filter(Boolean).join(' - '))}${
                 e.location ? ` | ${esc(e.location)}` : ''
-              }</p>${
+              }</p></div>${e.description ? `<p>${esc(e.description)}</p>` : ''}${
                 (e.bullets || []).length
                   ? `<ul>${e.bullets
                       .filter(Boolean)
@@ -56,22 +59,22 @@ function renderSectionMap(d) {
           .join('')}</section>`
       : '',
     education: d.education?.length
-      ? `<section><h2>Education</h2>${d.education
+      ? `<section class="cv-resume-section"><h2 class="cv-keep-with-next">Education</h2>${d.education
           .map(
             (e, idx) =>
-              `<article class="item" data-k="${esc(`${safeKey(e.school)}|${idx}`)}"><h3>${esc(e.program || '')}${
+              `<article class="item cv-entry cv-entry--compact" data-k="${esc(`${safeKey(e.school)}|${idx}`)}"><div class="cv-entry-heading"><h3>${esc(e.program || '')}${
                 e.school ? ` - ${esc(e.school)}` : ''
-              }</h3><p class="muted">${esc([e.start, e.end].filter(Boolean).join(' - '))}</p>${
+              }</h3><p class="muted">${esc([e.start, e.end].filter(Boolean).join(' - '))}</p></div>${
                 e.details ? `<p>${esc(e.details)}</p>` : ''
               }</article>`
           )
           .join('')}</section>`
       : '',
     projects: d.projects?.length
-      ? `<section><h2>Projects</h2>${d.projects
+      ? `<section class="cv-resume-section"><h2 class="cv-keep-with-next">Projects</h2>${d.projects
           .map(
             (p, idx) =>
-              `<article class="item" data-k="${esc(`${safeKey(p.name)}|${idx}`)}"><h3>${esc(p.name || '')}</h3>${
+              `<article class="item cv-entry ${(p.bullets || []).filter(Boolean).length <= 3 ? 'cv-entry--compact' : 'cv-entry--splittable'}" data-k="${esc(`${safeKey(p.name)}|${idx}`)}"><div class="cv-entry-heading"><h3>${esc(p.name || '')}</h3></div>${
                 p.description ? `<p>${esc(p.description)}</p>` : ''
               }${
                 (p.bullets || []).length
@@ -85,10 +88,10 @@ function renderSectionMap(d) {
           .join('')}</section>`
       : '',
     certifications: d.certifications?.length
-      ? `<section><h2>Certifications</h2>${d.certifications
+      ? `<section class="cv-resume-section"><h2 class="cv-keep-with-next">Certifications</h2>${d.certifications
           .map(
             (c, idx) =>
-              `<p data-k="${esc(`${safeKey(c.name)}|${idx}`)}"><strong>${esc(c.name || '')}</strong>${
+              `<p class="cv-compact-block" data-k="${esc(`${safeKey(c.name)}|${idx}`)}"><strong>${esc(c.name || '')}</strong>${
                 c.issuer ? ` | ${esc(c.issuer)}` : ''
               }${c.year ? ` (${esc(c.year)})` : ''}</p>`
           )
@@ -96,7 +99,7 @@ function renderSectionMap(d) {
       : '',
     extras:
       d.extras?.languages?.length || d.extras?.interests?.length
-        ? `<section><h2>Extras</h2>${
+        ? `<section class="cv-resume-section"><h2 class="cv-keep-with-next">Extras</h2>${
             d.extras?.languages?.length
               ? `<p><strong>Languages:</strong> ${esc(d.extras.languages.join(', '))}</p>`
               : ''
@@ -110,7 +113,7 @@ function renderSectionMap(d) {
 }
 
 function joinSections(d, map, order = d.sectionOrder || defaultSectionOrder) {
-  return order
+  return [...new Set([...order, 'additionalSections'])]
     .map((k) => (sectionVisible(d, k) ? map[k] || '' : ''))
     .filter(Boolean)
     .join('');
@@ -124,14 +127,14 @@ function doc(d, body, css) {
   });
   const cssVars = `${buildCssVars(d)}:root{--fontFamily:${fontFamily};}`;
 
-  return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><style id="cv-font-faces">${fontFaceCss}</style><style>${cssVars}${paginationCss}${PAGE_SHELL}${css}</style></head><body data-template-id="${esc(templateId)}">${body}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><style id="cv-font-faces">${fontFaceCss}</style><style>${cssVars}${paginationCss}${PAGE_SHELL}${css}</style></head><body data-template-id="${esc(templateId)}">${applySectionLabels(body.replace('</aside>', renderAdditionalSections(d, 'sidebar') + '</aside>'), d)}</body></html>`;
 }
 
 export function renderNairobiGridHtml(draft = {}) {
   const d = normalizeCvDraft(draft);
   const m = renderSectionMap(d);
   const top = ['summary', 'skills'];
-  const rest = ['experience', 'projects', 'education', 'certifications', 'extras'];
+  const rest = ['experience', 'projects', 'education', 'certifications', 'extras', 'additionalSections'];
   return doc(
     d,
     `<main class="page nairobiGridLayout"><header><div><div class="skyline-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></div><h1>${esc(
@@ -165,7 +168,7 @@ export function renderImpactSidebarHtml(draft = {}) {
   const d = normalizeCvDraft(draft);
   const m = renderSectionMap(d);
   const side = ['summary', 'skills', 'certifications', 'extras'];
-  const main = ['experience', 'projects', 'education'];
+  const main = ['experience', 'projects', 'education', 'additionalSections'];
   return doc(
     d,
     `<main class="page impactSidebarLayout"><aside><div class="impact-mark" aria-hidden="true"><span></span><span></span><span></span></div><h1>${esc(
@@ -250,7 +253,7 @@ export function renderClinicalCleanHtml(draft = {}) {
   const d = normalizeCvDraft(draft);
   const m = renderSectionMap(d);
   const left = ['summary', 'certifications', 'skills'];
-  const right = ['experience', 'education', 'projects', 'extras'];
+  const right = ['experience', 'education', 'projects', 'extras', 'additionalSections'];
   return doc(
     d,
     `<main class="page clinicalCleanLayout"><header><div><h1>${esc(d.basics.name || 'Your Name')}</h1><p>${esc(

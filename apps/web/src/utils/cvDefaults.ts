@@ -8,6 +8,7 @@ export const defaultSectionOrder: CvSectionKey[] = [
   'projects',
   'certifications',
   'extras',
+  'additionalSections',
 ];
 
 export const defaultSectionVisibility = defaultSectionOrder.reduce(
@@ -59,6 +60,7 @@ export const normalizeSectionVisibility = (
 };
 
 const templateThemeDefaults: Record<string, Record<string, string>> = {
+  'executive-navy-orange': { primary: '#10243a', sidebarBg: '#10243a', sidebarText: '#ffffff', accent: '#e77722' },
   'modern-sidebar': {
     primary: '#0f172a',
     sidebarBg: '#0f172a',

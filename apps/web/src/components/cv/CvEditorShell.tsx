@@ -6,6 +6,8 @@ import CvForm from './CvForm';
 import CvPreview from './CvPreview';
 import SectionManager from './SectionManager';
 import AiAssistPanel from './AiAssistPanel';
+import AiResumeBuilder from './AiResumeBuilder';
+import AdditionalResumeSections from './AdditionalResumeSections';
 import PrintExportButton from './PrintExportButton';
 import TemplateErrorBoundary from './TemplateErrorBoundary';
 import DesignFormattingPanel from './DesignFormattingPanel';
@@ -23,7 +25,7 @@ type Props = {
   draft: CvDraft;
   validationErrors: string[];
   onSave: () => void;
-  onExport: () => void;
+  onExport: (format?: 'pdf' | 'docx') => void;
   onCopyExportLink: () => void;
   onPrint: () => void;
   exportUrl?: string;
@@ -36,6 +38,9 @@ type Props = {
   restoredActiveSection?: string;
   restoredScrollPosition?: { windowY?: number; builderPanelY?: number; previewY?: number };
   onBuilderUiChange?: (state: { activeTab: 'edit' | 'preview'; activeSection?: string }) => void;
+  isAiBuilding?: boolean;
+  onAiBuildingChange?: (busy: boolean) => void;
+  onBeforeAiBuild?: () => Promise<void>;
 };
 
 const CvEditorShell: React.FC<Props> = ({
@@ -55,6 +60,9 @@ const CvEditorShell: React.FC<Props> = ({
   restoredActiveSection,
   restoredScrollPosition,
   onBuilderUiChange,
+  isAiBuilding,
+  onAiBuildingChange,
+  onBeforeAiBuild,
 }) => {
   const { setValue, control } = useFormContext<CvDraft>();
   const [activeTab, setActiveTab] = useState<'edit' | 'preview'>(restoredActiveTab || 'edit');
@@ -136,7 +144,7 @@ const CvEditorShell: React.FC<Props> = ({
     setActiveTab('edit');
 
     const timer = window.setTimeout(() => {
-      const el = document.getElementById('ai-panel');
+      const el = document.getElementById('resume-ai-builder');
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 200);
 
@@ -155,7 +163,7 @@ const CvEditorShell: React.FC<Props> = ({
 
   const handleAiJump = () => {
     setActiveTab('edit');
-    const el = document.getElementById('ai-panel');
+    const el = document.getElementById('resume-ai-builder');
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
@@ -179,7 +187,7 @@ const CvEditorShell: React.FC<Props> = ({
           <TemplateFillSlider />
         </div>
 
-        <div className="w-full rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-sm sm:w-auto sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none dark:border-white/10 dark:bg-white/5 sm:dark:bg-transparent">
+        <div inert={isAiBuilding} className="w-full rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-sm sm:w-auto sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none dark:border-white/10 dark:bg-white/5 sm:dark:bg-transparent">
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
             <TemplateSwitcher
               currentTemplateId={liveTemplateId}
@@ -201,7 +209,7 @@ const CvEditorShell: React.FC<Props> = ({
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-900 bg-slate-900 px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 dark:border-white/80 dark:bg-white/90 dark:text-gray-900"
             >
               <Sparkles className="h-4 w-4" aria-hidden />
-              AI Improve
+              AI Builder
             </button>
 
             <button
@@ -267,6 +275,8 @@ const CvEditorShell: React.FC<Props> = ({
           data-cv-builder-panel
           className={`${activeTab === 'preview' ? 'hidden' : 'block'} min-w-0 space-y-6 xl:block print:hidden`}
         >
+          <AiResumeBuilder onBuilt={() => setActiveTab('preview')} onBusyChange={onAiBuildingChange} onBeforeBuild={onBeforeAiBuild} />
+          <fieldset disabled={isAiBuilding} className="space-y-6 disabled:opacity-60">
           <CvForm
             restoredActiveSection={restoredActiveSection}
             onActiveSectionChange={(activeSection) =>
@@ -274,6 +284,7 @@ const CvEditorShell: React.FC<Props> = ({
             }
           />
 
+          <AdditionalResumeSections />
           <SectionManager
             sectionOrder={previewDraft.sectionOrder}
             sectionVisibility={previewDraft.sectionVisibility}
@@ -281,8 +292,9 @@ const CvEditorShell: React.FC<Props> = ({
           />
 
           <div id="ai-panel">
-            <AiAssistPanel draft={previewDraft} setValue={setValue} />
+            {!previewDraft.generationMeta?.originalDocumentId && <AiAssistPanel draft={previewDraft} setValue={setValue} />}
           </div>
+          </fieldset>
         </div>
 
         <div className={`${activeTab === 'edit' ? 'hidden' : 'block'} min-h-0 min-w-0 xl:block`}>

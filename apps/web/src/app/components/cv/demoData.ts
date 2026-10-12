@@ -22,6 +22,7 @@ export const demoSectionVisibility: Record<CvSectionKey, boolean> = {
   projects: true,
   certifications: true,
   extras: true,
+  additionalSections: true,
 };
 
 export const demoTemplate = templateRegistryList[0];

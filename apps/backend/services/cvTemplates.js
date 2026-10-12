@@ -1,4 +1,5 @@
 export const cvTemplates = [
+  { id: 'executive-navy-orange', name: 'Executive Navy & Orange', category: 'Executive', isAtsFriendly: false, componentKey: 'ExecutiveNavyOrange' },
   {
     id: 'ats-minimal',
     name: 'ATS Minimal',

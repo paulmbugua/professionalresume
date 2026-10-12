@@ -1,5 +1,7 @@
 import { inflateRawSync } from 'node:zlib';
 import { mapExtractedResumeToCvDraft } from '../../../packages/shared/cv/mapExtractedResumeToCvDraft.js';
+// Legacy field import and ATS/cover-letter text readers only. AI resume generation
+// uses resumeIngestionService + resumeGenerationService and must not call this parser.
 
 const MAX_TEXT_CHARS = 120000;
 

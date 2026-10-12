@@ -8,6 +8,7 @@ const sectionKeys = [
   'projects',
   'certifications',
   'extras',
+  'additionalSections',
 ];
 
 const linkSchema = Joi.object({
@@ -111,6 +112,9 @@ export const draftPatchSchema = Joi.object({
     photoUrl: Joi.string().uri({ scheme: ['https'] }).allow(''),
   }),
   summary: Joi.string().allow(''),
+  targetTitle: Joi.string().allow(''),
+  additionalSections: Joi.array().items(Joi.object({ title: Joi.string().allow(''), placement: Joi.string().valid('sidebar', 'main'), content: Joi.string().allow(''), bullets: Joi.array().items(Joi.string().allow('')) })),
+  sectionLabels: Joi.object().pattern(Joi.string().valid(...sectionKeys), Joi.string().allow('')),
   skills: Joi.array().items(Joi.string().allow('')),
   experience: Joi.array().items(experienceSchema),
   education: Joi.array().items(educationSchema),
@@ -138,6 +142,7 @@ export const cvExportSchema = Joi.object({
   draftId: Joi.string().guid({ version: ['uuidv4', 'uuidv5'] }).optional(),
   cvJson: Joi.object().optional(),
   fileName: Joi.string().allow('').optional(),
+  format: Joi.string().valid('pdf', 'docx').default('pdf'),
 }).or('draftId', 'cvJson');
 
 export const templateUploadSchema = Joi.object({

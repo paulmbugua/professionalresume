@@ -76,7 +76,8 @@ export type CvSectionKey =
   | 'education'
   | 'projects'
   | 'certifications'
-  | 'extras';
+  | 'extras'
+  | 'additionalSections';
 
 export type CvDraftMeta = {
   isDemoSeeded?: boolean;
@@ -120,6 +121,9 @@ export type CvDraft = {
     photoUrl?: string;
   };
   summary: string;
+  targetTitle?: string;
+  additionalSections?: Array<{ title: string; placement: 'sidebar' | 'main'; content: string; bullets: string[] }>;
+  sectionLabels?: Partial<Record<CvSectionKey, string>>;
   skills: string[];
   experience: CvExperience[];
   education: CvEducation[];
