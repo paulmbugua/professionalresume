@@ -90,7 +90,7 @@ use the original-document refinement panel.
 
 ## Configuration and validation
 
-Set `OPENAI_API_KEY` and optionally `OPENAI_RESUME_MODEL` (default `gpt-4.1`) in the
+Set `OPENAI_API_KEY` and optionally `OPENAI_RESUME_MODEL` (default `gpt-6.1-sol`) in the
 backend environment. No client key is needed. No Redis worker is used by this pipeline.
 The existing Railway `start` script runs migrations automatically. For local migrations:
 

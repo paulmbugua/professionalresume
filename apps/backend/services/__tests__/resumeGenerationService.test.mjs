@@ -205,10 +205,10 @@ test('rate limits retry and fall back before returning an actionable 429', async
   });
   assert.deepEqual(
     models.map((call) => call.model),
-    ['gpt-primary', 'gpt-4.1-mini', 'gpt-4.1-mini'],
+    ['gpt-primary', 'gpt-6-luna', 'gpt-6-luna'],
   );
-  assert.equal(models[0].options.maxRetries, 3);
-  assert.equal(result.model, 'gpt-4.1-mini');
+  assert.equal(models[0].options.maxRetries, 1);
+  assert.equal(result.model, 'gpt-6-luna');
 
   await assert.rejects(
     generateResume({
@@ -227,6 +227,40 @@ test('rate limits retry and fall back before returning an actionable 429', async
       },
     }),
     { status: 429, code: 'AI_RATE_LIMITED', retryAfter: 17 },
+  );
+});
+test('billing and usage cap errors are not presented as temporary throttling', async () => {
+  await assert.rejects(
+    generateResume({
+      ...buildArgs,
+      model: 'gpt-primary',
+      originalResumeDocument: await source(),
+      client: {
+        responses: {
+          create: async () => {
+            throw Object.assign(new Error('Project cap reached'), {
+              status: 429,
+              code: 'project_spend_limit_exceeded',
+              type: 'rate_limit_error',
+              request_id: 'req_test',
+              headers: {
+                'x-ratelimit-limit-tokens': '10000',
+                'x-ratelimit-remaining-tokens': '0',
+              },
+            });
+          },
+        },
+      },
+    }),
+    (error) => {
+      assert.equal(error.status, 429);
+      assert.equal(error.code, 'AI_QUOTA_EXCEEDED');
+      assert.equal(error.retryAfter, undefined);
+      assert.equal(error.providerRequestId, 'req_test');
+      assert.equal(error.providerDetails.providerCode, 'project_spend_limit_exceeded');
+      assert.equal(error.providerDetails.rateLimits.tokensRemaining, '0');
+      return true;
+    },
   );
 });
 test('missing, unreadable, duplicate, mismatched and evidence-free reviews cannot pass', () => {

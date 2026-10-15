@@ -49,6 +49,9 @@ function sendError(res, error) {
     ...(error.providerRequestId
       ? { providerRequestId: error.providerRequestId }
       : {}),
+    ...(error.providerDetails
+      ? { providerDetails: error.providerDetails }
+      : {}),
   });
   const status =
     error.status && error.status >= 400 && error.status < 600

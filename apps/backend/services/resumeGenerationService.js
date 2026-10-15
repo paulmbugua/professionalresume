@@ -27,7 +27,7 @@ function boundedInteger(value, fallback, minimum, maximum) {
 
 function modelCandidates(primaryModel) {
   const configuredFallbacks = String(
-    process.env.OPENAI_RESUME_FALLBACK_MODELS || 'gpt-4.1-mini',
+    process.env.OPENAI_RESUME_FALLBACK_MODELS || 'gpt-6-luna',
   )
     .split(',')
     .map((value) => value.trim())
@@ -43,10 +43,51 @@ function providerHeader(error, name) {
 
 function isQuotaExhausted(error) {
   const code = String(error?.code || error?.error?.code || '').toLowerCase();
-  return code === 'insufficient_quota' || code === 'billing_hard_limit_reached';
+  return [
+    'insufficient_quota',
+    'billing_hard_limit_reached',
+    'project_spend_limit_exceeded',
+    'organization_usage_limit_exceeded',
+  ].includes(code);
 }
 
-function throwProviderError(error) {
+function providerDiagnostics(error, model, attemptedModels) {
+  const rateLimitHeaders = {
+    retryAfter: providerHeader(error, 'retry-after'),
+    requestLimit: providerHeader(error, 'x-ratelimit-limit-requests'),
+    requestsRemaining: providerHeader(
+      error,
+      'x-ratelimit-remaining-requests',
+    ),
+    requestsReset: providerHeader(error, 'x-ratelimit-reset-requests'),
+    tokenLimit: providerHeader(error, 'x-ratelimit-limit-tokens'),
+    tokensRemaining: providerHeader(error, 'x-ratelimit-remaining-tokens'),
+    tokensReset: providerHeader(error, 'x-ratelimit-reset-tokens'),
+    projectTokenLimit: providerHeader(
+      error,
+      'x-ratelimit-limit-project-tokens',
+    ),
+    projectTokensRemaining: providerHeader(
+      error,
+      'x-ratelimit-remaining-project-tokens',
+    ),
+    projectTokensReset: providerHeader(
+      error,
+      'x-ratelimit-reset-project-tokens',
+    ),
+  };
+  return {
+    model,
+    attemptedModels,
+    providerCode: error?.code || error?.error?.code || undefined,
+    providerType: error?.type || error?.error?.type || undefined,
+    rateLimits: Object.fromEntries(
+      Object.entries(rateLimitHeaders).filter(([, value]) => value != null),
+    ),
+  };
+}
+
+function throwProviderError(error, model, attemptedModels = []) {
   if ([401, 403].includes(error?.status))
     throw resumeError(
       'AI resume generation is unavailable. Check the backend OpenAI configuration.',
@@ -57,19 +98,25 @@ function throwProviderError(error) {
     const quotaExhausted = isQuotaExhausted(error);
     const failure = resumeError(
       quotaExhausted
-        ? 'AI resume generation has reached its provider usage limit. Please try again after the service limit is renewed.'
+        ? 'AI resume generation has reached its provider billing or usage limit. The service owner must increase the OpenAI project limit.'
         : 'AI generation is busy right now. Please wait briefly and try again.',
-      quotaExhausted ? 503 : 429,
+      429,
       quotaExhausted ? 'AI_QUOTA_EXCEEDED' : 'AI_RATE_LIMITED',
     );
-    failure.retryAfter = boundedInteger(
-      providerHeader(error, 'retry-after'),
-      30,
-      1,
-      3600,
-    );
+    if (!quotaExhausted)
+      failure.retryAfter = boundedInteger(
+        providerHeader(error, 'retry-after'),
+        60,
+        1,
+        3600,
+      );
     failure.providerRequestId =
       error?.request_id || providerHeader(error, 'x-request-id') || undefined;
+    failure.providerDetails = providerDiagnostics(
+      error,
+      model,
+      attemptedModels,
+    );
     throw failure;
   }
   throw resumeError(
@@ -90,18 +137,20 @@ async function structuredResponse({
 }) {
   const retryCount = boundedInteger(
     process.env.OPENAI_RESUME_MAX_RETRIES,
-    3,
+    1,
     0,
     5,
   );
   const maxOutputTokens = boundedInteger(
     process.env.OPENAI_RESUME_MAX_OUTPUT_TOKENS,
-    10000,
+    7000,
     2000,
     16000,
   );
   let lastRateLimitError;
+  const attemptedModels = [];
   for (const [index, model] of models.entries()) {
+    attemptedModels.push(model);
     let response;
     try {
       response = await client.responses.create(
@@ -132,7 +181,7 @@ async function structuredResponse({
         lastRateLimitError = error;
         continue;
       }
-      throwProviderError(error);
+      throwProviderError(error, model, attemptedModels);
     }
     if (response.status !== 'completed' || !response.output_text)
       throw resumeError(
@@ -144,7 +193,11 @@ async function structuredResponse({
     validateSchema(data, schema);
     return { data, model };
   }
-  throwProviderError(lastRateLimitError);
+  throwProviderError(
+    lastRateLimitError,
+    attemptedModels.at(-1),
+    attemptedModels,
+  );
 }
 
 export async function generateResume({
@@ -165,7 +218,8 @@ export async function generateResume({
       'AI_UNAVAILABLE',
     );
   const ai = client || new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const selectedModel = model || process.env.OPENAI_RESUME_MODEL || 'gpt-4.1';
+  const selectedModel =
+    model || process.env.OPENAI_RESUME_MODEL || 'gpt-6.1-sol';
   const models = modelCandidates(selectedModel);
   const design = getResumeTemplateMetadata(selectedTemplate);
   const context = {
