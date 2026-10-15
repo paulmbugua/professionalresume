@@ -159,8 +159,8 @@ test('unsupported requirements copied into generated skills are rejected', async
     { code: 'UNSUPPORTED_RESUME_CLAIMS' },
   );
 });
-test('provider authentication and rate-limit failures are service errors, never user logout errors', async () => {
-  for (const status of [401, 403, 429]) {
+test('provider authentication failures are service errors, never user logout errors', async () => {
+  for (const status of [401, 403]) {
     await assert.rejects(
       generateResume({
         ...buildArgs,
@@ -176,6 +176,58 @@ test('provider authentication and rate-limit failures are service errors, never 
       { status: 503 },
     );
   }
+});
+test('rate limits retry and fall back before returning an actionable 429', async () => {
+  const models = [];
+  const client = {
+    responses: {
+      create: async (request, options) => {
+        models.push({ model: request.model, options });
+        if (models.length === 1)
+          throw Object.assign(new Error('Provider busy'), {
+            status: 429,
+            headers: { 'retry-after': '17' },
+          });
+        return {
+          status: 'completed',
+          output_text: JSON.stringify(
+            models.length === 2 ? candidate : reviewFor(candidate),
+          ),
+        };
+      },
+    },
+  };
+  const result = await generateResume({
+    ...buildArgs,
+    model: 'gpt-primary',
+    originalResumeDocument: await source(),
+    client,
+  });
+  assert.deepEqual(
+    models.map((call) => call.model),
+    ['gpt-primary', 'gpt-4.1-mini', 'gpt-4.1-mini'],
+  );
+  assert.equal(models[0].options.maxRetries, 3);
+  assert.equal(result.model, 'gpt-4.1-mini');
+
+  await assert.rejects(
+    generateResume({
+      ...buildArgs,
+      model: 'gpt-primary',
+      originalResumeDocument: await source(),
+      client: {
+        responses: {
+          create: async () => {
+            throw Object.assign(new Error('Provider busy'), {
+              status: 429,
+              headers: { 'retry-after': '17' },
+            });
+          },
+        },
+      },
+    }),
+    { status: 429, code: 'AI_RATE_LIMITED', retryAfter: 17 },
+  );
 });
 test('missing, unreadable, duplicate, mismatched and evidence-free reviews cannot pass', () => {
   for (const mutate of [

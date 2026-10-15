@@ -43,17 +43,25 @@ const requestSchema = Joi.object({
 });
 
 function sendError(res, error) {
-  console.error('[resume-ai]', error.code || error.name);
+  console.error('[resume-ai]', {
+    code: error.code || error.name,
+    status: error.status || 500,
+    ...(error.providerRequestId
+      ? { providerRequestId: error.providerRequestId }
+      : {}),
+  });
   const status =
     error.status && error.status >= 400 && error.status < 600
       ? error.status
       : 500;
+  if (error.retryAfter) res.setHeader('Retry-After', String(error.retryAfter));
   return res.status(status).json({
     error:
       status === 500
         ? 'Could not build the resume. Please try again.'
         : error.message,
     code: error.code || 'RESUME_BUILD_ERROR',
+    ...(error.retryAfter ? { retryAfter: error.retryAfter } : {}),
     ...(error.claims ? { claims: error.claims } : {}),
   });
 }

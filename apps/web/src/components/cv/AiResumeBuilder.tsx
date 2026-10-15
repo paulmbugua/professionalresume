@@ -121,8 +121,12 @@ export default function AiResumeBuilder({
       setFile(null);
       setHistoryOpen(false);
     } catch (err: any) {
+      const retryAfter = Number(err.response?.data?.retryAfter || 0);
+      const retryMessage = retryAfter
+        ? ` You can retry in about ${retryAfter < 60 ? `${retryAfter} seconds` : `${Math.ceil(retryAfter / 60)} minutes`}.`
+        : '';
       setError(
-        err.response?.data?.error || err.message || 'Could not build your resume. Please try again.'
+        `${err.response?.data?.error || err.message || 'Could not build your resume. Please try again.'}${retryMessage}`
       );
       setBlockedClaims(err.response?.data?.claims || []);
     } finally {
