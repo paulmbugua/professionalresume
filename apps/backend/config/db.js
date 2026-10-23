@@ -19,9 +19,10 @@ const cfg = process.env.DATABASE_URL
 
     
          
-  const wantSsl =
-  process.env.PGSSL === 'require' ||
-  (isProd && !!process.env.DATABASE_URL);
+const sslMode = String(process.env.PGSSL || '').trim().toLowerCase();
+const wantSsl =
+  sslMode === 'require' ||
+  (sslMode !== 'disable' && isProd && !!process.env.DATABASE_URL);
 
 const pool = new Pool({
   ...cfg,
@@ -37,7 +38,7 @@ const pool = new Pool({
   keepAliveInitialDelayMillis: Number(process.env.DB_KEEPALIVE_DELAY_MS) || 10_000,
 
   // Helpful label in pg_stat_activity
-  application_name: process.env.PGAPPNAME || 'daybreak-backend',
+  application_name: process.env.PGAPPNAME || 'professionalresume-backend',
 });
 
 
