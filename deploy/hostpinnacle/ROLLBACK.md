@@ -43,9 +43,10 @@ bindings were detached during cutover:
 - `www.professionalresume.co.ke`: `2ef7687c0413776f578248fbe501de9731a1b0b3`
 
 To restore the web frontend, reattach both custom domains to the existing
-`professionalresume` production Worker from Cloudflare, or deploy the retained
-Worker configuration in `apps/web/wrangler.jsonc`. Verify the Worker response
-before moving the backend hostname.
+`professionalresume` production Worker from Cloudflare. The active
+`apps/web/wrangler.jsonc` intentionally has no production custom-domain routes,
+so an ordinary Worker deployment cannot accidentally take traffic from the VPS.
+Verify the Worker response before moving the backend hostname.
 
 The active VPS tunnel is `professionalresume-hostpinnacle` with ID
 `1fc8f67c-17b0-4ea9-b82e-ce9c1f3cfa26`. Do not delete it during rollback;

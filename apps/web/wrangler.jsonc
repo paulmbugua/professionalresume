@@ -19,15 +19,5 @@
   ],
   "vars": {
     "NEXT_PUBLIC_BACKEND_URL": "https://server.professionalresume.co.ke"
-  },
-  "routes": [
-    {
-      "pattern": "professionalresume.co.ke",
-      "custom_domain": true
-    },
-    {
-      "pattern": "www.professionalresume.co.ke",
-      "custom_domain": true
-    }
-  ]
+  }
 }
