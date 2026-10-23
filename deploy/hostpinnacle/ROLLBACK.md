@@ -33,3 +33,24 @@ restore over the live database without a new pre-restore snapshot.
 
 The original Railway database remains intact for immediate platform rollback
 until the VPS deployment has passed an agreed observation period.
+
+## Cloudflare Worker rollback
+
+The previous `professionalresume` Worker was not deleted. Its two custom-domain
+bindings were detached during cutover:
+
+- `professionalresume.co.ke`: `406c585d1bddf2da497e6ce77eb70dcc419b198a`
+- `www.professionalresume.co.ke`: `2ef7687c0413776f578248fbe501de9731a1b0b3`
+
+To restore the web frontend, reattach both custom domains to the existing
+`professionalresume` production Worker from Cloudflare, or deploy the retained
+Worker configuration in `apps/web/wrangler.jsonc`. Verify the Worker response
+before moving the backend hostname.
+
+The active VPS tunnel is `professionalresume-hostpinnacle` with ID
+`1fc8f67c-17b0-4ea9-b82e-ce9c1f3cfa26`. Do not delete it during rollback;
+leave it available until the old web and API endpoints have been verified.
+
+The prior Railway service and database were not deleted. Recover the previous
+`server` DNS target from the Cloudflare DNS change history, restore that record,
+and confirm `/health` before directing the Worker frontend back to it.

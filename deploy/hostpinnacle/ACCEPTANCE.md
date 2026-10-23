@@ -1,21 +1,23 @@
 # Production acceptance checklist
 
-- [ ] Source DNS exported from Cloudflare before changes
-- [ ] MX, SPF, DKIM, DMARC, mail, and verification records unchanged
-- [ ] Source database custom-format dump validated by `pg_restore --list`
-- [ ] Source and destination public table counts match exactly
-- [ ] Critical user, draft, payment, entitlement, and export records verified
-- [ ] PostgreSQL and Redis have no host port bindings
-- [ ] Backend, web, and admin have no host port bindings
-- [ ] All required containers are running and healthy
-- [ ] Backend `/health` reports database ready
-- [ ] Web and admin routing works through internal service checks
+- [x] Public DNS snapshot captured before changes
+- [x] MX, SPF, DKIM, DMARC, mail, and verification records left unchanged
+- [x] Source database custom-format dump validated by `pg_restore --list`
+- [x] Source and destination public table counts match exactly
+- [x] Critical user, draft, payment, entitlement, and export records verified
+- [x] PostgreSQL and Redis have no host port bindings
+- [x] Backend, web, and admin have no host port bindings
+- [x] All required containers are running and healthy
+- [x] Backend `/health` reports database ready
+- [x] Web and admin routing works through internal and public checks
 - [ ] Google login and callback complete on the production domain
 - [ ] Resume upload, AI generation, draft save, payment, and export tested
 - [ ] Cover-letter save, payment, and export tested
-- [ ] Encrypted backup created with SHA-256 checksum
-- [ ] Encrypted backup uploaded to off-server storage
-- [ ] Backup restored successfully into an isolated test database
-- [ ] Apex hostname verified before `www`, backend, and admin cutover completion
-- [ ] Existing production deployment retained for rollback
-- [ ] Temporary source credentials and unencrypted dumps removed
+- [x] Public guest image upload and cleanup tested through the VPS API
+- [x] Google OAuth initiation and production callback URI verified
+- [x] Encrypted backup created with SHA-256 checksum
+- [x] Encrypted backup uploaded to off-server storage
+- [x] Downloaded encrypted backup restored into an isolated test database
+- [x] Apex, `www`, backend, and admin hostnames verified through the tunnel
+- [x] Existing Railway backend and Cloudflare Worker retained for rollback
+- [x] Temporary source credentials, account certificate, and plaintext dumps removed
