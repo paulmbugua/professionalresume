@@ -1,0 +1,9 @@
+FROM postgres:18-alpine
+
+RUN apk add --no-cache age aws-cli bash coreutils tzdata
+COPY deploy/hostpinnacle/scripts/backup.sh /usr/local/bin/professionalresume-backup
+RUN sed -i 's/\r$//' /usr/local/bin/professionalresume-backup \
+    && chmod 0755 /usr/local/bin/professionalresume-backup
+
+ENTRYPOINT ["/usr/local/bin/professionalresume-backup"]
+CMD ["daemon"]

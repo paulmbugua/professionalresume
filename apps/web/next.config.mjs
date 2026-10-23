@@ -13,6 +13,7 @@ console.log('[next] env check', {
 });
 
 const nextConfig = {
+  output: 'standalone',
   reactStrictMode: true,
   transpilePackages: ['@cvpro/shared'],
 

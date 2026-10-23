@@ -52,6 +52,15 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Database exports and migration artifacts
+*.dump
+*.dump.age
+*.dump.sha256
+deploy/hostpinnacle/migration-work/
+deploy/hostpinnacle/secrets/*
+!deploy/hostpinnacle/secrets/*.example
+deploy/hostpinnacle/.env
+
 # Local environment files
 .env
 .env.*.local

@@ -1,0 +1,21 @@
+# Production acceptance checklist
+
+- [ ] Source DNS exported from Cloudflare before changes
+- [ ] MX, SPF, DKIM, DMARC, mail, and verification records unchanged
+- [ ] Source database custom-format dump validated by `pg_restore --list`
+- [ ] Source and destination public table counts match exactly
+- [ ] Critical user, draft, payment, entitlement, and export records verified
+- [ ] PostgreSQL and Redis have no host port bindings
+- [ ] Backend, web, and admin have no host port bindings
+- [ ] All required containers are running and healthy
+- [ ] Backend `/health` reports database ready
+- [ ] Web and admin routing works through internal service checks
+- [ ] Google login and callback complete on the production domain
+- [ ] Resume upload, AI generation, draft save, payment, and export tested
+- [ ] Cover-letter save, payment, and export tested
+- [ ] Encrypted backup created with SHA-256 checksum
+- [ ] Encrypted backup uploaded to off-server storage
+- [ ] Backup restored successfully into an isolated test database
+- [ ] Apex hostname verified before `www`, backend, and admin cutover completion
+- [ ] Existing production deployment retained for rollback
+- [ ] Temporary source credentials and unencrypted dumps removed

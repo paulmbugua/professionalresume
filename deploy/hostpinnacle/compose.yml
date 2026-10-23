@@ -1,0 +1,208 @@
+name: professionalresume
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks: [data]
+    logging: *default-logging
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command:
+      ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [data]
+    logging: *default-logging
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: deploy/hostpinnacle/Dockerfile.backend
+    image: professionalresume/backend:${IMAGE_TAG:-local}
+    restart: unless-stopped
+    env_file:
+      - ./secrets/backend.env
+    environment:
+      NODE_ENV: production
+      PORT: 4006
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      PGSSL: disable
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      DISABLE_REDIS: "false"
+      DB_STARTUP_REQUIRED: "true"
+      CHROME_PATH: /usr/bin/chromium
+      BACKEND_URL: https://server.professionalresume.co.ke
+      PROD_BACKEND_URL: https://server.professionalresume.co.ke
+      PUBLIC_BACKEND_URL: https://server.professionalresume.co.ke
+      FRONTEND_URL: https://www.professionalresume.co.ke
+      WEB_BASE_URL: https://www.professionalresume.co.ke
+      PUBLIC_WEB_URL: https://www.professionalresume.co.ke
+      CORS_ALLOWED_ORIGINS: https://professionalresume.co.ke,https://www.professionalresume.co.ke,https://admin.professionalresume.co.ke
+      GOOGLE_CALLBACK_URL: https://server.professionalresume.co.ke/api/auth/google/callback
+      MPESA_CVPRO_CALLBACK_URL: https://server.professionalresume.co.ke/api/cv/payments/mpesa/callback
+      APP_BUILD: ${IMAGE_TAG:-local}
+    volumes:
+      - backend_uploads:/workspace/apps/backend/uploads
+      - backend_storage:/workspace/apps/backend/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4006/health').then(r=>{if(![200,207].includes(r.status))process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+    networks: [edge, data]
+    logging: *default-logging
+
+  web:
+    build:
+      context: ../..
+      dockerfile: deploy/hostpinnacle/Dockerfile.web
+      args:
+        NEXT_PUBLIC_SITE_URL: https://www.professionalresume.co.ke
+        NEXT_PUBLIC_BACKEND_URL: https://server.professionalresume.co.ke
+        NEXT_PUBLIC_APP_ORIGIN: https://www.professionalresume.co.ke
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID_WEB:-}
+        NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: ${FIREBASE_MEASUREMENT_ID:-}
+        NEXT_PUBLIC_GA4_MEASUREMENT_ID: ${GA4_MEASUREMENT_ID:-}
+        NEXT_PUBLIC_CLARITY_PROJECT_ID: ${CLARITY_PROJECT_ID:-}
+    image: professionalresume/web:${IMAGE_TAG:-local}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 8s
+      retries: 12
+      start_period: 60s
+    networks: [edge]
+    logging: *default-logging
+
+  admin:
+    build:
+      context: ../..
+      dockerfile: deploy/hostpinnacle/Dockerfile.admin
+      args:
+        VITE_BACKEND_URL: https://server.professionalresume.co.ke
+    image: professionalresume/admin:${IMAGE_TAG:-local}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+    networks: [edge]
+    logging: *default-logging
+
+  backup:
+    build:
+      context: ../..
+      dockerfile: deploy/hostpinnacle/Dockerfile.backup
+    image: professionalresume/backup:${IMAGE_TAG:-local}
+    restart: unless-stopped
+    env_file:
+      - ./secrets/backup.env
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB}
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_SCHEDULE_UTC: ${BACKUP_SCHEDULE_UTC:-01:30}
+      BACKUP_LOCAL_RETENTION_DAYS: ${BACKUP_LOCAL_RETENTION_DAYS:-14}
+    volumes:
+      - encrypted_backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [edge, data]
+    logging: *default-logging
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.0
+    profiles: [cutover]
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      backend:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+      admin:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "cloudflared", "--version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [edge]
+    logging: *default-logging
+
+networks:
+  edge:
+  data:
+    internal: true
+
+volumes:
+  postgres_data:
+  redis_data:
+  backend_uploads:
+  backend_storage:
+  encrypted_backups:
