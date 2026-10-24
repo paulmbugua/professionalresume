@@ -143,7 +143,7 @@ export function renderModernSidebarBlueHtml(draft = {}) {
     'modernSidebarLayout',
     'modernSidebarBlueLayout'
   );
-  const resolvedPhotoUrl = (d.basics?.photoUrl || '').trim() || '/assets/profile_photo.png';
+  const resolvedPhotoUrl = (d.basics?.photoUrl || '').trim() || '/assets/profile_photo.webp';
   const avatar = `<img class="avatar-img" src="${esc(resolvedPhotoUrl)}" alt="Profile photo" width="86" height="108" />`;
   const withAvatar = base.replace(
     '<aside class="sidebar"><h1>',

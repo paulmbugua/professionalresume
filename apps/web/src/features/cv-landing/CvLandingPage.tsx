@@ -45,29 +45,29 @@ const CAROUSEL_TEMPLATE_IDS = [
 ];
 
 const brandLogos = [
-  { label: 'Safaricom', src: 'https://upload.wikimedia.org/wikipedia/en/e/eb/Safaricom_logo.svg' },
+  { label: 'Safaricom', src: '/brands/safaricom-logo.svg' },
   { label: 'Equity Bank', src: '/brands/equity-bank.png' },
   { label: 'KCB Bank', src: '/brands/kcb-bank.png' },
   {
     label: 'Co-operative Bank',
-    src: 'https://upload.wikimedia.org/wikipedia/commons/d/d7/Coopbanklogo.jpg',
+    src: '/brands/cooperative-bank.jpg',
   },
   {
     label: 'Kenya Airways',
-    src: 'https://upload.wikimedia.org/wikipedia/commons/7/75/Kenya_Airways_Logo.svg',
+    src: '/brands/kenya-airways-logo.svg',
   },
   { label: 'KRA', src: '/brands/kra.webp' },
   {
     label: 'UN Kenya',
-    src: 'https://upload.wikimedia.org/wikipedia/commons/5/5f/United_Nations_Office_at_Nairobi_Logo.svg',
+    src: '/brands/unon-logo.svg',
   },
   { label: 'Aga Khan University Hospital', src: '/brands/aga-khan.png' },
-  { label: 'Safaricom', src: 'https://upload.wikimedia.org/wikipedia/en/e/eb/Safaricom_logo.svg' },
+  { label: 'Safaricom', src: '/brands/safaricom-logo.svg' },
   { label: 'Equity Bank', src: '/brands/equity-bank.png' },
   { label: 'KCB Bank', src: '/brands/kcb-bank.png' },
   {
     label: 'Co-operative Bank',
-    src: 'https://upload.wikimedia.org/wikipedia/commons/d/d7/Coopbanklogo.jpg',
+    src: '/brands/cooperative-bank.jpg',
   },
 ];
 

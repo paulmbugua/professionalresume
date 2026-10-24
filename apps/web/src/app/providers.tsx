@@ -34,7 +34,11 @@ const Providers = ({ children }: { children: React.ReactNode }) => {
 
   return (
     <AppQueryProvider>
-      <ShopContextProvider backendUrl={backendUrl} storage={storage}>
+      <ShopContextProvider
+        backendUrl={backendUrl}
+        storage={storage}
+        deferChildrenUntilInitialized={false}
+      >
         <ThemeProvider applyToDocument storageKey="cvpro-theme">
           {children}
         </ThemeProvider>

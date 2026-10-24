@@ -1,5 +1,12 @@
+import type { Metadata } from 'next';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { buildNoIndexMetadata } from '../../lib/seo';
+
+export const metadata: Metadata = buildNoIndexMetadata(
+  'Internal Route Diagnostics | ProfessionalResume.co.ke',
+  'Internal route diagnostics.'
+);
 
 const expectedRoutes = ['/login', '/templates', '/builder', '/builder/new', '/profile'];
 const APP_DIR = path.join(process.cwd(), 'src', 'app');
@@ -46,7 +53,9 @@ export default async function RoutesDebugPage() {
       </p>
 
       <div className="mt-6 rounded-xl border border-gray-200 bg-white p-4 dark:border-white/10 dark:bg-white/5">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Detected routes</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+          Detected routes
+        </h2>
         <ul className="mt-3 space-y-1 font-mono text-sm">
           {routeList.map((route) => (
             <li key={route}>{route}</li>
@@ -55,10 +64,15 @@ export default async function RoutesDebugPage() {
       </div>
 
       <div className="mt-6 rounded-xl border border-gray-200 bg-white p-4 dark:border-white/10 dark:bg-white/5">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Expected routes</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+          Expected routes
+        </h2>
         <ul className="mt-3 space-y-1 font-mono text-sm">
           {expectedRoutes.map((route) => (
-            <li key={route} className={missing.includes(route) ? 'text-rose-500' : 'text-emerald-600'}>
+            <li
+              key={route}
+              className={missing.includes(route) ? 'text-rose-500' : 'text-emerald-600'}
+            >
               {route} {missing.includes(route) ? '✗ missing' : '✓ present'}
             </li>
           ))}

@@ -43,10 +43,10 @@ module.exports = {
       },
       fontFamily: {
         sans: [
-          'Poppins','ui-sans-serif','system-ui','Segoe UI','Roboto','Arial','Noto Sans',
+          'var(--font-inter)','ui-sans-serif','system-ui','Segoe UI','Roboto','Arial','Noto Sans',
           'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol',
         ],
-        display: ['Montserrat','Poppins','ui-sans-serif','system-ui'],
+        display: ['var(--font-inter)','ui-sans-serif','system-ui'],
       },
       // keep your literal prose theme (no functions)
       typography: {

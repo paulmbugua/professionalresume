@@ -971,7 +971,7 @@ const CvForm: React.FC<{
 
             <div className="flex items-center gap-4 rounded-xl border border-gray-200 p-3 dark:border-white/10">
               <img
-                src={basicsPhotoUrl || '/assets/profile_photo.png'}
+                src={basicsPhotoUrl || '/assets/profile_photo.webp'}
                 alt="Profile preview"
                 className="h-24 w-20 rounded-md border border-gray-200 object-cover dark:border-white/15"
               />

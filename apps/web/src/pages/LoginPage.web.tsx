@@ -305,7 +305,7 @@ const LoginPage: React.FC = () => {
               <div className="relative w-full max-w-[250px] overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-2">
                 <div className="relative aspect-[4/5] w-full">
                   <Image
-                    src="/assets/ladywithcv.png"
+                    src="/assets/ladywithcv.webp"
                     alt="Lady holding a CV"
                     fill
                     priority

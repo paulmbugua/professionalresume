@@ -2,11 +2,7 @@ import type { Metadata } from 'next';
 
 import AtsCheckerClient from '../../features/ats-checker/AtsCheckerClient';
 import { brand, seoKeywords } from '../../lib/brand';
-import {
-  buildBreadcrumbSchema,
-  buildPageMetadata,
-  buildSoftwareApplicationSchema,
-} from '../../lib/seo';
+import { buildBreadcrumbSchema, buildPageMetadata } from '../../lib/seo';
 
 export const metadata: Metadata = buildPageMetadata({
   title: `ATS Resume Checker Kenya | ${brand.name}`,
@@ -27,10 +23,6 @@ export default function Page() {
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
-      />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(buildSoftwareApplicationSchema()) }}
       />
       <AtsCheckerClient />
     </>

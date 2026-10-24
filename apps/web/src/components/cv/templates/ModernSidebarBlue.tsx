@@ -21,7 +21,7 @@ export function renderModernSidebarBlueHtml(draft: CvDraft) {
   const isVisible = (k: CvSectionKey) => visibility[k] !== false;
 
   const b = draft.basics || {};
-  const resolvedPhotoUrl = b.photoUrl?.trim() || '/assets/profile_photo.png';
+  const resolvedPhotoUrl = b.photoUrl?.trim() || '/assets/profile_photo.webp';
   const { cssVarBlock } = resolveDraftStyles(draft);
 
   const contact = [

@@ -22,6 +22,7 @@ import type {
 interface ShopContextProviderProps {
   children: ReactNode;
   backendUrl: string;
+  deferChildrenUntilInitialized?: boolean;
   storage?: {
     getItem: (key: string) => Promise<string | null>;
     setItem: (key: string, value: string) => Promise<void>;
@@ -182,6 +183,7 @@ function attachAuthGuards(
 const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
   children,
   backendUrl,
+  deferChildrenUntilInitialized = true,
   storage,
   navigateFn,
   queryClient,
@@ -529,7 +531,11 @@ const ShopContextProvider: React.FC<ShopContextProviderProps> = ({
     ],
   );
 
-  return <ShopContext.Provider value={value}>{initializing ? null : children}</ShopContext.Provider>;
+  return (
+    <ShopContext.Provider value={value}>
+      {deferChildrenUntilInitialized && initializing ? null : children}
+    </ShopContext.Provider>
+  );
 };
 
 export const useShopContext = (): ShopContextValue => {

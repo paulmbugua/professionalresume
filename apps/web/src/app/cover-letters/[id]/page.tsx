@@ -1,4 +1,11 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
+import { buildNoIndexMetadata } from '../../../lib/seo';
+
+export const metadata: Metadata = buildNoIndexMetadata(
+  'Private Cover Letter Redirect | ProfessionalResume.co.ke',
+  'Private cover letter workspace redirect.'
+);
 
 type Props = {
   params: Promise<{

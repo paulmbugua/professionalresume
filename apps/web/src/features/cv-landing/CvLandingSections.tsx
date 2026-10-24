@@ -116,6 +116,10 @@ export function LogoMarquee({
             <img
               src={it.src}
               alt={it.label}
+              width={180}
+              height={44}
+              loading="lazy"
+              decoding="async"
               className="h-8 w-auto select-none object-contain opacity-95 transition hover:opacity-100 dark:brightness-125 sm:h-10 md:h-11"
               draggable={false}
               onError={() => {
