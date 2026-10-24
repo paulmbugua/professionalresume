@@ -3,18 +3,6 @@ const GUEST_UPLOAD_SESSION_KEY = 'cvpro:guest-upload-session-id';
 
 const allowedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
-const inferImageExt = (mimeType: string, filename = '') => {
-  const normalizedType = String(mimeType || '').toLowerCase();
-  if (normalizedType === 'image/png') return 'png';
-  if (normalizedType === 'image/webp') return 'webp';
-  if (normalizedType === 'image/jpeg') return 'jpg';
-
-  const lowerName = String(filename || '').toLowerCase();
-  if (lowerName.endsWith('.png')) return 'png';
-  if (lowerName.endsWith('.webp')) return 'webp';
-  return 'jpg';
-};
-
 export async function uploadAsset(
   backendUrl: string,
   token: string | undefined,
@@ -39,7 +27,6 @@ export async function uploadAsset(
   if (!allowedImageTypes.has(mimeType)) {
     throw new Error('Unsupported image type. Use JPG, PNG, or WEBP.');
   }
-  const ext = inferImageExt(mimeType, filename);
   const safeToken = String(token || '').trim();
   const guestSessionId =
     !safeToken && typeof window !== 'undefined'
@@ -63,66 +50,33 @@ export async function uploadAsset(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120_000);
 
-  let presignRes: Response;
+  const uploadForm = new FormData();
+  uploadForm.append('file', blobOrFile, filename);
+  if (guestSessionId) uploadForm.append('guestSessionId', guestSessionId);
+
+  let uploadRes: Response;
   try {
-    presignRes = await fetch(`${base}/api/uploads/presign`, {
+    uploadRes = await fetch(`${base}/api/uploads/photo`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
         ...(safeToken ? { Authorization: `Bearer ${safeToken}` } : {}),
       },
-      body: JSON.stringify({
-        purpose: 'cv-photo',
-        contentType: mimeType,
-        ext,
-        sizeBytes: (blobOrFile as Blob).size || undefined,
-        ...(guestSessionId ? { guestSessionId } : {}),
-      }),
+      body: uploadForm,
       signal: controller.signal,
     });
   } finally {
     clearTimeout(timeout);
   }
 
-  if (!presignRes.ok) {
-    const text = await presignRes.text().catch(() => '');
-    throw new Error(`Upload failed (${presignRes.status}) ${text}`);
+  if (!uploadRes.ok) {
+    const text = await uploadRes.text().catch(() => '');
+    throw new Error(`Upload failed (${uploadRes.status}) ${text}`);
   }
 
-  const presignJson = await presignRes.json().catch(() => ({}));
-  const uploadUrl: string | undefined = presignJson?.uploadUrl;
-  const publicUrl: string | undefined = presignJson?.publicUrl;
-  const key: string | undefined = presignJson?.key;
-  if (!uploadUrl || !publicUrl || !key) {
-    throw new Error('Upload response missing signed upload data.');
+  const uploadJson = await uploadRes.json().catch(() => ({}));
+  const publicUrl: string | undefined = uploadJson?.publicUrl;
+  if (!publicUrl) {
+    throw new Error('Upload response missing the public photo URL.');
   }
-
-  const directUploadRes = await fetch(uploadUrl, {
-    method: 'PUT',
-    headers: { 'Content-Type': mimeType },
-    body: blobOrFile as Blob,
-  });
-  if (!directUploadRes.ok) {
-    throw new Error(`Upload transfer failed (${directUploadRes.status}).`);
-  }
-
-  const confirmRes = await fetch(`${base}/api/uploads/confirm`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(safeToken ? { Authorization: `Bearer ${safeToken}` } : {}),
-    },
-    body: JSON.stringify({
-      key,
-      publicUrl,
-      ...(guestSessionId ? { guestSessionId } : {}),
-    }),
-  });
-  if (!confirmRes.ok) {
-    const text = await confirmRes.text().catch(() => '');
-    throw new Error(`Upload confirmation failed (${confirmRes.status}) ${text}`);
-  }
-
-  const confirmJson = await confirmRes.json().catch(() => ({}));
-  return confirmJson?.publicUrl || confirmJson?.url || publicUrl;
+  return publicUrl;
 }

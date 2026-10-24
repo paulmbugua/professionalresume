@@ -5,6 +5,7 @@ import {
   createPhotoUploadPresign,
   isAllowedPhotoContentType,
   maxPhotoBytes,
+  putPhotoObject,
 } from '../services/r2UploadService.js';
 
 const presignSchema = Joi.object({
@@ -26,6 +27,81 @@ const confirmSchema = Joi.object({
     .pattern(/^[a-zA-Z0-9_-]{8,120}$/)
     .optional(),
 });
+
+const photoUploadSchema = Joi.object({
+  guestSessionId: Joi.string()
+    .pattern(/^[a-zA-Z0-9_-]{8,120}$/)
+    .optional(),
+});
+
+function getPhotoExtension(contentType) {
+  if (contentType === 'image/png') return 'png';
+  if (contentType === 'image/webp') return 'webp';
+  return 'jpg';
+}
+
+export async function uploadPhoto(req, res) {
+  const { error, value } = photoUploadSchema.validate(req.body || {});
+  if (error) {
+    return res
+      .status(400)
+      .json({ error: 'Invalid upload session', details: error.details });
+  }
+
+  const file = req.file;
+  if (!file?.buffer) {
+    return res.status(400).json({ error: 'A JPG, PNG, or WEBP photo is required.' });
+  }
+
+  const contentType = String(file.mimetype || '').toLowerCase();
+  if (!isAllowedPhotoContentType(contentType)) {
+    return res.status(400).json({ error: 'Unsupported content type' });
+  }
+  if (file.size > maxPhotoBytes) {
+    return res
+      .status(413)
+      .json({ error: `File too large. Max ${maxPhotoBytes} bytes.` });
+  }
+
+  const userId = req.user?.id ? String(req.user.id) : null;
+  const guestSessionId = value.guestSessionId
+    ? String(value.guestSessionId).trim()
+    : '';
+
+  if (!userId && !guestSessionId) {
+    return res.status(401).json({
+      error: 'Authentication or guest session is required for uploads.',
+    });
+  }
+
+  const ext = getPhotoExtension(contentType);
+  const key = userId
+    ? buildPhotoObjectKey(userId, ext)
+    : buildGuestPhotoObjectKey(guestSessionId, ext);
+
+  try {
+    const uploaded = await putPhotoObject({
+      key,
+      body: file.buffer,
+      contentType,
+    });
+
+    if (!uploaded.url) {
+      throw new Error('Public URL base is not configured for photo uploads');
+    }
+
+    return res.status(201).json({
+      ok: true,
+      key: uploaded.key,
+      publicUrl: uploaded.url,
+      bytes: uploaded.bytes,
+      contentType: uploaded.contentType,
+    });
+  } catch (err) {
+    console.error('[uploads] photo upload failed', err);
+    return res.status(500).json({ error: 'Failed to upload photo' });
+  }
+}
 
 export async function presignUpload(req, res) {
   const { error, value } = presignSchema.validate(req.body || {});

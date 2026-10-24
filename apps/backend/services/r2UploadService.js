@@ -53,6 +53,35 @@ export function getPublicPhotoUrl(key) {
   return `${publicBase}/${encodeURIComponent(key).replace(/%2F/g, '/')}`;
 }
 
+export async function putPhotoObject({ key, body, contentType }) {
+  if (!bucket) throw new Error('R2 bucket is not configured for photo uploads');
+  if (!isAllowedPhotoContentType(contentType)) {
+    throw new Error(`Unsupported content type: ${contentType}`);
+  }
+
+  const bytes = Buffer.isBuffer(body) ? body.byteLength : Buffer.byteLength(body);
+  if (bytes > maxPhotoBytes) {
+    throw new Error(`Photo exceeds max size of ${maxPhotoBytes} bytes`);
+  }
+
+  await r2Client.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+      CacheControl: 'public, max-age=31536000, immutable',
+    }),
+  );
+
+  return {
+    key,
+    bytes,
+    contentType,
+    url: getPublicPhotoUrl(key),
+  };
+}
+
 export async function createPhotoUploadPresign({ key, contentType }) {
   if (!bucket) throw new Error('R2 bucket is not configured for photo uploads');
   if (!isAllowedPhotoContentType(contentType)) {
